@@ -6,51 +6,70 @@ import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/pris
 import { User, Bot, Copy, Check } from 'lucide-react';
 
 // 코드 블록을 별도 컴포넌트로 분리하여 스트리밍 중 Copy 버튼 상태 초기화 방지
-const CodeBlock = memo(({ inline, className, children, theme, ...props }) => {
+// react-markdown v9: pre 컴포넌트의 renderer로 사용 (블록 코드 전용)
+const CodeBlock = memo(({ children, theme }) => {
   const [copied, setCopied] = useState(false);
-  const match = /language-(\w+)/.exec(className || '');
-  const codeContent = String(children).replace(/\n$/, '');
+
+  // pre의 children으로 전달된 <code> React element에서 언어 및 코드 내용 추출
+  const codeChild = React.Children.toArray(children).find(React.isValidElement);
+  const className = codeChild?.props?.className || '';
+  const codeContent = String(codeChild?.props?.children || '').replace(/\n$/, '');
+  const match = /language-(\w+)/.exec(className);
+  const language = match ? match[1] : 'text';
 
   const copyToClipboard = async () => {
-    await navigator.clipboard.writeText(codeContent);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(codeContent);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback: navigator.clipboard 미지원 환경(HTTP via IP) 대응
+      // 향후 서비스가 HTTPS로 전환되면 fallback 블록 전체를 제거한다
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = codeContent;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        // eslint-disable-next-line deprecation/deprecation -- navigator.clipboard 미지원 환경(HTTP via IP) fallback
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error('클립보드 복사 실패:', err);
+      }
+    }
   };
 
-  if (!inline && match) {
-    return (
-      <div className="relative my-4 rounded-lg overflow-hidden border border-[var(--border-color)]">
-        <div className="flex items-center justify-between px-4 py-2 bg-[var(--bg-secondary)] text-[var(--text-secondary)] text-xs">
-          <span className="font-mono">{match[1]}</span>
-          <button
-            onClick={copyToClipboard}
-            className="flex items-center gap-1.5 hover:text-[var(--text-primary)] transition-colors"
-          >
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            Copy
-          </button>
-        </div>
-        <SyntaxHighlighter
-          style={theme === 'dark' ? oneDark : oneLight}
-          language={match[1]}
-          PreTag="div"
-          customStyle={{
-            margin: 0,
-            padding: '1rem',
-            backgroundColor: theme === 'dark' ? 'var(--bg-tertiary)' : 'var(--bg-secondary)',
-            fontSize: '0.725rem',
-          }}
-          {...props}
-        >
-          {codeContent}
-        </SyntaxHighlighter>
-      </div>
-    );
-  }
   return (
-    <code className="bg-[var(--bg-tertiary)] text-[var(--accent-color)] px-1.5 py-0.5 rounded" {...props}>
-      {children}
-    </code>
+    <div className="relative my-4 rounded-lg overflow-hidden border border-[var(--border-color)]">
+      <div className="flex items-center justify-between px-4 py-2 bg-[var(--bg-secondary)] text-[var(--text-secondary)] text-xs">
+        <span className="font-mono">{match ? language : ''}</span>
+        <button
+          onClick={copyToClipboard}
+          className="flex items-center gap-1.5 hover:text-[var(--text-primary)] transition-colors"
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+          Copy
+        </button>
+      </div>
+      <SyntaxHighlighter
+        style={theme === 'dark' ? oneDark : oneLight}
+        language={language}
+        PreTag="div"
+        customStyle={{
+          margin: 0,
+          padding: '1rem',
+          backgroundColor: theme === 'dark' ? 'var(--bg-tertiary)' : 'var(--bg-secondary)',
+          fontSize: '0.725rem',
+        }}
+      >
+        {codeContent}
+      </SyntaxHighlighter>
+    </div>
   );
 });
 
@@ -78,8 +97,21 @@ const ChatBubble = memo(({ message, isStreaming }) => {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          code(props) {
-            return <CodeBlock theme={theme} {...props} />;
+          pre({ children }) {
+            return <CodeBlock theme={theme}>{children}</CodeBlock>;
+          },
+          code({ children, className, node, ...props }) {
+            // language- className이 있으면 블록 코드의 내부 <code> → className 보존하여 pre로 전달
+            // node는 react-markdown AST 객체 — DOM 요소에 spread 금지
+            if (className?.startsWith('language-')) {
+              return <code className={className} {...props}>{children}</code>;
+            }
+            // 인라인 코드
+            return (
+              <code className="bg-[var(--bg-tertiary)] text-[var(--accent-color)] px-1.5 py-0.5 rounded" {...props}>
+                {children}
+              </code>
+            );
           },
           table({ children }) {
             return (
