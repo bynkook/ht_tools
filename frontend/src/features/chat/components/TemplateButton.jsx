@@ -61,20 +61,20 @@ const TemplateButton = ({ onSelect, disabled, isActive, onClear }) => {
           ? 'border-cyan-400 bg-cyan-50'
           : isActive
             ? 'border-cyan-300 bg-cyan-50'
-            : 'border-[var(--border-color)] bg-white hover:bg-gray-50 hover:border-gray-400'
+            : 'border-gray-400 bg-white hover:bg-gray-50 hover:border-gray-800'
         }`}
       >
         <button
           type="button"
           disabled={disabled}
           onClick={() => !disabled && setIsOpen((prev) => !prev)}
-          className={`flex items-center gap-1 pl-3 pr-2 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed
+          className={`flex items-center gap-1 pl-4 pr-3 py-1 text-sm font-medium transition-colors disabled:cursor-not-allowed
             ${isOpen || isActive ? 'text-cyan-600' : 'text-[var(--text-secondary)]'}`}
           title="Insert a template prompt"
         >
           Template
           <ChevronUp
-            size={12}
+            size={14}
             className={`transition-transform duration-200 ${isOpen ? 'rotate-0' : 'rotate-180'}`}
           />
         </button>
@@ -86,10 +86,10 @@ const TemplateButton = ({ onSelect, disabled, isActive, onClear }) => {
               e.preventDefault();
               onClear();
             }}
-            className="pr-2 py-1.5 text-cyan-500 hover:text-red-500 transition-colors"
+            className="pr-3 py-1 text-cyan-500 hover:text-red-500 transition-colors"
             title="Clear inserted template"
           >
-            <X size={11} />
+            <X size={14} />
           </button>
         )}
       </div>

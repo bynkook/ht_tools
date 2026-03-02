@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, StopCircle } from 'lucide-react';
-import useInputFocusRestore from '../../../hooks/useInputFocusRestore';
 import TemplateButton from './TemplateButton';
 
 /**
@@ -11,10 +10,6 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
   const [text, setText] = useState('');
   const [isTemplateActive, setIsTemplateActive] = useState(false);
   const textareaRef = useRef(null);
-  const { requestRestoreFocus } = useInputFocusRestore({
-    inputRef: textareaRef,
-    isLoading,
-  });
 
   // Auto-resize textarea
   useEffect(() => {
@@ -25,36 +20,23 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
     }
   }, [text]);
 
-  const handleSend = async (trigger = 'mouse') => {
+  const handleSend = async () => {
     if (!text.trim() || isLoading) return;
 
-    const shouldRestore = trigger === 'keyboard';
     const message = text.trim();
-
     setText('');
     setIsTemplateActive(false);
-    // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-
-    try {
-      const result = onSend(message);
-      if (result && typeof result.then === 'function') {
-        await result;
-      }
-    } finally {
-      if (shouldRestore) {
-        requestRestoreFocus();
-      }
-    }
+    await onSend(message);
   };
 
   const handleKeyDown = (e) => {
     if (e.nativeEvent?.isComposing) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend('keyboard');
+      handleSend();
     }
   };
 
@@ -94,11 +76,11 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
           rows={1}
           readOnly={isLoading}
           aria-busy={isLoading}
-          className="bg-transparent text-xs text-[var(--text-primary)] placeholder:text-gray-400 px-4 py-3 resize-none focus:outline-none w-full"
+          className="bg-transparent text-sm text-[var(--text-primary)] placeholder:text-gray-400 px-4 py-3 resize-none focus:outline-none w-full"
         />
 
         {/* Toolbar row: Template (left) + Send/Stop (right) */}
-        <div className="flex items-center justify-between px-2 py-2">
+        <div className="flex items-center justify-between px-2 pt-1 pb-2">
           <TemplateButton
             onSelect={handleTemplateSelect}
             disabled={isLoading}
@@ -109,19 +91,19 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
           {isLoading ? (
             <button
               onClick={onStop}
-              className="flex items-center justify-center w-8 h-8 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all hover:scale-105 active:scale-95"
+              className="flex items-center justify-center w-10 h-10 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all hover:scale-105 active:scale-95"
               title="Stop generating"
             >
-              <StopCircle size={16} />
+              <StopCircle size={18} />
             </button>
           ) : (
             <button
-              onClick={() => handleSend('mouse')}
+              onClick={handleSend}
               disabled={!text.trim()}
-              className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-lg hover:scale-105 active:scale-95 transition-all"
+              className="flex items-center justify-center w-10 h-10 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-lg hover:scale-105 active:scale-95 transition-all"
               title="Send message"
             >
-              <Send size={15} />
+              <Send size={18} />
             </button>
           )}
         </div>
