@@ -1,0 +1,30 @@
+# .gitignore
+.venv/
+node_modules/
+__pycache__/
+test/
+doc/
+data/
+*.toml
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.log
+logs/
+log/
+*.pyc
+*.bak
+robocopy*.*
+
+# gemini-cli
+GEMINI.md
+
+# gemini-cli settings
+.gemini/
+
+# opencode settings
+.opencode
+
+# GitHub App credentials
+gha-creds-*.json
+.github/

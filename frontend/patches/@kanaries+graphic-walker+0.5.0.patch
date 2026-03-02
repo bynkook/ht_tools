@@ -1,0 +1,52 @@
+diff --git a/node_modules/@kanaries/graphic-walker/dist/graphic-walker.es.js b/node_modules/@kanaries/graphic-walker/dist/graphic-walker.es.js
+index 8cefe5d..f315770 100644
+--- a/node_modules/@kanaries/graphic-walker/dist/graphic-walker.es.js
++++ b/node_modules/@kanaries/graphic-walker/dist/graphic-walker.es.js
+@@ -16954,7 +16954,8 @@ const Oae = (e) => ({
+   }
+ });
+ function Qft(e, t, n) {
+-  var i = new Blob([e], { type: n });
++  var data = t.endsWith(".csv") ? "\uFEFF" + e : e;
++  var i = new Blob([data], { type: n });
+   if (window.navigator.msSaveOrOpenBlob)
+     window.navigator.msSaveOrOpenBlob(i, t);
+   else {
+@@ -17819,9 +17820,10 @@ function rmt() {
+           const ee = (0, r.keywords)(A);
+           return (te) => ee(te.toUpperCase());
+         };
++        const UNICODE_ID_CHARS = 'A-Za-z0-9_\\u3131-\\u318E\\uAC00-\\uD7A3\\u4E00-\\u9FFF';
+         n.lexer = (0, r.compile)({
+           word: {
+-            match: /[eE](?!')[A-Za-z0-9_]*|[a-df-zA-DF-Z_][A-Za-z0-9_]*/,
++            match: new RegExp(`[eE](?!')[${UNICODE_ID_CHARS}]*|[a-df-zA-DF-Z_\\u3131-\\u318E\\uAC00-\\uD7A3\\u4E00-\\u9FFF][${UNICODE_ID_CHARS}]*`),
+             type: o(l),
+             value: (A) => A.toLowerCase()
+           },
+@@ -95865,8 +95867,14 @@ const Scn = jo(function(t, n) {
+         } : A.defaultAggregated && We.analyticType === "measure" ? {
+           fid: Vh(We.fid, We.aggName),
+           name: uY(We.name, We.aggName)
+-        } : { fid: We.fid, name: We.name }), Ne = `${Ye.map((We) => We.name).join(",")}
+-${E.map((We) => Ye.map((xe) => We[xe.fid]).join(",")).join(`
++        } : { fid: We.fid, name: We.name });
++        let Ee = E;
++        if (f.geoms && f.geoms[0] === "table") {
++          const Rd = (K.rows || []).filter((v) => v.analyticType === "dimension"), Cd = (K.columns || []).filter((v) => v.analyticType === "dimension"), Sd = [...Rd, ...Cd];
++          if (Sd.length > 0) Ee = [...E].sort((aa, bb) => { for (const d of Sd) { const av = aa[d.fid], bv = bb[d.fid]; if (av === bv) continue; if (typeof av === "number" && typeof bv === "number") return av - bv; return String(av ?? "").localeCompare(String(bv ?? "")); } return 0; });
++        }
++        const Ne = `${Ye.map((We) => We.name).join(",")}
++${Ee.map((We) => Ye.map((xe) => We[xe.fid]).join(",")).join(`
+ `)}`;
+         Qft(Ne, `${b.name}.csv`, "text/plain");
+       }
+@@ -141005,7 +141013,7 @@ function EVn(e) {
+ }
+ const MVn = new RegExp(`\\b(${Array.from(fmt).join("|")})\\b`, "gi"), OVn = new RegExp(`\\b(${Array.from(mmt).join("|")})(\\s*)\\(`, "gi"), BVn = new RegExp(`\\b(${Array.from(VGe).join("|")})(\\s*)\\(`, "gi"), KVn = /('[^']*'?)/g, PVn = ya(() => {
+   const e = Ql(), { editingComputedFieldFid: t } = e, [n, i] = Yt(""), [r, a] = Yt(""), [l, o] = Yt(""), s = on(null), c = Nt(() => {
+-    const u = e.allFields.filter((h) => ![fm, oc, sc, td].includes(h.fid)).map((h) => h.name.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")).join("|"), f = u.length > 0 ? new RegExp(`\\b(${u})\\b`, "gi") : null;
++    const u = e.allFields.filter((h) => ![fm, oc, sc, td].includes(h.fid)).map((h) => h.name.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")).join("|"), f = u.length > 0 ? new RegExp(`(?<![\\p{L}\\p{N}_])(${u})(?![\\p{L}\\p{N}_])`, "giu") : null;
+     return EVn((h) => (f && (h = h.replace(f, '<span class="text-blue-700 dark:text-blue-600">$1</span>')), h = h.replace(MVn, '<span class="text-fuchsia-700 dark:text-fuchsia-600">$1</span>'), h = h.replace(OVn, '<span class="text-yellow-700 dark:text-yellow-600">$1</span>$2('), h = h.replace(BVn, '<span class="text-amber-700 dark:text-amber-600">$1</span>$2('), h = h.replace(KVn, '<span class="text-green-700 dark:text-green-600">$1</span>'), h));
+   }, [e.allFields]);
+   return Ut(() => {

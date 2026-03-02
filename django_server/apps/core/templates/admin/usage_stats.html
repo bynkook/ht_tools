@@ -1,0 +1,210 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+{% load core_extras %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div id="content-main">
+
+  <p style="color:#666; margin-bottom:1.5em;">
+    기준시각: <strong>{{ now }}</strong> &nbsp;|&nbsp;
+    주간: <strong>{{ period_week }}</strong> ~ &nbsp;|&nbsp;
+    월간: <strong>{{ period_month }}</strong> ~
+  </p>
+
+  {% if stats %}
+  <style>
+    .stats-container {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      overflow: hidden;
+      margin-top: 20px;
+    }
+    .modern-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 13px;
+      color: #374151;
+    }
+    .modern-table th, .modern-table td {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e5e7eb;
+      background-color: #ffffff; /* Explicit white background for readability */
+    }
+    /* Header Styles */
+    .modern-table thead th {
+      background-color: #f9fafb;
+      color: #111827;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 11px;
+      vertical-align: bottom;
+    }
+    /* Column Group Separators */
+    .col-group-border {
+      border-right: 1px solid #e5e7eb;
+    }
+    /* Total Row Styles */
+    .total-row td {
+      background-color: #f3f4f6;
+      font-weight: 700;
+      color: #111827;
+      border-bottom: 2px solid #d1d5db;
+    }
+    .total-row .sub-text {
+      font-weight: normal;
+      font-size: 11px;
+      color: #6b7280;
+      margin-left: 4px;
+    }
+    /* User Row Styles */
+    .user-info {
+      font-weight: 600;
+      color: #111827;
+    }
+    .user-email {
+      display: block;
+      color: #6b7280;
+      font-size: 11px;
+      font-weight: normal;
+      margin-top: 2px;
+    }
+    .badge-staff {
+      background-color: #fef3c7;
+      color: #92400e;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      margin-left: 6px;
+      vertical-align: middle;
+      font-weight: 500;
+    }
+    /* Data Cells */
+    .data-cell {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .data-primary {
+      color: #111827;
+      font-weight: 500;
+    }
+    .data-secondary {
+      color: #9ca3af;
+      font-size: 11px;
+      margin-left: 2px;
+    }
+    /* Hover Effect */
+    .modern-table tbody tr:hover td {
+      background-color: #f0f8ff;
+    }
+  </style>
+
+  <div class="stats-container">
+    <table class="modern-table">
+      <thead>
+        <tr>
+          <th class="col-group-border" style="width: 220px; text-align: left;">User Profile</th>
+          
+          <th colspan="2" class="col-group-border" style="text-align: center; color: #2563eb;">
+            FabriX Chat
+            <div style="font-size: 10px; font-weight: normal; color: #6b7280; margin-top: 4px;">WEEKLY / MONTHLY</div>
+          </th>
+          
+          <th colspan="2" class="col-group-border" style="text-align: center; color: #4b5563;">
+            Agent Chat
+            <div style="font-size: 10px; font-weight: normal; color: #6b7280; margin-top: 4px;">WEEKLY / MONTHLY</div>
+          </th>
+          
+          <th colspan="2" style="text-align: center; color: #059669;">
+            Data Explorer
+            <div style="font-size: 10px; font-weight: normal; color: #6b7280; margin-top: 4px;">WEEKLY / MONTHLY</div>
+          </th>
+        </tr>
+
+        <!-- Total Sum Row -->
+        <tr class="total-row">
+          <td class="col-group-border">TOTAL SUM</td>
+          
+          <!-- FabriX Chat -->
+          <td class="data-cell">
+            {{ total_fc_week_cnt|default:0 }}<span class="sub-text">/ {{ total_fc_week_bytes|filesizeformat_eng }}</span>
+          </td>
+          <td class="data-cell col-group-border">
+            {{ total_fc_month_cnt|default:0 }}<span class="sub-text">/ {{ total_fc_month_bytes|filesizeformat_eng }}</span>
+          </td>
+
+          <!-- Agent Chat -->
+          <td class="data-cell">
+            {{ total_ac_week_cnt|default:0 }}<span class="sub-text">/ {{ total_ac_week_bytes|filesizeformat_eng }}</span>
+          </td>
+          <td class="data-cell col-group-border">
+            {{ total_ac_month_cnt|default:0 }}<span class="sub-text">/ {{ total_ac_month_bytes|filesizeformat_eng }}</span>
+          </td>
+
+          <!-- Data Explorer -->
+          <td class="data-cell">
+            {{ total_de_week_cnt|default:0 }}
+          </td>
+          <td class="data-cell">
+            {{ total_de_month_cnt|default:0 }}
+          </td>
+        </tr>
+      </thead>
+      
+      <tbody>
+        {% for row in stats %}
+        <tr>
+          <td class="col-group-border">
+            <div class="user-info">
+              {{ row.username }}
+              {% if row.is_staff %}<span class="badge-staff">STAFF</span>{% endif %}
+            </div>
+            <span class="user-email">{{ row.email }}</span>
+          </td>
+
+          <!-- FabriX Chat -->
+          <td class="data-cell">
+            <span class="data-primary">{{ row.fc_week_cnt }}</span>
+            <span class="data-secondary">/ {{ row.fc_week_bytes|filesizeformat_eng }}</span>
+          </td>
+          <td class="data-cell col-group-border">
+            <span class="data-primary">{{ row.fc_month_cnt }}</span>
+            <span class="data-secondary">/ {{ row.fc_month_bytes|filesizeformat_eng }}</span>
+          </td>
+
+          <!-- Agent Chat -->
+          <td class="data-cell">
+            <span class="data-primary">{{ row.ac_week_cnt }}</span>
+            <span class="data-secondary">/ {{ row.ac_week_bytes|filesizeformat_eng }}</span>
+          </td>
+          <td class="data-cell col-group-border">
+            <span class="data-primary">{{ row.ac_month_cnt }}</span>
+            <span class="data-secondary">/ {{ row.ac_month_bytes|filesizeformat_eng }}</span>
+          </td>
+
+          <!-- Data Explorer -->
+          <td class="data-cell">
+            <span class="data-primary">{{ row.de_week_cnt }}</span>
+          </td>
+          <td class="data-cell">
+            <span class="data-primary">{{ row.de_month_cnt }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding: 40px; text-align: center; color: #6b7280; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-top: 20px;">
+    <p style="margin: 0; font-size: 14px;">활성 사용자가 없습니다.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

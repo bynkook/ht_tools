@@ -1,0 +1,34 @@
+# Django Framework (Data & Auth)
+Django>=5.0.0
+djangorestframework>=3.14.0
+django-cors-headers>=4.3.1
+
+# FastAPI & AI Gateway
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+sse-starlette>=2.0.0
+
+# HTTP Client & Utilities
+requests>=2.31.0
+httpx>=0.27.0
+toml>=0.10.2
+
+# Image Inspector Dependencies
+opencv-python
+pymupdf
+Pillow
+numpy
+pypdf2
+
+# Data Analysis & Visualization
+pandas
+duckdb>=0.10.0
+python-dotenv
+
+# Graphic Walker DSL Parser (Official)
+gw-dsl-parser>=0.1.48
+
+# for offline mock test
+pytest
+pytest-asyncio

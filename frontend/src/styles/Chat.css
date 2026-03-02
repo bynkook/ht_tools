@@ -1,0 +1,121 @@
+/* --- Markdown Content Styling (AI 답변) --- */
+.markdown-content {
+  line-height: 1.7;
+  font-size: 0.95rem;
+  word-break: break-word;
+}
+
+.markdown-content p {
+  margin-bottom: 0.75rem;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* 헤딩 스타일 */
+.markdown-content h1, 
+.markdown-content h2, 
+.markdown-content h3 {
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: #FFFFFF;
+}
+
+.markdown-content h1:first-child, 
+.markdown-content h2:first-child {
+  margin-top: 0;
+}
+
+/* 리스트 스타일 */
+.markdown-content ul, 
+.markdown-content ol {
+  margin-left: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.markdown-content li {
+  margin-bottom: 0.25rem;
+}
+
+/* 인라인 코드 (`code`) */
+.markdown-content :not(pre) > code {
+  background-color: rgba(255, 255, 255, 0.15);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.85em;
+  color: #FF79C6; /* 강조색 */
+}
+
+/* 코드 블록 (```code```) */
+.markdown-content pre {
+  background-color: #0d0d0d; /* 더 어두운 배경 */
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+  border: 1px solid #333;
+}
+
+.markdown-content pre code {
+  background-color: transparent;
+  padding: 0;
+  color: #f8f8f2;
+  font-size: 0.9em;
+}
+
+/* 인용문 */
+.markdown-content blockquote {
+  border-left: 4px solid var(--accent-color);
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* 링크 */
+.markdown-content a {
+  color: var(--accent-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-content a:hover {
+  color: var(--accent-hover);
+}
+
+/* --- Layout Components --- */
+
+/* 깜빡이는 커서 효과 (스트리밍 중) */
+.cursor-blink::after {
+  content: "▋";
+  margin-left: 2px;
+  color: var(--text-primary);
+  animation: blink 1s step-start infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* 로딩 스피너 */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 입력창 포커스 효과 */
+.input-wrapper:focus-within {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 1px var(--accent-color);
+}
