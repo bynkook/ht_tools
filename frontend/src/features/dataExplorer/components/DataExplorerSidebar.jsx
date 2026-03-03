@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, BarChart3, ChevronLeft, ChevronDown, ChevronUp, Home, FileText, Database, Save, Bookmark, Trash2, Globe, User, LogOut, RefreshCw } from 'lucide-react';
+import { Upload, BarChart3, ChevronLeft, ChevronDown, ChevronUp, Home, FileText, Database, Save, Bookmark, Trash2, Globe, MoreVertical, Pencil, LogOut, RefreshCw } from 'lucide-react';
 
 const DataExplorerSidebar = ({ 
   onClose, 
@@ -13,6 +13,7 @@ const DataExplorerSidebar = ({
   onSavePreset,
   onLoadPreset,
   onDeletePreset,
+  onRenamePreset,
   canSavePreset = false,
   isAdmin = false,
   // Rebuild props
@@ -27,6 +28,22 @@ const DataExplorerSidebar = ({
   // Fold/Unfold state for sections
   const [isDatasetExpanded, setIsDatasetExpanded] = useState(true);
   const [isPresetExpanded, setIsPresetExpanded] = useState(true);
+
+  // 3-dot 메뉴 열림 상태 (현재 열린 preset의 id, 없으면 null)
+  const [openMenuPresetId, setOpenMenuPresetId] = useState(null);
+  const menuRef = useRef(null);
+
+  // 메뉴 외부 클릭 시 닫기
+  useEffect(() => {
+    if (!openMenuPresetId) return;
+    const handleMouseDown = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setOpenMenuPresetId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [openMenuPresetId]);
 
   const handleLogout = () => {
     sessionStorage.clear();
@@ -261,19 +278,54 @@ const DataExplorerSidebar = ({
                       </div>
                     </div>
                   </button>
-                  {/* Show delete button for owner or admin */}
+                  {/* 3-dot 메뉴: 소유자 또는 Admin에게만 표시 */}
                   {(preset.is_owner || isAdmin) && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeletePreset(preset);
-                      }}
-                      disabled={isLoading}
-                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors shrink-0 opacity-0 group-hover:opacity-100 disabled:opacity-50"
-                      title="프리셋 삭제"
+                    <div
+                      className="relative shrink-0"
+                      ref={openMenuPresetId === preset.id ? menuRef : null}
                     >
-                      <Trash2 size={14} />
-                    </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuPresetId(openMenuPresetId === preset.id ? null : preset.id);
+                        }}
+                        disabled={isLoading}
+                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                        title="옵션"
+                      >
+                        <MoreVertical size={14} />
+                      </button>
+                      {openMenuPresetId === preset.id && (
+                        <div className="absolute right-0 top-full mt-0.5 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[110px]">
+                          {/* 이름 변경: 소유자만 */}
+                          {preset.is_owner && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuPresetId(null);
+                                onRenamePreset(preset);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+                            >
+                              <Pencil size={12} />
+                              이름 변경
+                            </button>
+                          )}
+                          {/* 삭제: 소유자 또는 Admin */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMenuPresetId(null);
+                              onDeletePreset(preset);
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 size={12} />
+                            삭제
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               ))

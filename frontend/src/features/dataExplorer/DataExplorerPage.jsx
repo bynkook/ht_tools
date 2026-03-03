@@ -4,6 +4,7 @@ import { GraphicWalker } from '@kanaries/graphic-walker';
 import DataExplorerSidebar from './components/DataExplorerSidebar';
 import ColumnConfigModal from './components/ColumnConfigModal';
 import PresetSaveModal from './components/PresetSaveModal';
+import PresetRenameModal from './components/PresetRenameModal';
 import DeleteConfirmModal from './components/DeleteConfirmModal';
 import RebuildModal from './components/RebuildModal';
 import { dataExplorerApi, presetApi } from '../../api/djangoApi';
@@ -71,6 +72,10 @@ const DataExplorerPage = () => {
   const [deleteConfirmModalOpen, setDeleteConfirmModalOpen] = useState(false);
   const [pendingDeletePreset, setPendingDeletePreset] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Preset 이름 변경 모달 상태
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [renameTargetPreset, setRenameTargetPreset] = useState(null);
 
   // ==== Rebuild 기능 관련 상태 ====
   const [rebuildModal, setRebuildModal] = useState({
@@ -287,6 +292,30 @@ const DataExplorerPage = () => {
     setPendingDeletePreset(preset);
     setDeleteConfirmModalOpen(true);
   }, []);
+
+  // ==== Preset 이름 변경 핸들러 ====
+  const handleRenamePreset = useCallback((preset) => {
+    setRenameTargetPreset(preset);
+    setIsRenameModalOpen(true);
+  }, []);
+
+  const handleConfirmRename = useCallback(async (newName) => {
+    if (!renameTargetPreset) return;
+    setIsRenameModalOpen(false);
+    setIsLoading(true);
+    setError(null);
+    try {
+      await presetApi.update(renameTargetPreset.id, { name: newName });
+      setRenameTargetPreset(null);
+      await refreshPresets();
+    } catch (err) {
+      console.error('Preset rename error:', err);
+      setError(err.response?.data?.error || '이름 변경에 실패했습니다.');
+      setRenameTargetPreset(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [renameTargetPreset, refreshPresets]);
 
   // 삭제 확인 후 삭제 실행
   const handleConfirmDelete = useCallback(async () => {
@@ -633,6 +662,7 @@ const DataExplorerPage = () => {
                 onSavePreset={handleOpenPresetSaveModal}
                 onLoadPreset={handleLoadPreset}
                 onDeletePreset={handleDeletePreset}
+                onRenamePreset={handleRenamePreset}
                 canSavePreset={!!currentFile && fields.length > 0 && isServerDataset}
                 isAdmin={isAdmin}
                 // Rebuild props
@@ -736,6 +766,14 @@ const DataExplorerPage = () => {
           onConfirm={handleConfirmDelete}
           presetName={pendingDeletePreset?.name || ''}
           isLoading={deleteLoading}
+        />
+
+        {/* Rename Modal for Preset */}
+        <PresetRenameModal
+          isOpen={isRenameModalOpen}
+          onClose={() => { setIsRenameModalOpen(false); setRenameTargetPreset(null); }}
+          onConfirm={handleConfirmRename}
+          currentName={renameTargetPreset?.name || ''}
         />
 
         {/* Rebuild Modal */}
