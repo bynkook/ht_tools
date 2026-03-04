@@ -379,15 +379,15 @@ def generate_highlighted_images(
     # 공통 영역 (차이가 없는 부분)
     both_no_diff = np.logical_and(both > 0, ~diff_mask.astype(bool))
 
-    # Image A Highlighted
-    imgA_out = np.full((h, w, 3), 255, dtype=np.uint8) # 배경을 흰색으로 초기화 (원본 유지보다 색상 지정이 정확함)
+    # Image A Highlighted (File 1 view)
+    imgA_out = np.full((h, w, 3), 255, dtype=np.uint8)
     imgA_out[both_no_diff] = c_common
-    imgA_out[only_A] = c_file1 
+    imgA_out[only_A] = c_file1  # File 1에만 있는 영역
     
-    # Image B Highlighted
+    # Image B Highlighted (File 2 view)
     imgB_out = np.full((h, w, 3), 255, dtype=np.uint8)
     imgB_out[both_no_diff] = c_common
-    imgB_out[only_B] = c_file2
+    imgB_out[only_B] = c_file2  # File 2에만 있는 영역
     
     return imgA_out, imgB_out
 

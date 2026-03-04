@@ -21,6 +21,7 @@
     "react-markdown": "^9.1.0",
     "react-router-dom": "^7.13.0",
     "react-syntax-highlighter": "^15.5.0",
+    "react-zoom-pan-pinch": "^3.7.0",
     "remark-gfm": "^4.0.0",
     "styled-components": "^6.1.19",
     "swr": "^2.4.0",
