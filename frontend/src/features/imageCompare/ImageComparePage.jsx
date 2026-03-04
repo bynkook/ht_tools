@@ -161,24 +161,20 @@ const handleFile1Select = useCallback((file, page) => {
 
     setError(null);
     setIsLoading(true);
-    // setResultData(null); // Keep previous result for better UX, overlay covers it
 
     try {
-      const result = await fastApi.compareImages({
+      const commonParams = {
         file1,
         file2,
-        mode: settings.mode,
         diffThreshold: settings.diffThreshold,
         featureCount: settings.featureCount,
         page1: p1,
         page2: p2,
         colors: userSettings
           ? {
-              diff_file1:    userSettings.diff_file1,
-              diff_file2:    userSettings.diff_file2,
-              diff_common:   userSettings.diff_common,
-              overlay_file1: userSettings.overlay_file1,
-              overlay_file2: userSettings.overlay_file2,
+              diff_file1:  userSettings.diff_file1,
+              diff_file2:  userSettings.diff_file2,
+              diff_common: userSettings.diff_common,
             }
           : null,
         quality: userSettings
@@ -189,8 +185,26 @@ const handleFile1Select = useCallback((file, page) => {
               pdf_dpi:               userSettings.pdf_dpi,
             }
           : null,
-      });
-      
+      };
+
+      let result;
+      if (settings.mode === 'split-overlay') {
+        // 차이점 강조 + 오버레이 두 번 병렬 호출
+        const [diffResult, overlayResult] = await Promise.all([
+          fastApi.compareImages({ ...commonParams, mode: 'difference' }),
+          fastApi.compareImages({ ...commonParams, mode: 'overlay' }),
+        ]);
+        result = {
+          file1_base64:    diffResult.file1_base64,
+          file2_base64:    diffResult.file2_base64,
+          result_base64:   overlayResult.result_base64,
+          download_base64: diffResult.download_base64,
+          metadata: { ...diffResult.metadata, mode: 'split-overlay' },
+        };
+      } else {
+        result = await fastApi.compareImages({ ...commonParams, mode: settings.mode });
+      }
+
 // Store result in cache (LRU automatically handles size limit)
       resultCache.current.set(cacheKey, result);
 
@@ -226,7 +240,7 @@ const handleFile1Select = useCallback((file, page) => {
 } finally {
       setIsLoading(false);
     }
-  }, [settings, userSettings, file1, file2, page1, page2, file1Pages, file2Pages]);
+  }, [settings, userSettings, file1, file2, page1, page2]);
 
 const handleReset = useCallback(() => {
     // Reset all states

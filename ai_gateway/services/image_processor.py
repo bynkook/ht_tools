@@ -267,40 +267,45 @@ def compare_images(
 
 
 def compare_images_overlay(
-    A_bgr: np.ndarray, 
-    B_aligned_bgr: np.ndarray, 
+    A_bgr: np.ndarray,
+    B_aligned_bgr: np.ndarray,
     bin_thresh: int = 200,
     colors: dict = None
 ) -> np.ndarray:
     """
-    두 이미지 오버레이 (겹치기)
-    
+    두 이미지 오버레이 (겹치기) — diff 3색 공통 사용
+
     Args:
         colors: {
-            'overlay_file1': '#RRGGBB',
-            'overlay_file2': '#RRGGBB'
+            'diff_file1': '#RRGGBB',  File 1 전용 영역
+            'diff_file2': '#RRGGBB',  File 2 전용 영역
+            'diff_common': '#RRGGBB'  공통 영역
         }
     """
-    # Default colors
     if colors is None:
         colors = {}
-        
-    c_file1 = hex_to_bgr(colors.get('overlay_file1', '#FFA500')) # Orange default
-    c_file2 = hex_to_bgr(colors.get('overlay_file2', '#00FF00')) # Green default
+
+    c_file1  = hex_to_bgr(colors.get('diff_file1',  '#0000FF'))
+    c_file2  = hex_to_bgr(colors.get('diff_file2',  '#FF0000'))
+    c_common = hex_to_bgr(colors.get('diff_common', '#000000'))
 
     h, w = A_bgr.shape[:2]
-    
+
     A_gray = cv2.cvtColor(A_bgr, cv2.COLOR_BGR2GRAY)
     B_gray = cv2.cvtColor(B_aligned_bgr, cv2.COLOR_BGR2GRAY)
-    
+
     _, A_bin = cv2.threshold(A_gray, bin_thresh, 255, cv2.THRESH_BINARY_INV)
     _, B_bin = cv2.threshold(B_gray, bin_thresh, 255, cv2.THRESH_BINARY_INV)
-    
+
+    only_A = np.logical_and(A_bin > 0, B_bin == 0)
+    only_B = np.logical_and(B_bin > 0, A_bin == 0)
+    both   = np.logical_and(A_bin > 0, B_bin > 0)
+
     result = np.full((h, w, 3), 255, dtype=np.uint8)
-    
-    result[A_bin > 0] = c_file1
-    result[B_bin > 0] = c_file2
-    
+    result[both]   = c_common
+    result[only_A] = c_file1
+    result[only_B] = c_file2
+
     return result
 
 
@@ -474,16 +479,19 @@ def process_comparison(
         # Stage 2-A. 다운로드용 PNG: 연산 해상도(고해상도) 그대로 보존
         download_base64 = encode_image_to_base64(result, format='PNG')
 
-        # Stage 2-B. 화면 출력용: output_resolution으로 다운샘플 후 JPEG 인코딩
+        # Stage 2-B. 화면 출력용: output_resolution으로 다운샘플 후 PNG 인코딩
+        # 비교 결과는 흰 배경 + 단색 마스킹으로 구성된 평면 색상 이미지이다.
+        # JPEG(DCT)는 선명한 색상 경계에 블록 아티팩트를 유발하므로 PNG를 사용한다.
+        # PNG는 평면 색상에서 JPEG보다 파일 크기도 작고 품질도 높다.
         result_out = downsample_if_needed(result, max_dimension=output_resolution)
         file1_out = downsample_if_needed(file1_result, max_dimension=output_resolution)
         file2_out = downsample_if_needed(file2_result, max_dimension=output_resolution)
-        logger.info(f"출력 해상도 적용: max={output_resolution}px, quality={output_quality}, "
+        logger.info(f"출력 해상도 적용: max={output_resolution}px, "
                     f"result={result_out.shape[1]}x{result_out.shape[0]}")
 
-        result_base64 = encode_image_to_base64(result_out, format='JPEG', quality=output_quality)
-        file1_base64 = encode_image_to_base64(file1_out, format='JPEG', quality=output_quality)
-        file2_base64 = encode_image_to_base64(file2_out, format='JPEG', quality=output_quality)
+        result_base64 = encode_image_to_base64(result_out, format='PNG')
+        file1_base64 = encode_image_to_base64(file1_out, format='PNG')
+        file2_base64 = encode_image_to_base64(file2_out, format='PNG')
 
         return {
             "result_base64": result_base64,

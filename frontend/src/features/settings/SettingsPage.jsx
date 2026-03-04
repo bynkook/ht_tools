@@ -11,8 +11,6 @@ const COLOR_DEFAULTS = {
   diff_file1: '#3B82F6',
   diff_file2: '#DC2626',
   diff_common: '#000000',
-  overlay_file1: '#F97316',
-  overlay_file2: '#22C55E',
 };
 
 const QUALITY_DEFAULTS = {
@@ -260,11 +258,7 @@ const SettingsPage = () => {
           </div>
           
           <div className="p-8">
-            <div className="mb-10">
-              <div className="flex items-center gap-2 mb-6">
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">비교 (Difference Mode)</h3>
-              </div>
+            <div className="mb-10">              
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <ColorPicker 
                   label="File 1 (기준 파일)" 
@@ -283,29 +277,6 @@ const SettingsPage = () => {
                   description="두 파일 모두에 존재하는 요소"
                   value={preferences?.image_inspector?.diff_common}
                   onChange={(v) => handleColorChange('image_inspector', 'diff_common', v)}
-                />
-              </div>
-            </div>
-
-            <div className="h-px bg-slate-100 mb-10"></div>
-
-            <div>
-              <div className="flex items-center gap-2 mb-6">
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">오버레이 (Overlay Mode)</h3>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <ColorPicker 
-                  label="File 1 레이어" 
-                  description="첫 번째 이미지의 오버레이 색상"
-                  value={preferences?.image_inspector?.overlay_file1}
-                  onChange={(v) => handleColorChange('image_inspector', 'overlay_file1', v)}
-                />
-                <ColorPicker 
-                  label="File 2 레이어" 
-                  description="두 번째 이미지의 오버레이 색상"
-                  value={preferences?.image_inspector?.overlay_file2}
-                  onChange={(v) => handleColorChange('image_inspector', 'overlay_file2', v)}
                 />
               </div>
             </div>

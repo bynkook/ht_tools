@@ -34,12 +34,10 @@ async def compare_images(
     output_resolution: int = Form(2000),       # 화면 출력용 최대 해상도 (1000-4000)
     output_quality: int = Form(85),            # JPEG 출력 품질 (50-100)
     pdf_dpi: int = Form(200),                  # PDF 변환 DPI (100-300)
-    # Optional color parameters
+    # Optional color parameters (모든 모드에서 diff 3색 공통 사용)
     color_diff_file1: str = Form(None),
     color_diff_file2: str = Form(None),
     color_diff_common: str = Form(None),
-    color_overlay_file1: str = Form(None),
-    color_overlay_file2: str = Form(None),
 ):
     """
     [POST] /image-compare/process
@@ -47,11 +45,9 @@ async def compare_images(
     """
     # Construct colors dictionary
     colors = {}
-    if color_diff_file1: colors['diff_file1'] = color_diff_file1
-    if color_diff_file2: colors['diff_file2'] = color_diff_file2
+    if color_diff_file1:  colors['diff_file1']  = color_diff_file1
+    if color_diff_file2:  colors['diff_file2']  = color_diff_file2
     if color_diff_common: colors['diff_common'] = color_diff_common
-    if color_overlay_file1: colors['overlay_file1'] = color_overlay_file1
-    if color_overlay_file2: colors['overlay_file2'] = color_overlay_file2
 
     # 파일 크기 제한 (30MB)
     MAX_FILE_SIZE = 30 * 1024 * 1024

@@ -66,13 +66,11 @@ export const fastApi = {
       if (quality.pdf_dpi != null)               formData.append('pdf_dpi',               quality.pdf_dpi);
     }
 
-    // 색상 파라미터 추가
+    // 색상 파라미터 추가 (모든 모드 diff 3색 공통)
     if (colors) {
-      if (colors.diff_file1)    formData.append('color_diff_file1',    colors.diff_file1);
-      if (colors.diff_file2)    formData.append('color_diff_file2',    colors.diff_file2);
-      if (colors.diff_common)   formData.append('color_diff_common',   colors.diff_common);
-      if (colors.overlay_file1) formData.append('color_overlay_file1', colors.overlay_file1);
-      if (colors.overlay_file2) formData.append('color_overlay_file2', colors.overlay_file2);
+      if (colors.diff_file1)  formData.append('color_diff_file1',  colors.diff_file1);
+      if (colors.diff_file2)  formData.append('color_diff_file2',  colors.diff_file2);
+      if (colors.diff_common) formData.append('color_diff_common', colors.diff_common);
     }
 
     const response = await fastApiClient.post('/image-compare/process', formData, {
