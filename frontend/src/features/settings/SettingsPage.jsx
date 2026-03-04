@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, RotateCcw, Palette, CheckCircle, AlertCircle, ShieldCheck, BarChart2, ExternalLink } from 'lucide-react';
 import { settingsApi } from '../../api/djangoApi';
 import { djangoClient } from '../../api/axiosConfig';
+import PresetAdminPanel from './components/PresetAdminPanel';
 
 const SettingsPage = () => {
   const navigate = useNavigate();
@@ -286,6 +287,7 @@ const SettingsPage = () => {
               </div>
               <ExternalLink size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
             </a>
+            <PresetAdminPanel />
           </div>
         </div>
       )}

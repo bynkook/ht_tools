@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, BarChart3, ChevronLeft, ChevronDown, ChevronUp, Home, FileText, Database, Save, Bookmark, Trash2, Globe, MoreVertical, Pencil, LogOut, RefreshCw } from 'lucide-react';
+import { Upload, BarChart3, ChevronLeft, ChevronDown, ChevronUp, Home, FileText, Database, Save, Globe, Lock, MoreVertical, Pencil, Trash2, LogOut, RefreshCw, Search } from 'lucide-react';
 
 const DataExplorerSidebar = ({ 
   onClose, 
@@ -27,7 +27,10 @@ const DataExplorerSidebar = ({
   
   // Fold/Unfold state for sections
   const [isDatasetExpanded, setIsDatasetExpanded] = useState(true);
-  const [isPresetExpanded, setIsPresetExpanded] = useState(true);
+  const [isPublicExpanded, setIsPublicExpanded] = useState(false);
+  const [isPrivateExpanded, setIsPrivateExpanded] = useState(true);
+  const [publicFilter, setPublicFilter] = useState('');
+  const [privateFilter, setPrivateFilter] = useState('');
 
   // 3-dot 메뉴 열림 상태 (현재 열린 preset의 id, 없으면 null)
   const [openMenuPresetId, setOpenMenuPresetId] = useState(null);
@@ -211,22 +214,12 @@ const DataExplorerSidebar = ({
         </div>
 
         {/* Section 3: Saved Presets */}
-        <div>
-          <button
-            onClick={() => setIsPresetExpanded(!isPresetExpanded)}
-            className="w-full text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3 flex items-center gap-2 hover:text-[var(--text-primary)] transition-colors"
-          >
-            <Bookmark size={12} />
-            <span className="flex-1 text-left">Saved Presets</span>
-            {isPresetExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          
-          {isPresetExpanded && <>
+        <div className="space-y-4">
           {/* Save Preset Button */}
           <button
             onClick={onSavePreset}
             disabled={isLoading || !canSavePreset}
-            className="flex items-center gap-3 w-full p-3 bg-white rounded-xl border border-gray-200 hover:shadow-md transition-all text-left group disabled:opacity-50 disabled:cursor-not-allowed mb-3"
+            className="flex items-center gap-3 w-full p-3 bg-white rounded-xl border border-gray-200 hover:shadow-md transition-all text-left group disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <div className="p-2 bg-purple-50 text-purple-600 rounded-lg shrink-0 group-hover:bg-purple-100">
               <Save size={20} />
@@ -237,105 +230,139 @@ const DataExplorerSidebar = ({
             </div>
           </button>
 
-          {/* Preset List */}
-          <div className="space-y-2">
-            {presets.length > 0 ? (
-              presets.map((preset) => (
-                <div
-                  key={preset.id}
-                  className="w-full flex items-center gap-2 p-1.5 bg-white rounded-lg border border-transparent hover:border-purple-200 hover:shadow-sm transition-all group"
-                  title={`Preset name: ${preset.name}\nMemo: ${preset.description || '-'}\nOwner ID: ${preset.owner_username || '-'}\nCreated: ${formatCreatedDate(preset.created_at)}`}
+          {/* Preset Item 렌더 함수 */}
+          {[
+            {
+              key: 'public',
+              label: 'Public Presets',
+              icon: <Globe size={12} />,
+              expanded: isPublicExpanded,
+              setExpanded: setIsPublicExpanded,
+              filter: publicFilter,
+              setFilter: setPublicFilter,
+              items: presets
+                .filter(p => p.is_public)
+                .sort((a, b) => a.name.localeCompare(b.name, 'ko')),
+            },
+            {
+              key: 'private',
+              label: 'My Presets',
+              icon: <Lock size={12} />,
+              expanded: isPrivateExpanded,
+              setExpanded: setIsPrivateExpanded,
+              filter: privateFilter,
+              setFilter: setPrivateFilter,
+              items: presets
+                .filter(p => !p.is_public)
+                .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)),
+            },
+          ].map(({ key, label, icon, expanded, setExpanded, filter, setFilter, items }) => {
+            const filtered = filter
+              ? items.filter(p => p.name.toLowerCase().includes(filter.toLowerCase()))
+              : items;
+            return (
+              <div key={key}>
+                {/* Box Header */}
+                <button
+                  onClick={() => setExpanded(v => !v)}
+                  className="w-full text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2 flex items-center gap-2 hover:text-[var(--text-primary)] transition-colors"
                 >
-                  <button
-                    onClick={() => onLoadPreset(preset.id)}
-                    disabled={isLoading}
-                    className="flex items-center gap-3 flex-1 min-w-0 text-left disabled:opacity-50"
-                  >
-                    <div className="p-1.5 bg-purple-50 text-purple-500 rounded-md shrink-0 group-hover:bg-purple-100 relative">
-                      <BarChart3 size={16} />
-                      {/* Public/Private indicator */}
-                      {preset.is_public ? (
-                        <Globe size={11} className="absolute -top-0.5 -right-0.5 text-green-600 bg-white rounded-full" />
-                      ) : null}
+                  {icon}
+                  <span className="flex-1 text-left">{label}</span>
+                  <span className="font-normal normal-case text-[10px] text-gray-400">{items.length}</span>
+                  {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+
+                {expanded && (
+                  <div className="space-y-1.5">
+                    {/* Quick filter */}
+                    <div className="relative mb-2">
+                      <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={filter}
+                        onChange={e => setFilter(e.target.value)}
+                        placeholder="이름 검색..."
+                        className="w-full pl-7 pr-2 py-1.5 text-[11px] border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:border-blue-300 focus:bg-white transition-colors"
+                      />
                     </div>
-                    <div className="min-w-0 flex-1">
-                      {/* Preset name - 2 lines max with ellipsis */}
-                      <p 
-                        className="font-medium text-xs text-[var(--text-primary)] line-clamp-2 leading-tight"
-                        style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-                      >
-                        {preset.name}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[9px] text-[var(--text-secondary)]">
-                          {formatDate(preset.updated_at)}
-                        </span>
-                        {!preset.is_owner && (
-                          <span className="text-[8px] text-gray-400 bg-gray-100 px-1 rounded">
-                            @{preset.owner_username}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                  {/* 3-dot 메뉴: 소유자 또는 Admin에게만 표시 */}
-                  {(preset.is_owner || isAdmin) && (
-                    <div
-                      className="relative shrink-0"
-                      ref={openMenuPresetId === preset.id ? menuRef : null}
-                    >
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenMenuPresetId(openMenuPresetId === preset.id ? null : preset.id);
-                        }}
-                        disabled={isLoading}
-                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
-                        title="옵션"
-                      >
-                        <MoreVertical size={14} />
-                      </button>
-                      {openMenuPresetId === preset.id && (
-                        <div className="absolute right-0 top-full mt-0.5 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[110px]">
-                          {/* 이름 변경: 소유자만 */}
-                          {preset.is_owner && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenMenuPresetId(null);
-                                onRenamePreset(preset);
-                              }}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
-                            >
-                              <Pencil size={12} />
-                              이름 변경
-                            </button>
-                          )}
-                          {/* 삭제: 소유자 또는 Admin */}
+
+                    {/* Preset List Box */}
+                    <div className="max-h-[200px] overflow-y-auto custom-scrollbar space-y-1">
+                      {filtered.length > 0 ? filtered.map((preset) => (
+                        <div
+                          key={preset.id}
+                          className="w-full flex items-center gap-2 p-1.5 bg-white rounded-lg border border-transparent hover:border-purple-200 hover:shadow-sm transition-all group"
+                          title={`Preset name: ${preset.name}\nMemo: ${preset.description || '-'}\nOwner: ${preset.owner_username || '-'}\nCreated: ${formatCreatedDate(preset.created_at)}`}
+                        >
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenMenuPresetId(null);
-                              onDeletePreset(preset);
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
+                            onClick={() => onLoadPreset(preset.id)}
+                            disabled={isLoading}
+                            className="flex items-center gap-2 flex-1 min-w-0 text-left disabled:opacity-50"
                           >
-                            <Trash2 size={12} />
-                            삭제
+                            <div className="p-1.5 bg-purple-50 text-purple-500 rounded-md shrink-0 group-hover:bg-purple-100">
+                              <BarChart3 size={14} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p
+                                className="font-medium text-xs text-[var(--text-primary)] leading-tight"
+                                style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                              >
+                                {preset.name}
+                              </p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[9px] text-[var(--text-secondary)]">{formatDate(preset.updated_at)}</span>
+                                {!preset.is_owner && (
+                                  <span className="text-[8px] text-gray-400 bg-gray-100 px-1 rounded">@{preset.owner_username}</span>
+                                )}
+                              </div>
+                            </div>
                           </button>
+                          {/* 3-dot 메뉴: 소유자 또는 Admin에게만 표시 */}
+                          {(preset.is_owner || isAdmin) && (
+                            <div className="relative shrink-0" ref={openMenuPresetId === preset.id ? menuRef : null}>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setOpenMenuPresetId(openMenuPresetId === preset.id ? null : preset.id); }}
+                                disabled={isLoading}
+                                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                                title="옵션"
+                              >
+                                <MoreVertical size={14} />
+                              </button>
+                              {openMenuPresetId === preset.id && (
+                                <div className="absolute right-0 top-full mt-0.5 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[110px]">
+                                  {preset.is_owner && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setOpenMenuPresetId(null); onRenamePreset(preset); }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+                                    >
+                                      <Pencil size={12} />이름 변경
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setOpenMenuPresetId(null); onDeletePreset(preset); }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
+                                  >
+                                    <Trash2 size={12} />삭제
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )) : (
+                        <div className="py-4 text-center bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+                          <p className="text-[10px] text-gray-400">
+                            {filter ? '검색 결과 없음' : '저장된 프리셋이 없습니다.'}
+                          </p>
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div className="py-6 text-center bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
-                <p className="text-[10px] text-gray-400">저장된 프리셋이 없습니다.</p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          </>}
+            );
+          })}
         </div>
       </div>
 
