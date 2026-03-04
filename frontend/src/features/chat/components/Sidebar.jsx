@@ -41,7 +41,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
         ? model.name.map((n) => n?.content || '').join(' ')
         : (model?.name || '');
       const searchable = `${model?.id || ''} ${model?.modelId || ''} ${model?.displayName || ''} ${nameText}`.toLowerCase();
-      return searchable.includes('gpt') && searchable.includes('oss');
+      return searchable.includes('gpt') && searchable.includes('oss') && !searchable.includes('low');
     });
 
     return preferred || modelList[0];
