@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Image as ImageIcon, RotateCcw, Play, Home, ChevronLeft, LogOut } from 'lucide-react';
+import { Image as ImageIcon, RotateCcw, Play, Home, ChevronLeft, LogOut, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import FileUploader from './FileUploader';
 import SettingsPanel from './SettingsPanel';
@@ -85,8 +85,11 @@ const ImageCompareSidebar = ({
         </button>
 
         <div>
-          <div className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-            File Upload
+          <div className="flex items-center gap-2 mb-3">
+            <Upload size={14} className="text-gray-400 shrink-0" />
+            <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+              File Upload
+            </span>
           </div>
           <div className="space-y-3">
             <FileUploader
@@ -103,9 +106,6 @@ const ImageCompareSidebar = ({
         </div>
         
         <div>
-          <div className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-            Settings
-          </div>
           <SettingsPanel
             settings={settings}
             onSettingsChange={setSettings}

@@ -1,9 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, RotateCcw, Palette, CheckCircle, AlertCircle, ShieldCheck, BarChart2, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Palette, CheckCircle, AlertCircle, ShieldCheck, BarChart2, ExternalLink, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react';
 import { settingsApi } from '../../api/djangoApi';
 import { djangoClient } from '../../api/axiosConfig';
 import PresetAdminPanel from './components/PresetAdminPanel';
+import SliderInput from './components/SliderInput';
+
+// Image Inspector 설정 기본값
+const COLOR_DEFAULTS = {
+  diff_file1: '#3B82F6',
+  diff_file2: '#DC2626',
+  diff_common: '#000000',
+  overlay_file1: '#F97316',
+  overlay_file2: '#22C55E',
+};
+
+const QUALITY_DEFAULTS = {
+  output_quality: 85,
+  output_resolution: 2000,
+  processing_resolution: 6000,
+  pdf_dpi: 200,
+};
 
 const SettingsPage = () => {
   const navigate = useNavigate();
@@ -14,6 +31,7 @@ const SettingsPage = () => {
   const [originalPreferences, setOriginalPreferences] = useState(null);
   const [message, setMessage] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -81,28 +99,67 @@ const SettingsPage = () => {
           [key]: value
         }
       };
-      // Check if actually different from original
       const isActuallyChanged = JSON.stringify(next) !== JSON.stringify(originalPreferences);
       setIsDirty(isActuallyChanged);
       return next;
     });
   };
 
+  const handleQualityChange = (key, value) => {
+    setPreferences(prev => {
+      const next = {
+        ...prev,
+        image_inspector: {
+          ...(prev.image_inspector || {}),
+          [key]: value,
+        },
+      };
+      const isActuallyChanged = JSON.stringify(next) !== JSON.stringify(originalPreferences);
+      setIsDirty(isActuallyChanged);
+      return next;
+    });
+  };
+
+  // 색상만 기본값 복원 (품질 설정 유지)
+  const handleResetColors = () => {
+    if (window.confirm('색상 설정을 기본값으로 되돌리시겠습니까? (저장 버튼을 눌러야 반영됩니다)')) {
+      setPreferences(prev => ({
+        ...prev,
+        image_inspector: {
+          ...(prev.image_inspector || {}),
+          ...COLOR_DEFAULTS,
+        },
+      }));
+      setIsDirty(true);
+    }
+  };
+
+  // 품질 설정만 기본값 복원 (색상 유지)
+  const handleResetQuality = () => {
+    if (window.confirm('이미지 품질 설정을 기본값으로 되돌리시겠습니까? (저장 버튼을 눌러야 반영됩니다)')) {
+      setPreferences(prev => ({
+        ...prev,
+        image_inspector: {
+          ...(prev.image_inspector || {}),
+          ...QUALITY_DEFAULTS,
+        },
+      }));
+      setIsDirty(true);
+    }
+  };
+
+  // 전체 기본값 복원 (헤더 버튼)
   const handleReset = () => {
-    if (window.confirm('Image Inspector 설정을 기본값으로 되돌리시겠습니까? (저장 버튼을 눌러야 반영됩니다)')) {
-        const imageInspectorDefaults = {
-            "diff_file1": "#3B82F6",
-            "diff_file2": "#DC2626",
-            "diff_common": "#000000",
-            "overlay_file1": "#F97316",
-            "overlay_file2": "#22C55E"
-        };
-        
-        setPreferences(prev => ({
-            ...prev,
-            "image_inspector": imageInspectorDefaults
-        }));
-        setIsDirty(true);
+    if (window.confirm('Image Inspector 모든 설정을 기본값으로 되돌리시겠습니까? (저장 버튼을 눌러야 반영됩니다)')) {
+      setPreferences(prev => ({
+        ...prev,
+        image_inspector: {
+          ...(prev.image_inspector || {}),
+          ...COLOR_DEFAULTS,
+          ...QUALITY_DEFAULTS,
+        },
+      }));
+      setIsDirty(true);
     }
   };
 
@@ -188,10 +245,18 @@ const SettingsPage = () => {
             <div className="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center">
               <Palette className="text-purple-600" size={24} />
             </div>
-            <div>
+            <div className="flex-1">
               <h2 className="text-lg font-bold text-slate-900">Image Inspector 색상 설정</h2>
               <p className="text-sm text-slate-500">이미지 비교 시 사용되는 하이라이트 색상을 커스터마이징합니다.</p>
             </div>
+            <button
+              onClick={handleResetColors}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-600 text-xs font-semibold rounded-xl hover:bg-slate-100 transition-all"
+              title="색상 기본값 복원"
+            >
+              <RotateCcw size={12} />
+              기본값
+            </button>
           </div>
           
           <div className="p-8">
@@ -243,6 +308,114 @@ const SettingsPage = () => {
                   onChange={(v) => handleColorChange('image_inspector', 'overlay_file2', v)}
                 />
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Image Inspector Quality Settings */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-400/60 overflow-hidden mb-8">
+          {/* 헤더 */}
+          <div className="px-8 py-6 border-b border-slate-100 bg-white flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-sky-50 flex items-center justify-center">
+              <SlidersHorizontal className="text-sky-600" size={24} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-lg font-bold text-slate-900">Image Inspector 품질 설정</h2>
+              <p className="text-sm text-slate-500">이미지 변환 및 출력 품질을 조정합니다.</p>
+            </div>
+            <button
+              onClick={handleResetQuality}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-600 text-xs font-semibold rounded-xl hover:bg-slate-100 transition-all"
+              title="품질 기본값 복원"
+            >
+              <RotateCcw size={12} />
+              기본값
+            </button>
+          </div>
+
+          <div className="p-8">
+            {/* 출력 품질 섹션 */}
+            <div className="mb-8">
+              <div className="flex items-center gap-2 mb-6">
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">비교 결과 출력 품질</h3>
+              </div>
+              <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+                비교 연산이 완료된 후 브라우저에 표시할 이미지의 해상도와 품질입니다.
+                값을 낮추면 응답 속도가 향상됩니다.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <SliderInput
+                  label="출력 해상도"
+                  description="화면에 표시되는 이미지의 최대 크기"
+                  value={preferences?.image_inspector?.output_resolution ?? QUALITY_DEFAULTS.output_resolution}
+                  onChange={(v) => handleQualityChange('output_resolution', v)}
+                  min={1000}
+                  max={4000}
+                  step={100}
+                  unit="px"
+                />
+                <SliderInput
+                  label="JPEG 출력 품질"
+                  description="비교 결과 이미지의 JPEG 압축 품질"
+                  value={preferences?.image_inspector?.output_quality ?? QUALITY_DEFAULTS.output_quality}
+                  onChange={(v) => handleQualityChange('output_quality', v)}
+                  min={50}
+                  max={100}
+                  step={1}
+                  unit="%"
+                />
+              </div>
+            </div>
+
+            <div className="h-px bg-slate-100 mb-6"></div>
+
+            {/* 비교 연산 품질 섹션 (접이식) */}
+            <div>
+              <button
+                onClick={() => setIsAdvancedOpen(v => !v)}
+                className="w-full flex items-center justify-between group"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">비교 연산 품질 (고급)</h3>
+                </div>
+                {isAdvancedOpen
+                  ? <ChevronUp size={16} className="text-slate-400" />
+                  : <ChevronDown size={16} className="text-slate-400" />
+                }
+              </button>
+
+              {isAdvancedOpen && (
+                <div className="mt-6">
+                  <p className="text-xs text-slate-500 mb-6 p-3 bg-amber-50 rounded-xl border border-amber-100 leading-relaxed">
+                    ⚠️ 비교 연산에 사용되는 이미지 해상도를 설정합니다.
+                    값을 높이면 미세한 차이를 더 정확하게 감지하지만 처리 시간과 메모리 사용량이 증가합니다.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <SliderInput
+                      label="연산용 해상도"
+                      description="비교 연산 시 사용하는 이미지 최대 크기. 클수록 정확하나 느림"
+                      value={preferences?.image_inspector?.processing_resolution ?? QUALITY_DEFAULTS.processing_resolution}
+                      onChange={(v) => handleQualityChange('processing_resolution', v)}
+                      min={4000}
+                      max={8000}
+                      step={500}
+                      unit="px"
+                    />
+                    <SliderInput
+                      label="PDF 변환 DPI"
+                      description="PDF 페이지를 이미지로 변환할 때의 해상도"
+                      value={preferences?.image_inspector?.pdf_dpi ?? QUALITY_DEFAULTS.pdf_dpi}
+                      onChange={(v) => handleQualityChange('pdf_dpi', v)}
+                      min={100}
+                      max={300}
+                      step={25}
+                      unit="dpi"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -55,7 +55,7 @@ def tiff_to_image(tiff_bytes: bytes, page_num: int = 0) -> Tuple[np.ndarray, int
         raise ValueError(f"TIFF 변환 실패: {str(e)}")
 
 
-def load_file(file_bytes: bytes, content_type: str, page_num: int = 0) -> Tuple[np.ndarray, int, str]:
+def load_file(file_bytes: bytes, content_type: str, page_num: int = 0, dpi: int = 200) -> Tuple[np.ndarray, int, str]:
     """
     파일 로드 (이미지 또는 PDF)
     
@@ -63,13 +63,14 @@ def load_file(file_bytes: bytes, content_type: str, page_num: int = 0) -> Tuple[
         file_bytes: 파일 바이트 데이터
         content_type: MIME 타입
         page_num: PDF 페이지 번호
+        dpi: PDF 변환 해상도 (PDF 파일에만 적용)
     
     Returns:
         (이미지 BGR 배열, 총 페이지 수, 파일 타입)
     """
     try:
         if "pdf" in content_type.lower():
-            img_bgr, total_pages = pdf_to_bgr(file_bytes, page_num=page_num)
+            img_bgr, total_pages = pdf_to_bgr(file_bytes, page_num=page_num, dpi=dpi)
             return img_bgr, total_pages, "pdf"
         elif "tiff" in content_type.lower() or "tif" in content_type.lower():
             img_bgr, total_pages = tiff_to_image(file_bytes, page_num=page_num)
@@ -401,60 +402,89 @@ def process_comparison(
     page1: int = 0,
     page2: int = 0,
     bin_threshold: int = 200,
-    colors: dict = None
+    colors: dict = None,
+    # 품질 설정
+    processing_resolution: int = 6000,  # 비교 연산용 최대 해상도 (4000-8000)
+    output_resolution: int = 2000,      # 화면 출력용 최대 해상도 (1000-4000)
+    output_quality: int = 85,           # JPEG 출력 품질 (50-100)
+    pdf_dpi: int = 200,                 # PDF 변환 DPI (100-300)
 ) -> dict:
     """
-    이미지 비교 전체 파이프라인
-    
+    이미지 비교 전체 파이프라인 (2단계)
+
+    Stage 1 — 고해상도 비교 연산:
+        PDF 파일은 pdf_dpi 해상도로 변환하고, processing_resolution 범위 내에서
+        비교 연산(정렬 + 차이 계산)을 수행한다. 원본 해상도가 높을수록 미세한
+        차이를 더 정확하게 감지할 수 있다.
+
+    Stage 2 — 출력용 다운샘플:
+        브라우저 전송 전에 output_resolution으로 다운샘플하고 output_quality로
+        JPEG 인코딩한다. 다운로드용 PNG는 연산 해상도(고해상도)를 그대로 유지한다.
+
     Args:
-        ...
         colors: 색상 설정 딕셔너리
+        processing_resolution: 비교 연산에 사용할 최대 해상도 (px). 원본이 이보다
+            크면 다운샘플 후 연산한다.
+        output_resolution: 브라우저 출력용 최대 해상도 (px). 연산 완료 후 다운샘플.
+        output_quality: JPEG 인코딩 품질 (50-100).
+        pdf_dpi: PDF → 이미지 변환 해상도.
     """
+    # 입력값 범위 보정 (clamp)
+    processing_resolution = max(4000, min(8000, processing_resolution))
+    output_resolution = max(1000, min(4000, output_resolution))
+    output_quality = max(50, min(100, output_quality))
+    pdf_dpi = max(100, min(300, pdf_dpi))
+
     try:
-        # 1. 파일 로드
-        logger.info("파일 로드 중...")
-        img1, pages1, type1 = load_file(file1_bytes, file1_type, page1)
-        img2, pages2, type2 = load_file(file2_bytes, file2_type, page2)
-        
-        # 2. 다운샘플링
-        img1 = downsample_if_needed(img1, max_dimension=4000)
-        img2 = downsample_if_needed(img2, max_dimension=4000)
-        
-        # 3. 이미지 정렬
+        # Stage 1-A. 파일 로드 (PDF는 사용자 지정 DPI 적용)
+        logger.info(f"파일 로드 중... (pdf_dpi={pdf_dpi})")
+        img1, pages1, type1 = load_file(file1_bytes, file1_type, page1, dpi=pdf_dpi)
+        img2, pages2, type2 = load_file(file2_bytes, file2_type, page2, dpi=pdf_dpi)
+
+        # Stage 1-B. 비교 연산용 다운샘플 (processing_resolution 기준)
+        img1 = downsample_if_needed(img1, max_dimension=processing_resolution)
+        img2 = downsample_if_needed(img2, max_dimension=processing_resolution)
+        logger.info(f"연산 해상도 적용: max={processing_resolution}px, "
+                    f"img1={img1.shape[1]}x{img1.shape[0]}, "
+                    f"img2={img2.shape[1]}x{img2.shape[0]}")
+
+        # Stage 1-C. 이미지 정렬 (고해상도 기준)
         logger.info("이미지 정렬 중...")
         _, aligned_img2, H, quality = align_images(img1, img2, nfeatures=feature_count)
-        
+
         alignment_failed = False
-        # 폴백: 정렬 실패 시
         if aligned_img2 is None or quality < 0.3:
             logger.warning("ORB 정렬 실패, 폴백 정렬 사용")
             aligned_img2 = fallback_align(img1, img2)
             alignment_failed = True
-        
-        # 4. 비교
+
+        # Stage 1-D. 비교 연산 (고해상도에서 수행 → 미세 차이 정확 감지)
         logger.info(f"비교 모드: {mode}")
-        
         file1_result = img1
         file2_result = aligned_img2
 
         if mode == "overlay":
             result = compare_images_overlay(img1, aligned_img2, bin_thresh=bin_threshold, colors=colors)
-            # Overlay 모드에서는 원본(정렬된) 그냥 반환
         else:  # difference
             result = compare_images(img1, aligned_img2, diff_thresh=diff_threshold, bin_thresh=bin_threshold, colors=colors)
-            # Difference 모드에서는 하이라이트된 개별 이미지 생성
             file1_result, file2_result = generate_highlighted_images(
                 img1, aligned_img2, diff_thresh=diff_threshold, bin_thresh=bin_threshold, colors=colors
             )
-        
-        # 5. 인코딩
-        logger.info("이미지 인코딩 중...")
-        result_base64 = encode_image_to_base64(result, format='JPEG', quality=85)
-        file1_base64 = encode_image_to_base64(file1_result, format='JPEG', quality=85)
-        file2_base64 = encode_image_to_base64(file2_result, format='JPEG', quality=85)
-        
+
+        # Stage 2-A. 다운로드용 PNG: 연산 해상도(고해상도) 그대로 보존
         download_base64 = encode_image_to_base64(result, format='PNG')
-        
+
+        # Stage 2-B. 화면 출력용: output_resolution으로 다운샘플 후 JPEG 인코딩
+        result_out = downsample_if_needed(result, max_dimension=output_resolution)
+        file1_out = downsample_if_needed(file1_result, max_dimension=output_resolution)
+        file2_out = downsample_if_needed(file2_result, max_dimension=output_resolution)
+        logger.info(f"출력 해상도 적용: max={output_resolution}px, quality={output_quality}, "
+                    f"result={result_out.shape[1]}x{result_out.shape[0]}")
+
+        result_base64 = encode_image_to_base64(result_out, format='JPEG', quality=output_quality)
+        file1_base64 = encode_image_to_base64(file1_out, format='JPEG', quality=output_quality)
+        file2_base64 = encode_image_to_base64(file2_out, format='JPEG', quality=output_quality)
+
         return {
             "result_base64": result_base64,
             "file1_base64": file1_base64,
@@ -466,10 +496,11 @@ def process_comparison(
                 "file2_pages": pages2,
                 "match_quality": quality,
                 "alignment_failed": alignment_failed,
-                "result_size": f"{result.shape[1]}x{result.shape[0]}"
+                "processing_size": f"{result.shape[1]}x{result.shape[0]}",
+                "result_size": f"{result_out.shape[1]}x{result_out.shape[0]}"
             }
         }
-    
+
     except Exception as e:
         logger.error(f"비교 처리 실패: {str(e)}")
         raise

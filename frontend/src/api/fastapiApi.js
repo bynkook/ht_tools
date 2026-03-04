@@ -41,11 +41,12 @@ export const fastApi = {
   },
 
   // 이미지 비교 요청
-  // params: { file1, file2, mode, diffThreshold, featureCount, page1, page2, colors }
+  // params: { file1, file2, mode, diffThreshold, featureCount, page1, page2, colors, quality }
   compareImages: async (params) => {
     const { 
       file1, file2, mode, diffThreshold, featureCount, page1, page2, 
-      colors // { diff_file1, diff_file2, diff_common, overlay_file1, overlay_file2 }
+      colors,   // { diff_file1, diff_file2, diff_common, overlay_file1, overlay_file2 }
+      quality,  // { output_quality, output_resolution, processing_resolution, pdf_dpi }
     } = params;
     
     const formData = new FormData();
@@ -57,11 +58,19 @@ export const fastApi = {
     formData.append('page1', page1);
     formData.append('page2', page2);
     
+    // 품질 파라미터 추가
+    if (quality) {
+      if (quality.output_quality != null)        formData.append('output_quality',        quality.output_quality);
+      if (quality.output_resolution != null)     formData.append('output_resolution',     quality.output_resolution);
+      if (quality.processing_resolution != null) formData.append('processing_resolution', quality.processing_resolution);
+      if (quality.pdf_dpi != null)               formData.append('pdf_dpi',               quality.pdf_dpi);
+    }
+
     // 색상 파라미터 추가
     if (colors) {
-      if (colors.diff_file1) formData.append('color_diff_file1', colors.diff_file1);
-      if (colors.diff_file2) formData.append('color_diff_file2', colors.diff_file2);
-      if (colors.diff_common) formData.append('color_diff_common', colors.diff_common);
+      if (colors.diff_file1)    formData.append('color_diff_file1',    colors.diff_file1);
+      if (colors.diff_file2)    formData.append('color_diff_file2',    colors.diff_file2);
+      if (colors.diff_common)   formData.append('color_diff_common',   colors.diff_common);
       if (colors.overlay_file1) formData.append('color_overlay_file1', colors.overlay_file1);
       if (colors.overlay_file2) formData.append('color_overlay_file2', colors.overlay_file2);
     }
@@ -70,7 +79,7 @@ export const fastApi = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
-      timeout: 60000, // 60초 타임아웃 (대용량 파일 처리)
+      timeout: 120000, // 120초 타임아웃 (고해상도 처리 대응)
     });
     
     return response.data;

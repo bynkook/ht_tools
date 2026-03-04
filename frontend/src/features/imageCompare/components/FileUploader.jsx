@@ -87,7 +87,7 @@ const FileUploader = ({ onFileSelect, label, accept = "image/*,application/pdf,.
           onDragLeave={handleDragLeave}
           onClick={() => fileInputRef.current?.click()}
           className={`
-            relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
+            relative border-2 border-dashed rounded-lg p-4 text-center cursor-pointer
             transition-all duration-200
             ${isDragging 
               ? 'border-blue-500 bg-blue-50' 
@@ -103,11 +103,11 @@ const FileUploader = ({ onFileSelect, label, accept = "image/*,application/pdf,.
             className="hidden"
           />
           
-          <Upload className="mx-auto mb-3 text-gray-400" size={32} />
-          <p className="text-sm text-gray-600 mb-1">
+          <Upload className="mx-auto mb-1.5 text-gray-400" size={20} />
+          <p className="text-xs text-gray-600 mb-0.5">
             클릭하거나 파일을 드래그하세요
           </p>
-          <p className="text-xs text-gray-500">
+          <p className="text-[11px] text-gray-400">
             이미지 (JPEG, PNG, GIF, TIFF) 또는 PDF (최대 {maxSizeMB}MB)
           </p>
         </div>

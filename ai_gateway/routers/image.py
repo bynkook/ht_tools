@@ -3,9 +3,11 @@ FastAPI Router: Image Compare
 이미지/PDF/TIFF 비교 엔드포인트
 """
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 import asyncio
+import functools
 import logging
+
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 
 from ..services.image_processor import process_comparison
 from ..dependencies import verify_token
@@ -27,6 +29,11 @@ async def compare_images(
     page1: int = Form(0),
     page2: int = Form(0),
     bin_threshold: int = Form(200),
+    # 품질 설정
+    processing_resolution: int = Form(6000),  # 비교 연산용 최대 해상도 (4000-8000)
+    output_resolution: int = Form(2000),       # 화면 출력용 최대 해상도 (1000-4000)
+    output_quality: int = Form(85),            # JPEG 출력 품질 (50-100)
+    pdf_dpi: int = Form(200),                  # PDF 변환 DPI (100-300)
     # Optional color parameters
     color_diff_file1: str = Form(None),
     color_diff_file2: str = Form(None),
@@ -95,8 +102,7 @@ async def compare_images(
             
             # CPU-bound 작업을 별도 스레드에서 실행 (이벤트 루프 블록 방지)
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,  # ThreadPoolExecutor 사용
+            fn = functools.partial(
                 process_comparison,
                 file1_bytes,
                 file1.content_type,
@@ -108,10 +114,19 @@ async def compare_images(
                 page1,
                 page2,
                 bin_threshold,
-                colors # Pass colors dict
+                colors,
+                processing_resolution=processing_resolution,
+                output_resolution=output_resolution,
+                output_quality=output_quality,
+                pdf_dpi=pdf_dpi,
             )
-            
-            logger.info(f"Image comparison completed: {result['metadata']['result_size']}")
+            result = await loop.run_in_executor(None, fn)
+
+            logger.info(
+                f"Image comparison completed: "
+                f"processing={result['metadata']['processing_size']}, "
+                f"output={result['metadata']['result_size']}"
+            )
             return result
         
         except ValueError as e:

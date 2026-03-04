@@ -32,7 +32,7 @@ from PyPDF2 import PdfReader, PdfWriter
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DPI = 150
+_DEFAULT_DPI = 200
 
 
 def _single_page_bytes(reader: PdfReader, page_index: int) -> bytes:
@@ -53,7 +53,7 @@ def fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI) -> np.ndarray:
 
     Args:
         page: fitz.Page 객체
-        dpi: 렌더링 해상도 (기본 150)
+        dpi: 렌더링 해상도 (기본 200)
 
     Returns:
         BGR numpy 배열
@@ -120,7 +120,7 @@ def pdf_to_bgr(
     Args:
         file_bytes: PDF 파일 바이트
         page_num: 요청 페이지 번호 (0-based, 범위 초과 시 0으로 보정)
-        dpi: 렌더링 해상도 (기본 150)
+        dpi: 렌더링 해상도 (기본 200)
 
     Returns:
         (BGR numpy 배열, 전체 페이지 수)

@@ -137,8 +137,11 @@ const handleFile1Select = useCallback((file, page) => {
     const p1 = typeof overridePage1 === 'number' ? overridePage1 : page1;
     const p2 = typeof overridePage2 === 'number' ? overridePage2 : page2;
     
-// Generate a unique cache key based on inputs and settings
-    const cacheKey = `${p1}-${p2}-${settings.mode}-${settings.diffThreshold}-${settings.featureCount}`;
+// Generate a unique cache key based on inputs, settings, and quality params
+    const qualityKey = userSettings
+      ? `q${userSettings.output_quality ?? 85}-r${userSettings.output_resolution ?? 2000}-p${userSettings.processing_resolution ?? 6000}-d${userSettings.pdf_dpi ?? 200}`
+      : 'q-default';
+    const cacheKey = `${p1}-${p2}-${settings.mode}-${settings.diffThreshold}-${settings.featureCount}-${qualityKey}`;
 
     // Check cache first - return immediately without triggering loading state
     const cachedResult = resultCache.current.get(cacheKey);
@@ -169,7 +172,23 @@ const handleFile1Select = useCallback((file, page) => {
         featureCount: settings.featureCount,
         page1: p1,
         page2: p2,
-        colors: userSettings // 사용자 설정 색상 전달
+        colors: userSettings
+          ? {
+              diff_file1:    userSettings.diff_file1,
+              diff_file2:    userSettings.diff_file2,
+              diff_common:   userSettings.diff_common,
+              overlay_file1: userSettings.overlay_file1,
+              overlay_file2: userSettings.overlay_file2,
+            }
+          : null,
+        quality: userSettings
+          ? {
+              output_quality:        userSettings.output_quality,
+              output_resolution:     userSettings.output_resolution,
+              processing_resolution: userSettings.processing_resolution,
+              pdf_dpi:               userSettings.pdf_dpi,
+            }
+          : null,
       });
       
 // Store result in cache (LRU automatically handles size limit)
