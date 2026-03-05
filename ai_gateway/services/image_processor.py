@@ -16,6 +16,16 @@ from .pdf2img import pdf_to_bgr
 logger = logging.getLogger(__name__)
 
 
+def _img_debug_info(img: np.ndarray) -> str:
+    """로그용 이미지 메타정보 문자열 생성."""
+    if img is None:
+        return "shape=None dtype=None size=0.00MB"
+    return (
+        f"shape={img.shape} dtype={img.dtype} "
+        f"size={img.nbytes / 1024 / 1024:.2f}MB"
+    )
+
+
 def tiff_to_image(tiff_bytes: bytes, page_num: int = 0) -> Tuple[np.ndarray, int]:
     """
     Multi-page TIFF를 이미지로 변환
@@ -51,7 +61,7 @@ def tiff_to_image(tiff_bytes: bytes, page_num: int = 0) -> Tuple[np.ndarray, int
         return img_bgr, total_pages
         
     except Exception as e:
-        logger.error(f"TIFF 변환 실패: {str(e)}")
+        logger.error("TIFF 변환 실패: %s", e)
         raise ValueError(f"TIFF 변환 실패: {str(e)}")
 
 
@@ -69,11 +79,21 @@ def load_file(file_bytes: bytes, content_type: str, page_num: int = 0, dpi: int 
         (이미지 BGR 배열, 총 페이지 수, 파일 타입)
     """
     try:
+        logger.debug(
+            "load_file start: content_type=%s page_num=%s dpi=%s size=%.2fMB",
+            content_type,
+            page_num,
+            dpi,
+            len(file_bytes) / 1024 / 1024,
+        )
+
         if "pdf" in content_type.lower():
             img_bgr, total_pages = pdf_to_bgr(file_bytes, page_num=page_num, dpi=dpi)
+            logger.debug("load_file complete (pdf): pages=%s %s", total_pages, _img_debug_info(img_bgr))
             return img_bgr, total_pages, "pdf"
         elif "tiff" in content_type.lower() or "tif" in content_type.lower():
             img_bgr, total_pages = tiff_to_image(file_bytes, page_num=page_num)
+            logger.debug("load_file complete (tiff): pages=%s %s", total_pages, _img_debug_info(img_bgr))
             return img_bgr, total_pages, "tiff"
         else:
             arr = np.frombuffer(file_bytes, np.uint8)
@@ -81,14 +101,20 @@ def load_file(file_bytes: bytes, content_type: str, page_num: int = 0, dpi: int 
             
             if img is None:
                 raise ValueError("이미지 디코딩 실패")
+
+            logger.debug("load_file complete (image): pages=1 %s", _img_debug_info(img))
             
             return img, 1, "image"
+    except MemoryError:
+        raise  # → process_comparison의 except MemoryError에서 처리
+    except ValueError:
+        raise  # 하위 함수가 이미 적절한 메시지를 포함
     except Exception as e:
-        logger.error(f"파일 로드 실패: {str(e)}")
+        logger.error("파일 로드 실패: %s: %s", type(e).__name__, str(e))
         raise ValueError(f"파일 로드 실패: {str(e)}")
 
 
-def downsample_if_needed(img: np.ndarray, max_dimension: int = 4000) -> np.ndarray:
+def downsample_if_needed(img: np.ndarray, max_dimension: int = 6000) -> np.ndarray:
     """
     이미지가 너무 크면 다운샘플링
     
@@ -101,13 +127,26 @@ def downsample_if_needed(img: np.ndarray, max_dimension: int = 4000) -> np.ndarr
     """
     h, w = img.shape[:2]
     max_size = max(h, w)
+    logger.debug(
+        "downsample_if_needed start: max_dimension=%s current=%sx%s",
+        max_dimension,
+        w,
+        h,
+    )
     
     if max_size > max_dimension:
         scale = max_dimension / max_size
         new_w = int(w * scale)
         new_h = int(h * scale)
         img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        logger.info(f"이미지 다운샘플링: {w}x{h} -> {new_w}x{new_h}")
+        logger.info("이미지 다운샘플링: %sx%s -> %sx%s", w, h, new_w, new_h)
+        logger.debug(
+            "downsample_if_needed resized: scale=%.4f %s",
+            scale,
+            _img_debug_info(img),
+        )
+    else:
+        logger.debug("downsample_if_needed skipped: %s", _img_debug_info(img))
     
     return img
 
@@ -127,9 +166,17 @@ def align_images(A_bgr: np.ndarray, B_bgr: np.ndarray, nfeatures: int = 4000) ->
     A_gray = cv2.cvtColor(A_bgr, cv2.COLOR_BGR2GRAY)
     B_gray = cv2.cvtColor(B_bgr, cv2.COLOR_BGR2GRAY)
 
+    logger.debug(
+        "align_images start: nfeatures=%s A=%s B=%s",
+        nfeatures,
+        _img_debug_info(A_bgr),
+        _img_debug_info(B_bgr),
+    )
+
     orb = cv2.ORB_create(nfeatures=nfeatures)
     kp1, des1 = orb.detectAndCompute(A_gray, None)
     kp2, des2 = orb.detectAndCompute(B_gray, None)
+    logger.debug("align_images keypoints: kp1=%s kp2=%s", len(kp1), len(kp2))
 
     if des1 is None or des2 is None or len(kp1) < 4 or len(kp2) < 4:
         logger.warning("특징점 부족, 정렬 실패")
@@ -138,8 +185,9 @@ def align_images(A_bgr: np.ndarray, B_bgr: np.ndarray, nfeatures: int = 4000) ->
     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
     try:
         matches = bf.knnMatch(des1, des2, k=2)
-    except Exception:
-        logger.warning("특징점 매칭 실패")
+        logger.debug("align_images knnMatch total=%s", len(matches))
+    except Exception as e:
+        logger.warning("특징점 매칭 실패: %s: %s", type(e).__name__, e)
         return A_bgr, None, None, 0
 
     good_matches = []
@@ -151,8 +199,10 @@ def align_images(A_bgr: np.ndarray, B_bgr: np.ndarray, nfeatures: int = 4000) ->
 
     min_matches = 10
     if len(good_matches) < min_matches:
-        logger.warning(f"충분한 매칭 부족: {len(good_matches)}/{min_matches}")
+        logger.warning("충분한 매칭 부족: %s/%s", len(good_matches), min_matches)
         return A_bgr, None, None, len(good_matches) / min_matches
+
+    logger.debug("align_images good_matches=%s", len(good_matches))
 
     src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
     dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
@@ -165,6 +215,12 @@ def align_images(A_bgr: np.ndarray, B_bgr: np.ndarray, nfeatures: int = 4000) ->
 
     inliers = np.sum(mask)
     match_quality = inliers / len(good_matches) if len(good_matches) > 0 else 0
+    logger.debug(
+        "align_images homography: inliers=%s/%s quality=%.4f",
+        int(inliers),
+        len(good_matches),
+        match_quality,
+    )
 
     hA, wA = A_bgr.shape[:2]
     warped_B = cv2.warpPerspective(B_bgr, H, (wA, hA),
@@ -172,7 +228,7 @@ def align_images(A_bgr: np.ndarray, B_bgr: np.ndarray, nfeatures: int = 4000) ->
                                    borderMode=cv2.BORDER_CONSTANT,
                                    borderValue=(255, 255, 255))
 
-    logger.info(f"정렬 성공: 매칭 품질 {match_quality:.2f}")
+    logger.info("정렬 성공: 매칭 품질 %.2f", match_quality)
     return A_bgr, warped_B, H, match_quality
 
 
@@ -209,61 +265,6 @@ def hex_to_bgr(hex_color: str) -> Tuple[int, int, int]:
     hex_color = hex_color.lstrip('#')
     rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
     return (rgb[2], rgb[1], rgb[0])  # Convert RGB to BGR
-
-def compare_images(
-    A_bgr: np.ndarray, 
-    B_aligned_bgr: np.ndarray, 
-    diff_thresh: int = 30, 
-    bin_thresh: int = 200,
-    colors: dict = None
-) -> np.ndarray:
-    """
-    두 이미지 비교 (차이점 강조)
-    
-    Args:
-        colors: {
-            'diff_file1': '#RRGGBB', 
-            'diff_file2': '#RRGGBB', 
-            'diff_common': '#RRGGBB'
-        }
-    """
-    # Default colors if not provided
-    if colors is None:
-        colors = {}
-    
-    c_file1 = hex_to_bgr(colors.get('diff_file1', '#0000FF')) # Blue default
-    c_file2 = hex_to_bgr(colors.get('diff_file2', '#FF0000')) # Red default
-    c_common = hex_to_bgr(colors.get('diff_common', '#000000')) # Black default
-
-    h, w = A_bgr.shape[:2]
-    
-    A_gray = cv2.cvtColor(A_bgr, cv2.COLOR_BGR2GRAY)
-    B_gray = cv2.cvtColor(B_aligned_bgr, cv2.COLOR_BGR2GRAY)
-    
-    _, A_bin = cv2.threshold(A_gray, bin_thresh, 255, cv2.THRESH_BINARY_INV)
-    _, B_bin = cv2.threshold(B_gray, bin_thresh, 255, cv2.THRESH_BINARY_INV)
-    
-    diff = cv2.absdiff(A_gray, B_gray)
-    _, diff_mask = cv2.threshold(diff, diff_thresh, 255, cv2.THRESH_BINARY)
-    
-    only_A = np.logical_and(A_bin > 0, B_bin == 0).astype(np.uint8) * 255
-    only_B = np.logical_and(B_bin > 0, A_bin == 0).astype(np.uint8) * 255
-    both = np.logical_and(A_bin > 0, B_bin > 0).astype(np.uint8) * 255
-    
-    diff_common = np.logical_and(diff_mask > 0, both > 0)
-    darker_in_A = np.logical_and(diff_common, A_gray < B_gray)
-    darker_in_B = np.logical_and(diff_common, B_gray < A_gray)
-    
-    only_A = np.logical_or(only_A > 0, darker_in_A)
-    only_B = np.logical_or(only_B > 0, darker_in_B)
-    both = np.logical_and(both > 0, ~diff_mask.astype(bool))
-    
-    result = np.full((h, w, 3), 255, dtype=np.uint8)
-    result[both] = c_common
-    result[only_A] = c_file1
-    result[only_B] = c_file2
-    
-    return result
 
 
 def compare_images_overlay(
@@ -321,6 +322,13 @@ def encode_image_to_base64(img: np.ndarray, format: str = 'JPEG', quality: int =
     Returns:
         base64 인코딩된 data URI
     """
+    logger.debug(
+        "encode_image_to_base64 start: format=%s quality=%s %s",
+        format,
+        quality,
+        _img_debug_info(img),
+    )
+
     if format.upper() == 'JPEG':
         encode_param = [cv2.IMWRITE_JPEG_QUALITY, quality]
         _, buffer = cv2.imencode('.jpg', img, encode_param)
@@ -330,6 +338,12 @@ def encode_image_to_base64(img: np.ndarray, format: str = 'JPEG', quality: int =
         mime_type = 'image/png'
     
     base64_str = base64.b64encode(buffer).decode('utf-8')
+    logger.debug(
+        "encode_image_to_base64 done: mime=%s encoded_bytes=%s base64_chars=%s",
+        mime_type,
+        len(buffer),
+        len(base64_str),
+    )
     return f"data:{mime_type};base64,{base64_str}"
 
 
@@ -401,7 +415,6 @@ def process_comparison(
     file1_type: str,
     file2_bytes: bytes,
     file2_type: str,
-    mode: str = "difference",
     diff_threshold: int = 30,
     feature_count: int = 4000,
     page1: int = 0,
@@ -413,6 +426,7 @@ def process_comparison(
     output_resolution: int = 2000,      # 화면 출력용 최대 해상도 (1000-4000)
     output_quality: int = 85,           # JPEG 출력 품질 (50-100)
     pdf_dpi: int = 200,                 # PDF 변환 DPI (100-300)
+    request_id: str = "-",
 ) -> dict:
     """
     이미지 비교 전체 파이프라인 (2단계)
@@ -424,7 +438,7 @@ def process_comparison(
 
     Stage 2 — 출력용 다운샘플:
         브라우저 전송 전에 output_resolution으로 다운샘플하고 output_quality로
-        JPEG 인코딩한다. 다운로드용 PNG는 연산 해상도(고해상도)를 그대로 유지한다.
+        PNG 인코딩한다.
 
     Args:
         colors: 색상 설정 딕셔너리
@@ -440,75 +454,110 @@ def process_comparison(
     output_quality = max(50, min(100, output_quality))
     pdf_dpi = max(100, min(300, pdf_dpi))
 
+    logger.debug(
+        "[req=%s] process_comparison start: file1_type=%s file2_type=%s "
+        "diff_threshold=%s feature_count=%s pages=(%s,%s) bin_threshold=%s "
+        "processing_resolution=%s output_resolution=%s output_quality=%s pdf_dpi=%s",
+        request_id,
+        file1_type,
+        file2_type,
+        diff_threshold,
+        feature_count,
+        page1,
+        page2,
+        bin_threshold,
+        processing_resolution,
+        output_resolution,
+        output_quality,
+        pdf_dpi,
+    )
+
     try:
         # Stage 1-A. 파일 로드 (PDF는 사용자 지정 DPI 적용)
-        logger.info(f"파일 로드 중... (pdf_dpi={pdf_dpi})")
+        logger.info("[req=%s] 파일 로드 중... (pdf_dpi=%s)", request_id, pdf_dpi)
         img1, pages1, type1 = load_file(file1_bytes, file1_type, page1, dpi=pdf_dpi)
         img2, pages2, type2 = load_file(file2_bytes, file2_type, page2, dpi=pdf_dpi)
+        logger.debug(
+            "[req=%s] Stage1-A load complete: file1(type=%s,pages=%s,%s) file2(type=%s,pages=%s,%s)",
+            request_id,
+            type1,
+            pages1,
+            _img_debug_info(img1),
+            type2,
+            pages2,
+            _img_debug_info(img2),
+        )
 
         # Stage 1-B. 비교 연산용 다운샘플 (processing_resolution 기준)
         img1 = downsample_if_needed(img1, max_dimension=processing_resolution)
         img2 = downsample_if_needed(img2, max_dimension=processing_resolution)
-        logger.info(f"연산 해상도 적용: max={processing_resolution}px, "
-                    f"img1={img1.shape[1]}x{img1.shape[0]}, "
-                    f"img2={img2.shape[1]}x{img2.shape[0]}")
+        logger.info(
+            "[req=%s] 연산 해상도 적용: max=%spx, img1=%sx%s, img2=%sx%s",
+            request_id, processing_resolution,
+            img1.shape[1], img1.shape[0], img2.shape[1], img2.shape[0],
+        )
 
         # Stage 1-C. 이미지 정렬 (고해상도 기준)
-        logger.info("이미지 정렬 중...")
+        logger.info("[req=%s] 이미지 정렬 중...", request_id)
         _, aligned_img2, H, quality = align_images(img1, img2, nfeatures=feature_count)
+        logger.debug("[req=%s] Stage1-C align result: homography=%s quality=%.4f", request_id, H is not None, quality)
 
         alignment_failed = False
         if aligned_img2 is None or quality < 0.3:
-            logger.warning("ORB 정렬 실패, 폴백 정렬 사용")
+            logger.warning("[req=%s] ORB 정렬 실패, 폴백 정렬 사용 (quality=%.4f)", request_id, quality)
             aligned_img2 = fallback_align(img1, img2)
             alignment_failed = True
+            logger.debug("[req=%s] Stage1-C fallback aligned: %s", request_id, _img_debug_info(aligned_img2))
 
         # Stage 1-D. 비교 연산 (고해상도에서 수행 → 미세 차이 정확 감지)
-        logger.info(f"비교 모드: {mode}")
-        file1_result = img1
-        file2_result = aligned_img2
 
-        if mode == "overlay":
-            result = compare_images_overlay(img1, aligned_img2, bin_thresh=bin_threshold, colors=colors)
-        else:  # difference
-            result = compare_images(img1, aligned_img2, diff_thresh=diff_threshold, bin_thresh=bin_threshold, colors=colors)
-            file1_result, file2_result = generate_highlighted_images(
-                img1, aligned_img2, diff_thresh=diff_threshold, bin_thresh=bin_threshold, colors=colors
-            )
+        # 모든 모드에서 필요한 3개 이미지 생성: file1_highlighted, file2_highlighted, overlay
+        file1_result, file2_result = generate_highlighted_images(
+            img1, aligned_img2, diff_thresh=diff_threshold, bin_thresh=bin_threshold, colors=colors
+        )
+        overlay_result = compare_images_overlay(img1, aligned_img2, bin_thresh=bin_threshold, colors=colors)
+        logger.debug("[req=%s] Stage1-D compare done: overlay=%s", request_id, _img_debug_info(overlay_result))
 
-        # Stage 2-A. 다운로드용 PNG: 연산 해상도(고해상도) 그대로 보존
-        download_base64 = encode_image_to_base64(result, format='PNG')
-
-        # Stage 2-B. 화면 출력용: output_resolution으로 다운샘플 후 PNG 인코딩
-        # 비교 결과는 흰 배경 + 단색 마스킹으로 구성된 평면 색상 이미지이다.
-        # JPEG(DCT)는 선명한 색상 경계에 블록 아티팩트를 유발하므로 PNG를 사용한다.
-        # PNG는 평면 색상에서 JPEG보다 파일 크기도 작고 품질도 높다.
-        result_out = downsample_if_needed(result, max_dimension=output_resolution)
+        # Stage 2. 출력용 다운샘플 + 인코딩
+        overlay_out = downsample_if_needed(overlay_result, max_dimension=output_resolution)
         file1_out = downsample_if_needed(file1_result, max_dimension=output_resolution)
         file2_out = downsample_if_needed(file2_result, max_dimension=output_resolution)
-        logger.info(f"출력 해상도 적용: max={output_resolution}px, "
-                    f"result={result_out.shape[1]}x{result_out.shape[0]}")
+        logger.info(
+            "[req=%s] 출력 해상도 적용: max=%spx, overlay=%sx%s",
+            request_id, output_resolution, overlay_out.shape[1], overlay_out.shape[0],
+        )
 
-        result_base64 = encode_image_to_base64(result_out, format='PNG')
+        overlay_base64 = encode_image_to_base64(overlay_out, format='PNG')
         file1_base64 = encode_image_to_base64(file1_out, format='PNG')
         file2_base64 = encode_image_to_base64(file2_out, format='PNG')
 
+        logger.debug(
+            "[req=%s] Stage2 payload chars: overlay=%s file1=%s file2=%s",
+            request_id, len(overlay_base64), len(file1_base64), len(file2_base64),
+        )
+
         return {
-            "result_base64": result_base64,
             "file1_base64": file1_base64,
             "file2_base64": file2_base64,
-            "download_base64": download_base64,
+            "overlay_base64": overlay_base64,
             "metadata": {
-                "mode": mode,
                 "file1_pages": pages1,
                 "file2_pages": pages2,
                 "match_quality": quality,
                 "alignment_failed": alignment_failed,
-                "processing_size": f"{result.shape[1]}x{result.shape[0]}",
-                "result_size": f"{result_out.shape[1]}x{result_out.shape[0]}"
+                "processing_size": f"{overlay_result.shape[1]}x{overlay_result.shape[0]}",
+                "result_size": f"{overlay_out.shape[1]}x{overlay_out.shape[0]}"
             }
         }
 
+    except MemoryError as e:
+        msg = (
+            f"메모리 부족으로 처리가 중단됐습니다 — "
+            f"pdf_dpi({pdf_dpi}) 또는 processing_resolution({processing_resolution}px)을 낮춰 주세요. "
+            f"(상세: {e})"
+        )
+        logger.error("[req=%s] MemoryError: %s", request_id, msg)
+        raise ValueError(msg)  # → 라우터에서 HTTP 400으로 변환
     except Exception as e:
-        logger.error(f"비교 처리 실패: {str(e)}")
+        logger.error("[req=%s] 비교 처리 실패: %s: %s", request_id, type(e).__name__, str(e), exc_info=True)
         raise

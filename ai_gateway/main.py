@@ -1,10 +1,11 @@
 """
 FastAPI Main Application
-AI Gateway - FabriX 및 Image Inspector를 위한 API 게이트웨이
+AI Gateway
 """
 
 import sys
 import asyncio
+import faulthandler
 import logging
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -12,8 +13,9 @@ from contextlib import asynccontextmanager
 
 import httpx
 import toml
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .routers import health_router, agent_chat_router, chat_router, image_router
 from .services.rate_limiter_v2 import rate_limiter
@@ -21,6 +23,7 @@ from .services.rate_limiter_v2 import rate_limiter
 # 환경 설정 및 Secrets 로드
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRETS_PATH = BASE_DIR / "secrets.toml"
+_FAULT_HANDLER_STREAM = None
 
 
 def _configure_logging() -> logging.Logger:
@@ -44,12 +47,12 @@ def _configure_logging() -> logging.Logger:
         backupCount=30,
         encoding="utf-8",
     )
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
     file_handler.suffix = "%Y-%m-%d"
 
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.DEBUG)
     root_logger.handlers.clear()
     root_logger.addHandler(console_handler)
     root_logger.addHandler(file_handler)
@@ -60,11 +63,31 @@ def _configure_logging() -> logging.Logger:
         uvicorn_logger.propagate = True
 
     configured_logger = logging.getLogger(__name__)
-    configured_logger.info("✅ Logging initialized: console + daily file (%s)", log_file)
+    configured_logger.info(
+        "✅ Logging initialized: console(INFO) + daily file(DEBUG) (%s)",
+        log_file,
+    )
     return configured_logger
 
 
+def _configure_faulthandler() -> None:
+    """네이티브 레벨 크래시(세그폴트 등) 추적용 faulthandler 활성화."""
+    global _FAULT_HANDLER_STREAM
+
+    log_dir = BASE_DIR / "logs" / "ai_gateway"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    fault_log_file = log_dir / "faulthandler.log"
+
+    try:
+        _FAULT_HANDLER_STREAM = open(fault_log_file, "a", encoding="utf-8", buffering=1)
+        faulthandler.enable(file=_FAULT_HANDLER_STREAM, all_threads=True)
+        logger.info("✅ Faulthandler enabled: %s", fault_log_file)
+    except Exception as e:
+        logger.warning("Faulthandler enable failed: %s: %s", type(e).__name__, e)
+
+
 logger = _configure_logging()
+_configure_faulthandler()
 
 try:
     with open(SECRETS_PATH, "r", encoding="utf-8") as f:
@@ -189,6 +212,16 @@ async def lifespan(app: FastAPI):
     await app.state.http_client.aclose()
     logger.info("✅ HTTP Client closed")
 
+    global _FAULT_HANDLER_STREAM
+    if _FAULT_HANDLER_STREAM is not None:
+        try:
+            _FAULT_HANDLER_STREAM.flush()
+            _FAULT_HANDLER_STREAM.close()
+        except Exception as e:
+            logger.warning("Faulthandler stream close failed: %s: %s", type(e).__name__, e)
+        finally:
+            _FAULT_HANDLER_STREAM = None
+
 
 # FastAPI 앱 초기화
 app = FastAPI(
@@ -212,6 +245,22 @@ app.include_router(health_router, prefix="/health", tags=["Health"])
 app.include_router(agent_chat_router, prefix="/agent-messages", tags=["FabriX Agent Chat"])
 app.include_router(chat_router, prefix="/chat-messages", tags=["FabriX Chat"])
 app.include_router(image_router, prefix="/image-compare", tags=["Image"])
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """라우터 경계를 벗어난 예외도 공통 형식으로 기록/응답."""
+    logger.error(
+        "Unhandled exception: method=%s path=%s type=%s",
+        request.method,
+        request.url.path,
+        type(exc).__name__,
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 
 @app.get("/")

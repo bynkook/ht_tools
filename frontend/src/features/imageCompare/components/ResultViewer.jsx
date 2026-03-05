@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Download, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Download, ZoomIn, ZoomOut, Maximize2, AlertTriangle } from 'lucide-react';
 import { TransformWrapper, TransformComponent, useControls } from 'react-zoom-pan-pinch';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -106,9 +106,18 @@ const ResultViewer = ({ resultData, onDownload, colors }) => {
     );
   }
 
-  const { result_base64, file1_base64, file2_base64, download_base64, metadata } = resultData;
-  const isDiffMode = metadata.mode === 'difference';
-  const isSplitOverlayMode = metadata.mode === 'split-overlay';
+  const { 
+    file1_base64, 
+    file2_base64, 
+    overlay_base64,
+    metadata,
+    _currentMode 
+  } = resultData;
+
+  // 현재 모드 결정: _currentMode (프론트 설정)
+  const currentMode = _currentMode || 'difference';
+  const isDiffMode = currentMode === 'difference';
+  const isSplitOverlayMode = currentMode === 'split-overlay';
 
   // object-fit: contain으로 렌더링된 이미지의 실제 크기와 오프셋 계산
   const getRenderedImageRect = (wrapperEl) => {
@@ -124,7 +133,6 @@ const ResultViewer = ({ resultData, onDownload, colors }) => {
   };
 
   // Sync handler: panelId(1|2|3) + targetRefs 배열로 복수 패널에 전파
-  //
   // 핵심: 이미지의 "정규화된 위치(0~1)"를 계산하여 패널 크기와 무관하게 동기화.
   // object-fit: contain 으로 인해 각 패널에서 이미지 렌더링 크기가 다르므로,
   // 단순 positionX/Y 복사나 컨테이너 비율 계산으로는 줌 포인트가 일치하지 않음.
@@ -203,13 +211,21 @@ const ResultViewer = ({ resultData, onDownload, colors }) => {
         </div>
         <ColorLegend colors={activeColors} />
         <button
-          onClick={() => onDownload(download_base64, metadata)}
+          onClick={() => onDownload(overlay_base64, metadata)}
           className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
         >
           <Download size={16} />
           PNG 다운로드
         </button>
       </div>
+
+      {/* Page count mismatch warning */}
+      {metadata.file1_pages !== metadata.file2_pages && (
+        <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs">
+          <AlertTriangle size={14} className="flex-shrink-0 text-amber-500" />
+          두 파일의 페이지 수가 다릅니다 (File 1: {metadata.file1_pages}페이지, File 2: {metadata.file2_pages}페이지). 첫 번째 페이지를 기준으로 비교되었습니다.
+        </div>
+      )}
 
       {/* Viewer Body */}
       <div className="flex-1 relative overflow-hidden bg-gray-50 flex">
@@ -231,7 +247,7 @@ const ResultViewer = ({ resultData, onDownload, colors }) => {
               />
             </div>
           </div>
-        ) : isSplitOverlayMode && file1_base64 && file2_base64 && result_base64 ? (
+        ) : isSplitOverlayMode && file1_base64 && file2_base64 && overlay_base64 ? (
           // 3-Panel View — Split-Overlay Mode
           // Left 1/3: File1(top) + File2(bottom) with diff highlight
           // Right 2/3: Overlay result
@@ -263,7 +279,7 @@ const ResultViewer = ({ resultData, onDownload, colors }) => {
                 Overlay
               </div>
               <ZoomPane
-                src={result_base64} alt="Overlay Result" tRef={ref3}
+                src={overlay_base64} alt="Overlay Result" tRef={ref3}
                 onTransformed={makeSyncHandler(3, [ref1, ref2])}
                 onResetAll={resetAll}
               />
@@ -272,7 +288,7 @@ const ResultViewer = ({ resultData, onDownload, colors }) => {
         ) : (
           // Single View — Overlay Mode
           <div className="w-full h-full relative">
-            <ZoomPane src={result_base64} alt="Comparison Result" />
+            <ZoomPane src={overlay_base64} alt="Comparison Result" />
           </div>
         )}
       </div>

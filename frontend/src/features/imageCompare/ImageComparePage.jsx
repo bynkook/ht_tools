@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Menu, AlertCircle, Link, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ImageCompareSidebar from './components/ImageCompareSidebar';
@@ -112,6 +112,14 @@ const loadSettings = async () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // 모드 변경 시 캐시된 결과의 _currentMode만 업데이트 (API 재호출 없음)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (resultData && resultData._currentMode !== settings.mode) {
+      setResultData(prev => prev ? { ...prev, _currentMode: settings.mode } : null);
+    }
+  }, [settings.mode]);  // resultData 제외: 모드 변경 시에만 트리거
+
 const handleFile1Select = useCallback((file, page) => {
     setFile1(file);
     setPage1(page);
@@ -137,17 +145,17 @@ const handleFile1Select = useCallback((file, page) => {
     const p1 = typeof overridePage1 === 'number' ? overridePage1 : page1;
     const p2 = typeof overridePage2 === 'number' ? overridePage2 : page2;
     
-// Generate a unique cache key based on inputs, settings, and quality params
+    // 캐시 키: 파일+페이지+품질 설정만 (mode 제외 → 모드 변경 시 캐시 재사용)
     const qualityKey = userSettings
       ? `q${userSettings.output_quality ?? 85}-r${userSettings.output_resolution ?? 2000}-p${userSettings.processing_resolution ?? 6000}-d${userSettings.pdf_dpi ?? 200}`
       : 'q-default';
-    const cacheKey = `${p1}-${p2}-${settings.mode}-${settings.diffThreshold}-${settings.featureCount}-${qualityKey}`;
+    const cacheKey = `${p1}-${p2}-${settings.diffThreshold}-${settings.featureCount}-${qualityKey}`;
 
     // Check cache first - return immediately without triggering loading state
     const cachedResult = resultCache.current.get(cacheKey);
     if (cachedResult) {
-      setResultData(cachedResult);
-      // Ensure page counts are consistent (though they shouldn't change for same file)
+      // 캐시된 결과에 현재 모드 반영
+      setResultData({ ...cachedResult, _currentMode: settings.mode });
       if (cachedResult.metadata) {
         if (cachedResult.metadata.file1_pages) setFile1Pages(cachedResult.metadata.file1_pages);
         if (cachedResult.metadata.file2_pages) setFile2Pages(cachedResult.metadata.file2_pages);
@@ -187,28 +195,14 @@ const handleFile1Select = useCallback((file, page) => {
           : null,
       };
 
-      let result;
-      if (settings.mode === 'split-overlay') {
-        // 차이점 강조 + 오버레이 두 번 병렬 호출
-        const [diffResult, overlayResult] = await Promise.all([
-          fastApi.compareImages({ ...commonParams, mode: 'difference' }),
-          fastApi.compareImages({ ...commonParams, mode: 'overlay' }),
-        ]);
-        result = {
-          file1_base64:    diffResult.file1_base64,
-          file2_base64:    diffResult.file2_base64,
-          result_base64:   overlayResult.result_base64,
-          download_base64: diffResult.download_base64,
-          metadata: { ...diffResult.metadata, mode: 'split-overlay' },
-        };
-      } else {
-        result = await fastApi.compareImages({ ...commonParams, mode: settings.mode });
-      }
+      // 비교 실행
+      const result = await fastApi.compareImages({ ...commonParams });
 
-// Store result in cache (LRU automatically handles size limit)
+      // Store result in cache (LRU automatically handles size limit)
       resultCache.current.set(cacheKey, result);
 
-      setResultData(result);
+      // 현재 모드 정보 추가하여 state에 저장
+      setResultData({ ...result, _currentMode: settings.mode });
       
       // Update total pages from metadata
       if (result.metadata) {
@@ -237,7 +231,7 @@ const handleFile1Select = useCallback((file, page) => {
       } else {
         setError('이미지 비교 중 오류가 발생했습니다. 다시 시도해주세요.');
       }
-} finally {
+    } finally {
       setIsLoading(false);
     }
   }, [settings, userSettings, file1, file2, page1, page2]);
@@ -308,7 +302,7 @@ const handleDownload = useCallback((base64Data, metadata) => {
 
     const link = document.createElement('a');
     link.href = url;
-    link.download = `comparison_${metadata.mode}_${Date.now()}.png`;
+    link.download = `comparison_overlay_${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
