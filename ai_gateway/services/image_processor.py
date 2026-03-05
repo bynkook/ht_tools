@@ -425,7 +425,7 @@ def process_comparison(
     processing_resolution: int = 6000,  # 비교 연산용 최대 해상도 (4000-8000)
     output_resolution: int = 2000,      # 화면 출력용 최대 해상도 (1000-4000)
     output_quality: int = 85,           # JPEG 출력 품질 (50-100)
-    pdf_dpi: int = 200,                 # PDF 변환 DPI (100-300)
+    pdf_dpi: int = 300,                 # PDF 변환 DPI (100-600)
     request_id: str = "-",
 ) -> dict:
     """
@@ -452,7 +452,7 @@ def process_comparison(
     processing_resolution = max(4000, min(8000, processing_resolution))
     output_resolution = max(1000, min(4000, output_resolution))
     output_quality = max(50, min(100, output_quality))
-    pdf_dpi = max(100, min(300, pdf_dpi))
+    pdf_dpi = max(100, min(600, pdf_dpi))
 
     logger.debug(
         "[req=%s] process_comparison start: file1_type=%s file2_type=%s "

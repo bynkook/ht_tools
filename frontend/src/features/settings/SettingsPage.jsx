@@ -17,7 +17,7 @@ const QUALITY_DEFAULTS = {
   output_quality: 85,
   output_resolution: 2000,
   processing_resolution: 6000,
-  pdf_dpi: 200,
+  pdf_dpi: 300,
 };
 
 const SettingsPage = () => {
@@ -380,7 +380,7 @@ const SettingsPage = () => {
                       value={preferences?.image_inspector?.pdf_dpi ?? QUALITY_DEFAULTS.pdf_dpi}
                       onChange={(v) => handleQualityChange('pdf_dpi', v)}
                       min={100}
-                      max={300}
+                      max={600}
                       step={25}
                       unit="dpi"
                     />

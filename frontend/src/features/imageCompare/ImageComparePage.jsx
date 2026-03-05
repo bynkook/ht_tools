@@ -147,7 +147,7 @@ const handleFile1Select = useCallback((file, page) => {
     
     // 캐시 키: 파일+페이지+품질 설정만 (mode 제외 → 모드 변경 시 캐시 재사용)
     const qualityKey = userSettings
-      ? `q${userSettings.output_quality ?? 85}-r${userSettings.output_resolution ?? 2000}-p${userSettings.processing_resolution ?? 6000}-d${userSettings.pdf_dpi ?? 200}`
+      ? `q${userSettings.output_quality ?? 85}-r${userSettings.output_resolution ?? 2000}-p${userSettings.processing_resolution ?? 6000}-d${userSettings.pdf_dpi ?? 300}`
       : 'q-default';
     const cacheKey = `${p1}-${p2}-${settings.diffThreshold}-${settings.featureCount}-${qualityKey}`;
 
