@@ -41,12 +41,13 @@ export const fastApi = {
   },
 
   // 이미지 비교 요청
-  // params: { file1, file2, mode, diffThreshold, featureCount, page1, page2, cadMode, cadLineWidth, colors, quality }
+  // params: { file1, file2, mode, diffThreshold, featureCount, page1, page2, cadMode, cadLineWidth, colors, quality, cropRect }
   compareImages: async (params) => {
     const { 
       file1, file2, mode, diffThreshold, featureCount, page1, page2, cadMode, cadLineWidth,
-      colors,   // { diff_file1, diff_file2, diff_common, overlay_file1, overlay_file2 }
-      quality,  // { output_quality, output_resolution, processing_resolution, pdf_dpi }
+      colors,    // { diff_file1, diff_file2, diff_common, overlay_file1, overlay_file2 }
+      quality,   // { output_quality, output_resolution, processing_resolution, pdf_dpi }
+      cropRect,  // { x, y, width, height } 정규화 0-1 또는 null
     } = params;
     
     const formData = new FormData();
@@ -60,6 +61,14 @@ export const fastApi = {
     formData.append('cad_mode', cadMode ? 'true' : 'false');
     formData.append('cad_line_width', cadLineWidth ?? 0.2);
     
+    // crop 영역 파라미터 (4개 모두 있을 때만 전송)
+    if (cropRect) {
+      formData.append('crop_x', cropRect.x);
+      formData.append('crop_y', cropRect.y);
+      formData.append('crop_w', cropRect.width);
+      formData.append('crop_h', cropRect.height);
+    }
+
     // 품질 파라미터 추가
     if (quality) {
       if (quality.output_quality != null)        formData.append('output_quality',        quality.output_quality);
@@ -83,5 +92,22 @@ export const fastApi = {
     });
     
     return response.data;
+  },
+
+  // 단일 파일 미리보기 요청 (CropSelector 표시용)
+  // PDF는 cad_mode/cad_line_width 를 넣어서 실제 비교와 동일한 렌더링 조건 적용
+  previewFile: async ({ file, page, pdfDpi, cadMode, cadLineWidth }) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('page', page ?? 0);
+    formData.append('pdf_dpi', pdfDpi ?? 150);
+    formData.append('cad_mode', cadMode ? 'true' : 'false');
+    formData.append('cad_line_width', cadLineWidth ?? 0.2);
+
+    const response = await fastApiClient.post('/image-compare/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 30000,
+    });
+    return response.data; // { image_base64, width, height, pages }
   },
 };

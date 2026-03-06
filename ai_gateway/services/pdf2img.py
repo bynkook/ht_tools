@@ -22,14 +22,14 @@ EOF 탐색 실패가 발생하지만, 파일 경로 방식은 이 문제를 회�
 import io
 import logging
 import os
+import re
 import tempfile
-from typing import Tuple
+from typing import Optional, Set, Tuple
 
 import cv2
 import fitz
 import numpy as np
 import pikepdf
-import re
 from PyPDF2 import PdfReader, PdfWriter
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,57 @@ def _replace_line_width_in_stream(
         stream_obj.write(replaced)
         logger.debug("[cad_mode] %s: line-width %d개 교체", location, n_subs)
     return n_subs
+
+
+def _object_cache_key(pdf_obj) -> tuple:
+    """pikepdf 객체의 방문 추적용 키를 반환한다."""
+    objgen = getattr(pdf_obj, "objgen", None)
+    if objgen is not None:
+        return tuple(objgen)
+    return (id(pdf_obj), 0)
+
+
+def _replace_line_width_in_form_xobjects(
+    resource_owner,
+    pattern: re.Pattern,
+    replacement: bytes,
+    location: str,
+    visited: Set[tuple],
+) -> int:
+    """현재 리소스 소유자 아래의 Form XObject를 재귀 순회하며 line-width를 교체한다."""
+    if "/Resources" not in resource_owner or "/XObject" not in resource_owner["/Resources"]:
+        return 0
+
+    total_subs = 0
+    xobjects = resource_owner["/Resources"]["/XObject"]
+    for name in list(xobjects.keys()):
+        xobj = xobjects[name]
+        subtype = xobj.get("/Subtype")
+        if subtype != pikepdf.Name.Form:
+            continue
+
+        cache_key = _object_cache_key(xobj)
+        if cache_key in visited:
+            logger.debug("[cad_mode] %s XObject/%s 재방문 스킵", location, name)
+            continue
+        visited.add(cache_key)
+
+        child_location = f"{location} XObject/{name}"
+        total_subs += _replace_line_width_in_stream(
+            xobj,
+            pattern,
+            replacement,
+            child_location,
+        )
+        total_subs += _replace_line_width_in_form_xobjects(
+            xobj,
+            pattern,
+            replacement,
+            child_location,
+            visited,
+        )
+
+    return total_subs
 
 
 def apply_cad_mode_to_pdf(pdf_bytes: bytes, line_width: float = 0.1) -> bytes:
@@ -114,23 +165,20 @@ def apply_cad_mode_to_pdf(pdf_bytes: bytes, line_width: float = 0.1) -> bytes:
             # ─────────────────────────────────────────────────────────────
             # 2) Form XObject 내부 스트림 수정 (CAD PDF의 실제 도면이 여기 있음)
             # ─────────────────────────────────────────────────────────────
-            if "/Resources" in page and "/XObject" in page["/Resources"]:
-                xobjects = page["/Resources"]["/XObject"]
-                for name in list(xobjects.keys()):
-                    xobj = xobjects[name]
-                    # Form XObject만 처리 (Image XObject는 스트림 구조가 다름)
-                    subtype = xobj.get("/Subtype")
-                    if subtype == pikepdf.Name.Form:
-                        location = f"페이지 {page_number} XObject/{name}"
-                        total_xobject_subs += _replace_line_width_in_stream(
-                            xobj, pattern, replacement, location
-                        )
+            visited_forms: Set[tuple] = set()
+            total_xobject_subs += _replace_line_width_in_form_xobjects(
+                page,
+                pattern,
+                replacement,
+                f"페이지 {page_number}",
+                visited_forms,
+            )
 
         # 3) 수정된 PDF를 메모리 바이트로 반환
         out_io = io.BytesIO()
         pdf.save(out_io)
         logger.info(
-            "[cad_mode] PDF 라인 굵기 교체 완료 - 페이지: %d, Contents: %d개, XObject: %d개",
+            "[cad_mode] PDF 라인 굵기 교체 완료 - 페이지: %d, Contents: %d개, Form XObject(재귀): %d개",
             len(pdf.pages),
             total_contents_subs,
             total_xobject_subs,
@@ -152,30 +200,37 @@ def _single_page_bytes(reader: PdfReader, page_index: int) -> bytes:
     return buf.getvalue()
 
 
-def _estimate_pixmap_bytes(page, dpi: int) -> int:
+def _estimate_pixmap_bytes(page, dpi: int, clip_rect: dict = None) -> int:
     """fitz 렌더 전 예상 픽스맵 바이트 수 산출 (RGB uint8, 3채널 기준)."""
     zoom = dpi / 72
-    w = int(page.rect.width * zoom)
-    h = int(page.rect.height * zoom)
+    if clip_rect is not None:
+        pr = page.rect
+        w = int((clip_rect['width'] * pr.width) * zoom)
+        h = int((clip_rect['height'] * pr.height) * zoom)
+    else:
+        w = int(page.rect.width * zoom)
+        h = int(page.rect.height * zoom)
     return w * h * 3
 
 
-def fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI) -> np.ndarray:
+def fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None) -> np.ndarray:
     """
     fitz page 객체를 BGR numpy 배열로 변환.
 
     Args:
         page: fitz.Page 객체
         dpi: 렌더링 해상도 (기본 200)
+        clip_rect: 선택적 crop 영역. {'x', 'y', 'width', 'height'} 정규화 좌표(0-1).
+                   None이면 전체 페이지 렌더링.
 
     Returns:
         BGR numpy 배열
     """
     zoom = dpi / 72
-    logger.debug("[pdf2img] fitz_page_to_bgr start: page=%s dpi=%s zoom=%.3f", page.number, dpi, zoom)
+    logger.debug("[pdf2img] fitz_page_to_bgr start: page=%s dpi=%s zoom=%.3f clip=%s", page.number, dpi, zoom, clip_rect is not None)
 
     # --- 메모리 사전 체크: C 레벨 OOM → 프로세스 강제 종료 방지 ---
-    estimated_bytes = _estimate_pixmap_bytes(page, dpi)
+    estimated_bytes = _estimate_pixmap_bytes(page, dpi, clip_rect=clip_rect)
     logger.debug(
         "[pdf2img] fitz_page_to_bgr estimated: %.1fMB (limit %.0fMB)",
         estimated_bytes / 1024 / 1024,
@@ -189,7 +244,23 @@ def fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI) -> np.ndarray:
         )
     # ---------------------------------------------------------------
 
-    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+    matrix = fitz.Matrix(zoom, zoom)
+    if clip_rect is not None:
+        pr = page.rect
+        fitz_clip = fitz.Rect(
+            clip_rect['x'] * pr.width,
+            clip_rect['y'] * pr.height,
+            (clip_rect['x'] + clip_rect['width']) * pr.width,
+            (clip_rect['y'] + clip_rect['height']) * pr.height,
+        )
+        pix = page.get_pixmap(matrix=matrix, alpha=False, clip=fitz_clip)
+        logger.debug(
+            "[pdf2img] fitz_page_to_bgr clip applied: pdf_rect=(%.1f,%.1f,%.1f,%.1f)",
+            fitz_clip.x0, fitz_clip.y0, fitz_clip.x1, fitz_clip.y1,
+        )
+    else:
+        pix = page.get_pixmap(matrix=matrix, alpha=False)
+
     img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
     img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
     logger.debug(
@@ -207,6 +278,7 @@ def _pypdf2_page_to_bgr(
     dpi: int = _DEFAULT_DPI,
     cad_mode: bool = False,
     cad_line_width: float = 0.2,
+    clip_rect: dict = None,
 ) -> Tuple[np.ndarray, int]:
     """
     PyPDF2 경로: 암호화 PDF에서 특정 페이지를 BGR numpy 배열로 변환.
@@ -260,7 +332,7 @@ def _pypdf2_page_to_bgr(
 
         with fitz.open(stream=cad_pdf_bytes, filetype="pdf") as doc:
             logger.debug("[pdf2img] fallback fitz open success: page_count=%s", doc.page_count)
-            img_bgr = fitz_page_to_bgr(doc.load_page(0), dpi)
+            img_bgr = fitz_page_to_bgr(doc.load_page(0), dpi, clip_rect=clip_rect)
 
         return img_bgr, total_pages
 
@@ -279,6 +351,7 @@ def pdf_to_bgr(
     dpi: int = _DEFAULT_DPI,
     cad_mode: bool = False,
     cad_line_width: float = 0.2,
+    clip_rect: dict = None,
 ) -> Tuple[np.ndarray, int]:
     """
     PDF bytes → BGR numpy 배열 변환 (메인 진입점).
@@ -290,6 +363,8 @@ def pdf_to_bgr(
         file_bytes: PDF 파일 바이트
         page_num: 요청 페이지 번호 (0-based, 범위 초과 시 0으로 보정)
         dpi: 렌더링 해상도 (기본 200)
+        clip_rect: 선택적 crop 영역. {'x', 'y', 'width', 'height'} 정규화 좌표(0-1).
+                   None이면 전체 페이지 렌더링.
 
     Returns:
         (BGR numpy 배열, 전체 페이지 수)
@@ -324,7 +399,7 @@ def pdf_to_bgr(
                 page_num = 0
                 logger.debug("[pdf2img] fitz direct page_num reset to 0")
 
-            img_bgr = fitz_page_to_bgr(doc[page_num], dpi)
+            img_bgr = fitz_page_to_bgr(doc[page_num], dpi, clip_rect=clip_rect)
 
             return img_bgr, total_pages
 
@@ -348,7 +423,7 @@ def pdf_to_bgr(
     try:
         if _fallback_dpi < dpi:
             logger.info("[pdf2img] 폴백 DPI 축소 적용: %s → %s", dpi, _fallback_dpi)
-        img_bgr, total_pages = _pypdf2_page_to_bgr(file_bytes, page_num=page_num, dpi=_fallback_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width)
+        img_bgr, total_pages = _pypdf2_page_to_bgr(file_bytes, page_num=page_num, dpi=_fallback_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width, clip_rect=clip_rect)
         logger.info(
             "[pdf2img] PyPDF2 폴백 성공 — 페이지 %s/%s (dpi=%s)",
             page_num + 1,

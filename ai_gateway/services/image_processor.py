@@ -69,6 +69,35 @@ def tiff_to_image(tiff_bytes: bytes, page_num: int = 0) -> Tuple[np.ndarray, int
         raise ValueError(f"TIFF 변환 실패: {str(e)}")
 
 
+def _apply_clip_rect(img_bgr: np.ndarray, clip_rect: Optional[dict]) -> np.ndarray:
+    """정규화 clip_rect를 이미지 픽셀 좌표로 변환해 crop 적용."""
+    if clip_rect is None:
+        return img_bgr
+
+    height, width = img_bgr.shape[:2]
+    x1 = max(0, min(width - 1, int(width * clip_rect['x'])))
+    y1 = max(0, min(height - 1, int(height * clip_rect['y'])))
+    x2 = max(1, min(width, int(width * (clip_rect['x'] + clip_rect['width']))))
+    y2 = max(1, min(height, int(height * (clip_rect['y'] + clip_rect['height']))))
+
+    if x2 <= x1 or y2 <= y1:
+        raise ValueError("유효하지 않은 crop 영역입니다.")
+
+    cropped = img_bgr[y1:y2, x1:x2]
+    logger.debug(
+        "clip_rect applied: src=%sx%s rect=(%s,%s)-(%s,%s) dst=%sx%s",
+        width,
+        height,
+        x1,
+        y1,
+        x2,
+        y2,
+        cropped.shape[1],
+        cropped.shape[0],
+    )
+    return cropped
+
+
 def load_file(
     file_bytes: bytes,
     content_type: str,
@@ -76,6 +105,7 @@ def load_file(
     dpi: int = 200,
     cad_mode: bool = False,
     cad_line_width: float = 0.2,
+    clip_rect: Optional[dict] = None,
 ) -> Tuple[np.ndarray, int, str]:
     """
     파일 로드 (이미지 또는 PDF)
@@ -85,17 +115,19 @@ def load_file(
         content_type: MIME 타입
         page_num: PDF 페이지 번호
         dpi: PDF 변환 해상도 (PDF 파일에만 적용)
+        clip_rect: 선택적 crop 영역. {'x', 'y', 'width', 'height'} 정규화 좌표(0-1).
     
     Returns:
         (이미지 BGR 배열, 총 페이지 수, 파일 타입)
     """
     try:
         logger.debug(
-            "load_file start: content_type=%s page_num=%s dpi=%s cad_mode=%s size=%.2fMB",
+            "load_file start: content_type=%s page_num=%s dpi=%s cad_mode=%s clip=%s size=%.2fMB",
             content_type,
             page_num,
             dpi,
             cad_mode,
+            clip_rect is not None,
             len(file_bytes) / 1024 / 1024,
         )
 
@@ -106,11 +138,13 @@ def load_file(
                 dpi=dpi,
                 cad_mode=cad_mode,
                 cad_line_width=cad_line_width,
+                clip_rect=clip_rect,
             )
             logger.debug("load_file complete (pdf): pages=%s %s", total_pages, _img_debug_info(img_bgr))
             return img_bgr, total_pages, "pdf"
         elif "tiff" in content_type.lower() or "tif" in content_type.lower():
             img_bgr, total_pages = tiff_to_image(file_bytes, page_num=page_num)
+            img_bgr = _apply_clip_rect(img_bgr, clip_rect)
             logger.debug("load_file complete (tiff): pages=%s %s", total_pages, _img_debug_info(img_bgr))
             return img_bgr, total_pages, "tiff"
         else:
@@ -119,6 +153,8 @@ def load_file(
             
             if img is None:
                 raise ValueError("이미지 디코딩 실패")
+
+            img = _apply_clip_rect(img, clip_rect)
 
             logger.debug("load_file complete (image): pages=1 %s", _img_debug_info(img))
             
@@ -445,6 +481,7 @@ def process_comparison(
     pdf_dpi: int = 300,                 # PDF 변환 DPI (100-600)
     cad_mode: bool = False,
     cad_line_width: float = 0.2,
+    crop_rect: dict = None,
     request_id: str = "-",
 ) -> dict:
     """
@@ -493,10 +530,10 @@ def process_comparison(
     )
 
     try:
-        # Stage 1-A. 파일 로드 (PDF는 사용자 지정 DPI 적용)
-        logger.info("[req=%s] 파일 로드 중... (pdf_dpi=%s, cad_mode=%s)", request_id, pdf_dpi, cad_mode)
-        img1, pages1, type1 = load_file(file1_bytes, file1_type, page1, dpi=pdf_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width)
-        img2, pages2, type2 = load_file(file2_bytes, file2_type, page2, dpi=pdf_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width)
+        # Stage 1-A. 파일 로드 (PDF는 사용자 지정 DPI 적용, crop_rect 있을 때만 clip 적용)
+        logger.info("[req=%s] 파일 로드 중... (pdf_dpi=%s, cad_mode=%s, crop=%s)", request_id, pdf_dpi, cad_mode, crop_rect is not None)
+        img1, pages1, type1 = load_file(file1_bytes, file1_type, page1, dpi=pdf_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width, clip_rect=crop_rect)
+        img2, pages2, type2 = load_file(file2_bytes, file2_type, page2, dpi=pdf_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width, clip_rect=crop_rect)
         logger.debug(
             "[req=%s] Stage1-A load complete: file1(type=%s,pages=%s,%s) file2(type=%s,pages=%s,%s)",
             request_id,

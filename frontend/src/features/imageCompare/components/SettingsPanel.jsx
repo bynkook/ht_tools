@@ -133,9 +133,13 @@ const SettingsPanel = ({ settings, onSettingsChange, colors }) => {
                     </button>
                   </div>
                 </div>
-                px
+                pt
               </span>
             </div>
+
+            <p className="text-xs text-gray-500 -mt-2">
+              CAD 선두께는 PDF 단위 pt로 적용됩니다. 일반적으로 0.1~0.3pt가 얇은 선 표현에 적합합니다.
+            </p>
 
             {/* 차이 임계값 */}
             <div>

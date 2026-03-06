@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import ImageCompareSidebar from './components/ImageCompareSidebar';
 import ResultViewer from './components/ResultViewer';
 import LoadingOverlay from './components/LoadingOverlay';
+import CropSelector from './components/CropSelector';
 import { fastApi } from '../../api/fastapiApi';
 import { authApi, settingsApi } from '../../api/djangoApi';
 
@@ -114,6 +115,13 @@ const loadSettings = async () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // CROP 관련 상태
+  const [cropRect, setCropRect] = useState(null);           // { x, y, width, height } 0-1 정규화 또는 null
+  const [showCropSelector, setShowCropSelector] = useState(false);
+  const [cropPreviewImage, setCropPreviewImage] = useState(null);    // base64 string (data URI 제외)
+  const [cropPreviewCacheKey, setCropPreviewCacheKey] = useState(null);
+  const [cropPreviewLoading, setCropPreviewLoading] = useState(false);
+
   // 모드 변경 시 캐시된 결과의 _currentMode만 업데이트 (API 재호출 없음)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -122,12 +130,21 @@ const loadSettings = async () => {
     }
   }, [settings.mode]);  // resultData 제외: 모드 변경 시에만 트리거
 
+  useEffect(() => {
+    setCropPreviewImage(null);
+    setCropPreviewCacheKey(null);
+  }, [file1, page1, settings.cadMode, settings.cadLineWidth, userSettings?.pdf_dpi]);
+
 const handleFile1Select = useCallback((file, page) => {
     setFile1(file);
     setPage1(page);
     setFile1Pages(1); // Reset page count on new file
     setResultData(null);
     resultCache.current.clear(); // Clear cache when file changes
+    // 파일 교체 시 crop 해제
+    setCropRect(null);
+    setCropPreviewImage(null);
+    setCropPreviewCacheKey(null);
   }, []);
 
   const handleFile2Select = useCallback((file, page) => {
@@ -136,9 +153,9 @@ const handleFile1Select = useCallback((file, page) => {
     setFile2Pages(1); // Reset page count on new file
     setResultData(null);
     resultCache.current.clear(); // Clear cache when file changes
-  }, []);
+  }, []); // file2 교체 시 crop은 유지 (crop은 file1 기준)
 
-  const handleCompare = useCallback(async (overridePage1, overridePage2) => {
+  const handleCompare = useCallback(async (overridePage1, overridePage2, overrideCropRect) => {
     if (!file1 || !file2) {
       setError('두 개의 파일을 모두 업로드해주세요.');
       return;
@@ -146,12 +163,17 @@ const handleFile1Select = useCallback((file, page) => {
 
     const p1 = typeof overridePage1 === 'number' ? overridePage1 : page1;
     const p2 = typeof overridePage2 === 'number' ? overridePage2 : page2;
-    
+    // overrideCropRect가 undefined인 경우 현재 state cropRect 사용, null이면 crop 없음
+    const activeCropRect = overrideCropRect !== undefined ? overrideCropRect : cropRect;
+
     // 캐시 키: 파일+페이지+품질 설정만 (mode 제외 → 모드 변경 시 캐시 재사용)
     const qualityKey = userSettings
       ? `q${userSettings.output_quality ?? 85}-r${userSettings.output_resolution ?? 2000}-p${userSettings.processing_resolution ?? 6000}-d${userSettings.pdf_dpi ?? 300}`
       : 'q-default';
-    const cacheKey = `${p1}-${p2}-${settings.diffThreshold}-${settings.featureCount}-${settings.cadMode ? 'cad' : 'std'}-${settings.cadLineWidth}-${qualityKey}`;
+    const cropKey = activeCropRect
+      ? `crop(${activeCropRect.x.toFixed(4)},${activeCropRect.y.toFixed(4)},${activeCropRect.width.toFixed(4)},${activeCropRect.height.toFixed(4)})`
+      : 'nocrop';
+    const cacheKey = `${p1}-${p2}-${settings.diffThreshold}-${settings.featureCount}-${settings.cadMode ? 'cad' : 'std'}-${settings.cadLineWidth}-${qualityKey}-${cropKey}`;
 
     // Check cache first - return immediately without triggering loading state
     const cachedResult = resultCache.current.get(cacheKey);
@@ -183,6 +205,7 @@ const handleFile1Select = useCallback((file, page) => {
         page2: p2,
         cadMode: settings.cadMode,
         cadLineWidth: settings.cadLineWidth,
+        cropRect: activeCropRect ?? undefined,
         colors: userSettings
           ? {
               diff_file1:  userSettings.diff_file1,
@@ -239,7 +262,7 @@ const handleFile1Select = useCallback((file, page) => {
     } finally {
       setIsLoading(false);
     }
-  }, [settings, userSettings, file1, file2, page1, page2]);
+  }, [settings, userSettings, file1, file2, page1, page2, cropRect]);
 
 const handleReset = useCallback(() => {
     // Reset all states
@@ -253,7 +276,67 @@ const handleReset = useCallback(() => {
     setError(null);
     setResetKey(prev => prev + 1); // Force re-render of components with this key
     resultCache.current.clear(); // Clear cache on reset
+    // CROP 초기화
+    setCropRect(null);
+    setCropPreviewImage(null);
+    setCropPreviewCacheKey(null);
+    setShowCropSelector(false);
   }, []);
+
+  // CROP 버튼 클릭: file1 preview 이미지 준비 후 CropSelector 오픈
+  const handleCropButtonClick = useCallback(async () => {
+    if (!file1) return;
+    const currentPreviewKey = [
+      file1.name,
+      file1.size,
+      file1.lastModified,
+      page1,
+      settings.cadMode ? 'cad' : 'std',
+      settings.cadLineWidth,
+      userSettings?.pdf_dpi ?? 150,
+    ].join(':');
+
+    if (cropPreviewImage && cropPreviewCacheKey === currentPreviewKey) {
+      setShowCropSelector(true);
+      return;
+    }
+
+    setCropPreviewLoading(true);
+    try {
+      const previewResult = await fastApi.previewFile({
+        file: file1,
+        page: page1,
+        pdfDpi: userSettings?.pdf_dpi ?? 150,
+        cadMode: settings.cadMode,
+        cadLineWidth: settings.cadLineWidth,
+      });
+      setCropPreviewImage(previewResult.image_base64);
+      setCropPreviewCacheKey(currentPreviewKey);
+      setShowCropSelector(true);
+    } catch (err) {
+      console.error('Preview failed:', err);
+      setError('미리보기 로드에 실패했습니다.');
+    } finally {
+      setCropPreviewLoading(false);
+    }
+  }, [file1, page1, cropPreviewImage, cropPreviewCacheKey, settings.cadMode, settings.cadLineWidth, userSettings]);
+
+  // CropSelector에서 영역 확정 → crop 적용 후 즉시 비교 실행
+  const handleCropApply = useCallback((rect) => {
+    setCropRect(rect);
+    setShowCropSelector(false);
+    // setState는 비동기이므로 rect를 직접 전달
+    handleCompare(undefined, undefined, rect);
+  }, [handleCompare]);
+
+  // CROP 해제
+  const handleCropReset = useCallback(() => {
+    setCropRect(null);
+    setCropPreviewImage(null);
+    setCropPreviewCacheKey(null);
+    // crop 해제 후 즉시 재비교
+    handleCompare(undefined, undefined, null);
+  }, [handleCompare]);
 
 const changePage = useCallback((fileNum, delta) => {
     if (isSyncNav) {
@@ -329,10 +412,12 @@ const handleLogout = useCallback(async () => {
   }, []);
 
   const canCompare = file1 && file2 && !isLoading;
+  const canCrop = file1 && !isLoading;
   const username = sessionStorage.getItem('username') || 'User';
   const userEmail = sessionStorage.getItem('email') || '';
 
   return (
+    <>
     <div className="flex h-screen bg-[var(--bg-primary)] overflow-hidden">
       {/* Sidebar - Extracted to component */}
       <ImageCompareSidebar 
@@ -352,7 +437,12 @@ const handleLogout = useCallback(async () => {
         colors={userSettings}
         handleCompare={handleCompare}
         canCompare={canCompare}
+        canCrop={canCrop}
         isLoading={isLoading}
+        cropRect={cropRect}
+        onCropClick={handleCropButtonClick}
+        onCropReset={handleCropReset}
+        cropPreviewLoading={cropPreviewLoading}
       />
 
       {/* Main Area */}
@@ -460,6 +550,16 @@ const handleLogout = useCallback(async () => {
         )}
       </main>
     </div>
+
+    {/* CropSelector 모달 - 전체화면 오버레이 */}
+    {showCropSelector && cropPreviewImage && (
+      <CropSelector
+        previewImage={cropPreviewImage}
+        onApply={handleCropApply}
+        onCancel={() => setShowCropSelector(false)}
+      />
+    )}
+    </>
   );
 };
 
