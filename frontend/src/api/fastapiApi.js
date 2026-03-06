@@ -41,10 +41,10 @@ export const fastApi = {
   },
 
   // 이미지 비교 요청
-  // params: { file1, file2, mode, diffThreshold, featureCount, page1, page2, colors, quality }
+  // params: { file1, file2, mode, diffThreshold, featureCount, page1, page2, cadMode, cadLineWidth, colors, quality }
   compareImages: async (params) => {
     const { 
-      file1, file2, mode, diffThreshold, featureCount, page1, page2, 
+      file1, file2, mode, diffThreshold, featureCount, page1, page2, cadMode, cadLineWidth,
       colors,   // { diff_file1, diff_file2, diff_common, overlay_file1, overlay_file2 }
       quality,  // { output_quality, output_resolution, processing_resolution, pdf_dpi }
     } = params;
@@ -57,6 +57,8 @@ export const fastApi = {
     formData.append('feature_count', featureCount);
     formData.append('page1', page1);
     formData.append('page2', page2);
+    formData.append('cad_mode', cadMode ? 'true' : 'false');
+    formData.append('cad_line_width', cadLineWidth ?? 0.2);
     
     // 품질 파라미터 추가
     if (quality) {

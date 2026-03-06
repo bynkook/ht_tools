@@ -35,12 +35,13 @@ async def compare_images(
     feature_count: int = Form(4000),
     page1: int = Form(0),
     page2: int = Form(0),
-    bin_threshold: int = Form(200),
     # 품질 설정
     processing_resolution: int = Form(6000),  # 비교 연산용 최대 해상도 (4000-8000)
     output_resolution: int = Form(2000),       # 화면 출력용 최대 해상도 (1000-4000)
     output_quality: int = Form(85),            # JPEG 출력 품질 (50-100)
     pdf_dpi: int = Form(200),                  # PDF 변환 DPI (100-300)
+    cad_mode: bool = Form(False),
+    cad_line_width: float = Form(0.2),
     # Optional color parameters (모든 모드에서 diff 3색 공통 사용)
     color_diff_file1: str = Form(None),
     color_diff_file2: str = Form(None),
@@ -72,15 +73,15 @@ async def compare_images(
     logger.debug(
         "[req=%s] /image-compare/process start: file1=%s (%s), file2=%s (%s), "
         "diff_threshold=%s, feature_count=%s, pages=(%s,%s), "
-        "bin_threshold=%s, processing_resolution=%s, output_resolution=%s, "
-        "output_quality=%s, pdf_dpi=%s",
+        "processing_resolution=%s, output_resolution=%s, "
+        "output_quality=%s, pdf_dpi=%s, cad_mode=%s, cad_line_width=%s",
         request_id,
         file1.filename, file1.content_type,
         file2.filename, file2.content_type,
         diff_threshold, feature_count,
         page1, page2,
-        bin_threshold, processing_resolution, output_resolution,
-        output_quality, pdf_dpi,
+        processing_resolution, output_resolution,
+        output_quality, pdf_dpi, cad_mode, cad_line_width,
     )
 
     # Semaphore로 동시 처리 제한
@@ -121,12 +122,13 @@ async def compare_images(
                 feature_count,
                 page1,
                 page2,
-                bin_threshold,
                 colors,
                 processing_resolution=processing_resolution,
                 output_resolution=output_resolution,
                 output_quality=output_quality,
                 pdf_dpi=pdf_dpi,
+                cad_mode=cad_mode,
+                cad_line_width=cad_line_width,
                 request_id=request_id,
             )
 

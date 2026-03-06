@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../../api/djangoApi';
-import { Lock, Mail, User, Key, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, User, Key, ArrowRight, Eye, EyeOff, X } from 'lucide-react';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -10,6 +10,7 @@ const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  const [showGuidePopup, setShowGuidePopup] = useState(false);
 
   const [formData, setFormData] = useState({
     username: '',
@@ -85,12 +86,41 @@ const LoginPage = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-primary)] p-4 overflow-y-auto">
+
+      {/* 계정 생성 방법 팝업 모달 */}
+      {showGuidePopup && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+          onClick={() => setShowGuidePopup(false)}
+        >
+          <div
+            className="relative bg-white rounded-xl shadow-2xl overflow-hidden max-w-[90vw] max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowGuidePopup(false)}
+              className="absolute top-2 right-2 z-10 flex items-center justify-center w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors"
+              aria-label="닫기"
+            >
+              <X size={16} />
+            </button>
+            <img
+              src="/popup.png"
+              alt="계정 생성 방법"
+              className="max-w-full max-h-[80vh] object-contain block"
+            />
+          </div>
+        </div>
+      )}
       {/* 배경 데코레이션 */}
       <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-[var(--accent-color)] rounded-full opacity-5 blur-[100px] pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-purple-500 rounded-full opacity-5 blur-[100px] pointer-events-none"></div>
 
+      {/* 카드 + 링크 세로 래퍼 */}
+      <div className="flex flex-col items-center w-full max-w-[340px]">
+
       {/* 메인 카드 컨테이너 */}
-      <div className="relative w-full max-w-[340px] my-4 bg-[var(--bg-secondary)] rounded-2xl shadow-2xl border border-[var(--border-color)] overflow-hidden transition-all duration-300 transform scale-[0.9] origin-center">
+      <div className="relative w-full my-4 bg-[var(--bg-secondary)] rounded-2xl shadow-2xl border border-[var(--border-color)] overflow-hidden transition-all duration-300 transform scale-[0.9] origin-center">
        
         {/* 상단 헤더 영역 */}
         <div className="px-6 pt-6 pb-2 text-center">
@@ -304,6 +334,18 @@ const LoginPage = () => {
           )}
         </div>
       </div>
+
+      {/* 계정 생성 방법 링크 — 카드 외부 하단 */}
+      {isLoginMode && (
+        <button
+          onClick={() => setShowGuidePopup(true)}
+          className="mb-4 text-[var(--accent-color)] underline outline-none scale-[0.9]"
+          style={{ fontSize: '16px' }}
+        >
+          계정 생성 방법
+        </button>
+      )}
+      </div>{/* /카드 + 링크 세로 래퍼 */}
     </div>
   );
 };

@@ -106,7 +106,9 @@ const loadSettings = async () => {
   const [settings, setSettings] = useState({
     mode: 'difference',
     diffThreshold: 30,
-    featureCount: 4000
+    featureCount: 4000,
+    cadMode: false,
+    cadLineWidth: 0.2,
   });
   const [resultData, setResultData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -149,7 +151,7 @@ const handleFile1Select = useCallback((file, page) => {
     const qualityKey = userSettings
       ? `q${userSettings.output_quality ?? 85}-r${userSettings.output_resolution ?? 2000}-p${userSettings.processing_resolution ?? 6000}-d${userSettings.pdf_dpi ?? 300}`
       : 'q-default';
-    const cacheKey = `${p1}-${p2}-${settings.diffThreshold}-${settings.featureCount}-${qualityKey}`;
+    const cacheKey = `${p1}-${p2}-${settings.diffThreshold}-${settings.featureCount}-${settings.cadMode ? 'cad' : 'std'}-${settings.cadLineWidth}-${qualityKey}`;
 
     // Check cache first - return immediately without triggering loading state
     const cachedResult = resultCache.current.get(cacheKey);
@@ -174,10 +176,13 @@ const handleFile1Select = useCallback((file, page) => {
       const commonParams = {
         file1,
         file2,
+        mode: settings.mode,
         diffThreshold: settings.diffThreshold,
         featureCount: settings.featureCount,
         page1: p1,
         page2: p2,
+        cadMode: settings.cadMode,
+        cadLineWidth: settings.cadLineWidth,
         colors: userSettings
           ? {
               diff_file1:  userSettings.diff_file1,

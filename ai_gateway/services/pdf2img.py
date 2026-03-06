@@ -28,6 +28,8 @@ from typing import Tuple
 import cv2
 import fitz
 import numpy as np
+import pikepdf
+import re
 from PyPDF2 import PdfReader, PdfWriter
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,104 @@ _DEFAULT_DPI = 200
 # 이 값을 초과하면 get_pixmap() 호출 전에 MemoryError를 발생시켜
 # C 레벨 OOM 및 프로세스 강제 종료를 방지한다.
 _MAX_PIXMAP_BYTES = 400 * 1024 * 1024  # 400 MB
+
+
+# ----------------------------------------------------------------------
+# 2️⃣ CAD‑mode 전용 PDF 스트림 편집 함수
+# ----------------------------------------------------------------------
+def _replace_line_width_in_stream(
+    stream_obj,
+    pattern: re.Pattern,
+    replacement: bytes,
+    location: str,
+) -> int:
+    """
+    단일 스트림 객체 내 line-width 연산자를 교체한다.
+
+    Returns: 교체된 연산자 개수
+    """
+    try:
+        raw = stream_obj.read_bytes()
+    except Exception as e:
+        logger.warning("[cad_mode] %s 스트림 읽기 실패: %s", location, e)
+        return 0
+
+    replaced, n_subs = pattern.subn(replacement, raw)
+    if n_subs > 0:
+        stream_obj.write(replaced)
+        logger.debug("[cad_mode] %s: line-width %d개 교체", location, n_subs)
+    return n_subs
+
+
+def apply_cad_mode_to_pdf(pdf_bytes: bytes, line_width: float = 0.1) -> bytes:
+    """
+    PDF 바이트 스트림을 읽어 모든 라인 굵기 연산자(`w`) 를 지정한 값으로 교체한다.
+    페이지 Contents 및 Form XObject 내부 스트림 모두 처리한다.
+
+    Parameters
+    ----------
+    pdf_bytes : bytes
+        원본 PDF 파일 전체 바이트.
+    line_width : float, default 0.1
+        라인 굵기로 강제 지정할 값 (PDF 단위는 point, 1 pt ≈ 0.352 mm).
+        CAD 도면용 thin line은 0.1~0.3 권장.
+
+    Returns
+    -------
+    bytes
+        라인 굵기가 교체된 새로운 PDF 바이트 스트림.
+    """
+    logger.debug("[cad_mode] PDF 스트림 편집 시작 - 목표 라인 굵기: %s pt", line_width)
+
+    # `w` 연산자(setlinewidth): <숫자> w 형식, `wi` 등 다른 연산자와 혼동 방지를 위해
+    # `\b` word boundary로 토큰 끝을 확인한다.
+    pattern = re.compile(rb"(?:[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s+w\b")
+    replacement = f"{line_width:g} w".encode("ascii")
+
+    total_contents_subs = 0
+    total_xobject_subs = 0
+
+    with pikepdf.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page_number, page in enumerate(pdf.pages, start=1):
+            # ─────────────────────────────────────────────────────────────
+            # 1) 페이지 /Contents 스트림 수정
+            # ─────────────────────────────────────────────────────────────
+            if "/Contents" in page:
+                contents = page["/Contents"]
+                stream_list = list(contents) if isinstance(contents, pikepdf.Array) else [contents]
+                for i, stream_obj in enumerate(stream_list):
+                    location = f"페이지 {page_number} Contents[{i}]"
+                    total_contents_subs += _replace_line_width_in_stream(
+                        stream_obj, pattern, replacement, location
+                    )
+
+            # ─────────────────────────────────────────────────────────────
+            # 2) Form XObject 내부 스트림 수정 (CAD PDF의 실제 도면이 여기 있음)
+            # ─────────────────────────────────────────────────────────────
+            if "/Resources" in page and "/XObject" in page["/Resources"]:
+                xobjects = page["/Resources"]["/XObject"]
+                for name in list(xobjects.keys()):
+                    xobj = xobjects[name]
+                    # Form XObject만 처리 (Image XObject는 스트림 구조가 다름)
+                    subtype = xobj.get("/Subtype")
+                    if subtype == pikepdf.Name.Form:
+                        location = f"페이지 {page_number} XObject/{name}"
+                        total_xobject_subs += _replace_line_width_in_stream(
+                            xobj, pattern, replacement, location
+                        )
+
+        # 3) 수정된 PDF를 메모리 바이트로 반환
+        out_io = io.BytesIO()
+        pdf.save(out_io)
+        logger.info(
+            "[cad_mode] PDF 라인 굵기 교체 완료 - 페이지: %d, Contents: %d개, XObject: %d개",
+            len(pdf.pages),
+            total_contents_subs,
+            total_xobject_subs,
+        )
+        result_bytes = out_io.getvalue()
+
+    return result_bytes
 
 
 def _single_page_bytes(reader: PdfReader, page_index: int) -> bytes:
@@ -105,6 +205,8 @@ def _pypdf2_page_to_bgr(
     file_bytes: bytes,
     page_num: int = 0,
     dpi: int = _DEFAULT_DPI,
+    cad_mode: bool = False,
+    cad_line_width: float = 0.2,
 ) -> Tuple[np.ndarray, int]:
     """
     PyPDF2 경로: 암호화 PDF에서 특정 페이지를 BGR numpy 배열로 변환.
@@ -143,7 +245,20 @@ def _pypdf2_page_to_bgr(
         page_pdf_bytes = _single_page_bytes(reader, page_num)
         logger.debug("[pdf2img] single-page bytes extracted: page=%s size=%s", page_num, len(page_pdf_bytes))
 
-        with fitz.open(stream=page_pdf_bytes, filetype="pdf") as doc:
+        # ────────────────────────────────────────────────────────────────
+        # CAD‑mode: PyPDF2로 단일 페이지를 추출한 뒤 line-width 스트림 편집을 적용한다.
+        #  - cad_pdf_bytes 를 먼저 page_pdf_bytes 로 초기화하여,
+        #    CAD 변환 실패 시에도 원본 바이트로 안전하게 fallback 된다.
+        # ────────────────────────────────────────────────────────────────
+        cad_pdf_bytes = page_pdf_bytes  # fallback 기본값: 원본 단일 페이지 바이트
+        if cad_mode:
+            try:
+                cad_pdf_bytes = apply_cad_mode_to_pdf(page_pdf_bytes, line_width=cad_line_width)
+                logger.info("[pdf2img] CAD-mode 스트림 편집 성공")
+            except Exception as e:
+                logger.warning("[pdf2img] CAD-mode 스트림 편집 실패 - 원본 바이트로 fallback (%s)", e)
+
+        with fitz.open(stream=cad_pdf_bytes, filetype="pdf") as doc:
             logger.debug("[pdf2img] fallback fitz open success: page_count=%s", doc.page_count)
             img_bgr = fitz_page_to_bgr(doc.load_page(0), dpi)
 
@@ -162,6 +277,8 @@ def pdf_to_bgr(
     file_bytes: bytes,
     page_num: int = 0,
     dpi: int = _DEFAULT_DPI,
+    cad_mode: bool = False,
+    cad_line_width: float = 0.2,
 ) -> Tuple[np.ndarray, int]:
     """
     PDF bytes → BGR numpy 배열 변환 (메인 진입점).
@@ -191,7 +308,15 @@ def pdf_to_bgr(
 
     # 1차: fitz 직접 렌더링
     try:
-        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+        render_bytes = file_bytes
+        if cad_mode:
+            try:
+                render_bytes = apply_cad_mode_to_pdf(file_bytes, line_width=cad_line_width)
+                logger.info("[pdf2img] fitz 직접 경로 CAD-mode 스트림 편집 성공")
+            except Exception as e:
+                logger.warning("[pdf2img] fitz 직접 경로 CAD-mode 실패 - 원본 바이트로 fallback (%s)", e)
+
+        with fitz.open(stream=render_bytes, filetype="pdf") as doc:
             total_pages = doc.page_count
             logger.debug("[pdf2img] fitz direct open success: total_pages=%s", total_pages)
 
@@ -223,7 +348,7 @@ def pdf_to_bgr(
     try:
         if _fallback_dpi < dpi:
             logger.info("[pdf2img] 폴백 DPI 축소 적용: %s → %s", dpi, _fallback_dpi)
-        img_bgr, total_pages = _pypdf2_page_to_bgr(file_bytes, page_num=page_num, dpi=_fallback_dpi)
+        img_bgr, total_pages = _pypdf2_page_to_bgr(file_bytes, page_num=page_num, dpi=_fallback_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width)
         logger.info(
             "[pdf2img] PyPDF2 폴백 성공 — 페이지 %s/%s (dpi=%s)",
             page_num + 1,

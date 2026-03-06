@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { SlidersHorizontal, ChevronDown, ChevronUp, Layers } from 'lucide-react';
 
 const SettingsPanel = ({ settings, onSettingsChange, colors }) => {
-  const { mode, diffThreshold, featureCount } = settings;
+  const { mode, diffThreshold, featureCount, cadMode, cadLineWidth } = settings;
   const [isConfigOpen, setIsConfigOpen] = useState(false);
 
   return (
@@ -93,27 +93,69 @@ const SettingsPanel = ({ settings, onSettingsChange, colors }) => {
 
         {isConfigOpen && (
           <div className="space-y-4">
-            {/* 차이 임계값 (difference/split-overlay 모드에만 표시) */}
-            {(mode === 'difference' || mode === 'split-overlay') && (
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-2">
-                  차이 임계값: {diffThreshold}
-                </label>
-                <input
-                  type="range"
-                  min="10"
-                  max="100"
-                  step="5"
-                  value={diffThreshold}
-                  onChange={(e) => onSettingsChange({ ...settings, diffThreshold: parseInt(e.target.value) })}
-                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>민감 (10)</span>
-                  <span>둔감 (100)</span>
+            <div className="flex items-center gap-2">
+              <input
+                id="cadMode"
+                type="checkbox"
+                checked={cadMode ?? false}
+                onChange={(e) => onSettingsChange({ ...settings, cadMode: e.target.checked })}
+                className="w-4 h-4 accent-blue-500 cursor-pointer"
+              />
+              <label htmlFor="cadMode" className="text-xs font-medium text-gray-700 cursor-pointer select-none">
+                CAD 모드 (Thin Line)
+              </label>
+              <span className="ml-auto flex items-center gap-1 text-xs text-gray-600">
+                선두께
+                <div className="flex items-stretch border border-gray-300 rounded overflow-hidden">
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.05"
+                    max="2.0"
+                    value={cadLineWidth ?? 0.2}
+                    onChange={(e) => onSettingsChange({ ...settings, cadLineWidth: parseFloat(e.target.value) || 0.2 })}
+                    className="w-12 px-1 py-0.5 text-xs text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <div className="flex flex-col border-l border-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => onSettingsChange({ ...settings, cadLineWidth: parseFloat(Math.min(2.0, (cadLineWidth ?? 0.2) + 0.05).toFixed(2)) })}
+                      className="flex items-center justify-center px-0.5 flex-1 hover:bg-gray-100"
+                    >
+                      <ChevronUp size={10} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSettingsChange({ ...settings, cadLineWidth: parseFloat(Math.max(0.05, (cadLineWidth ?? 0.2) - 0.05).toFixed(2)) })}
+                      className="flex items-center justify-center px-0.5 flex-1 hover:bg-gray-100 border-t border-gray-300"
+                    >
+                      <ChevronDown size={10} />
+                    </button>
+                  </div>
                 </div>
+                px
+              </span>
+            </div>
+
+            {/* 차이 임계값 */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-2">
+                차이 임계값: {diffThreshold}
+              </label>
+              <input
+                type="range"
+                min="10"
+                max="100"
+                step="5"
+                value={diffThreshold}
+                onChange={(e) => onSettingsChange({ ...settings, diffThreshold: parseInt(e.target.value) })}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>민감 (10)</span>
+                <span>둔감 (100)</span>
               </div>
-            )}
+            </div>
 
             {/* 특징점 개수 */}
             <div>

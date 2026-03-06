@@ -15,6 +15,10 @@ from .pdf2img import pdf_to_bgr
 
 logger = logging.getLogger(__name__)
 
+# 이진화 임계값: 흰 배경(~255) vs 선/잉크(~0-80) 이진화에 사용.
+# CAD/공학 도면 전용 고정 상수로, 사용자 조정 불필요.
+_BIN_THRESHOLD = 200
+
 
 def _img_debug_info(img: np.ndarray) -> str:
     """로그용 이미지 메타정보 문자열 생성."""
@@ -65,7 +69,14 @@ def tiff_to_image(tiff_bytes: bytes, page_num: int = 0) -> Tuple[np.ndarray, int
         raise ValueError(f"TIFF 변환 실패: {str(e)}")
 
 
-def load_file(file_bytes: bytes, content_type: str, page_num: int = 0, dpi: int = 200) -> Tuple[np.ndarray, int, str]:
+def load_file(
+    file_bytes: bytes,
+    content_type: str,
+    page_num: int = 0,
+    dpi: int = 200,
+    cad_mode: bool = False,
+    cad_line_width: float = 0.2,
+) -> Tuple[np.ndarray, int, str]:
     """
     파일 로드 (이미지 또는 PDF)
     
@@ -80,15 +91,22 @@ def load_file(file_bytes: bytes, content_type: str, page_num: int = 0, dpi: int 
     """
     try:
         logger.debug(
-            "load_file start: content_type=%s page_num=%s dpi=%s size=%.2fMB",
+            "load_file start: content_type=%s page_num=%s dpi=%s cad_mode=%s size=%.2fMB",
             content_type,
             page_num,
             dpi,
+            cad_mode,
             len(file_bytes) / 1024 / 1024,
         )
 
         if "pdf" in content_type.lower():
-            img_bgr, total_pages = pdf_to_bgr(file_bytes, page_num=page_num, dpi=dpi)
+            img_bgr, total_pages = pdf_to_bgr(
+                file_bytes,
+                page_num=page_num,
+                dpi=dpi,
+                cad_mode=cad_mode,
+                cad_line_width=cad_line_width,
+            )
             logger.debug("load_file complete (pdf): pages=%s %s", total_pages, _img_debug_info(img_bgr))
             return img_bgr, total_pages, "pdf"
         elif "tiff" in content_type.lower() or "tif" in content_type.lower():
@@ -419,13 +437,14 @@ def process_comparison(
     feature_count: int = 4000,
     page1: int = 0,
     page2: int = 0,
-    bin_threshold: int = 200,
     colors: dict = None,
     # 품질 설정
     processing_resolution: int = 6000,  # 비교 연산용 최대 해상도 (4000-8000)
     output_resolution: int = 2000,      # 화면 출력용 최대 해상도 (1000-4000)
     output_quality: int = 85,           # JPEG 출력 품질 (50-100)
     pdf_dpi: int = 300,                 # PDF 변환 DPI (100-600)
+    cad_mode: bool = False,
+    cad_line_width: float = 0.2,
     request_id: str = "-",
 ) -> dict:
     """
@@ -456,8 +475,8 @@ def process_comparison(
 
     logger.debug(
         "[req=%s] process_comparison start: file1_type=%s file2_type=%s "
-        "diff_threshold=%s feature_count=%s pages=(%s,%s) bin_threshold=%s "
-        "processing_resolution=%s output_resolution=%s output_quality=%s pdf_dpi=%s",
+        "diff_threshold=%s feature_count=%s pages=(%s,%s) "
+        "processing_resolution=%s output_resolution=%s output_quality=%s pdf_dpi=%s cad_mode=%s cad_line_width=%s",
         request_id,
         file1_type,
         file2_type,
@@ -465,18 +484,19 @@ def process_comparison(
         feature_count,
         page1,
         page2,
-        bin_threshold,
         processing_resolution,
         output_resolution,
         output_quality,
         pdf_dpi,
+        cad_mode,
+        cad_line_width,
     )
 
     try:
         # Stage 1-A. 파일 로드 (PDF는 사용자 지정 DPI 적용)
-        logger.info("[req=%s] 파일 로드 중... (pdf_dpi=%s)", request_id, pdf_dpi)
-        img1, pages1, type1 = load_file(file1_bytes, file1_type, page1, dpi=pdf_dpi)
-        img2, pages2, type2 = load_file(file2_bytes, file2_type, page2, dpi=pdf_dpi)
+        logger.info("[req=%s] 파일 로드 중... (pdf_dpi=%s, cad_mode=%s)", request_id, pdf_dpi, cad_mode)
+        img1, pages1, type1 = load_file(file1_bytes, file1_type, page1, dpi=pdf_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width)
+        img2, pages2, type2 = load_file(file2_bytes, file2_type, page2, dpi=pdf_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width)
         logger.debug(
             "[req=%s] Stage1-A load complete: file1(type=%s,pages=%s,%s) file2(type=%s,pages=%s,%s)",
             request_id,
@@ -513,9 +533,9 @@ def process_comparison(
 
         # 모든 모드에서 필요한 3개 이미지 생성: file1_highlighted, file2_highlighted, overlay
         file1_result, file2_result = generate_highlighted_images(
-            img1, aligned_img2, diff_thresh=diff_threshold, bin_thresh=bin_threshold, colors=colors
+            img1, aligned_img2, diff_thresh=diff_threshold, bin_thresh=_BIN_THRESHOLD, colors=colors
         )
-        overlay_result = compare_images_overlay(img1, aligned_img2, bin_thresh=bin_threshold, colors=colors)
+        overlay_result = compare_images_overlay(img1, aligned_img2, bin_thresh=_BIN_THRESHOLD, colors=colors)
         logger.debug("[req=%s] Stage1-D compare done: overlay=%s", request_id, _img_debug_info(overlay_result))
 
         # Stage 2. 출력용 다운샘플 + 인코딩
