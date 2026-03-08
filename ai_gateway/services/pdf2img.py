@@ -6,13 +6,11 @@ PDF 파일을 BGR numpy 배열로 변환하는 범용 모듈.
 
 공개 API:
     - pdf_to_bgr(file_bytes, page_num, dpi)
-        메인 진입점. fitz 직접 렌더링 1차 시도, 실패 시 PyPDF2 폴백.
-    - fitz_page_to_bgr(page, dpi)
-        fitz page 객체 → BGR numpy 배열. 단순 렌더링 헬퍼.
+        메인 진입점. 모든 PDF를 공통 2-step 파이프라인으로 처리한다.
 
 변환 전략:
-    1차: fitz.open(stream=pdf_bytes) — 일반 PDF(비암호화)
-    2차: PyPDF2 PdfWriter로 페이지 재기록(암호화 메타 제거) → fitz 렌더
+    1차: PyPDF2 PdfWriter로 단일 페이지 재기록(메타데이터 정리)
+    2차: fitz로 최종 래스터 렌더링
 
 PdfReader는 BytesIO 스트림 대신 임시 파일 경로로 초기화한다.
 PyPDF2 3.x에서 BytesIO 스트림으로 암호화 PDF를 읽으면
@@ -24,7 +22,7 @@ import logging
 import os
 import re
 import tempfile
-from typing import Optional, Set, Tuple
+from typing import Set, Tuple
 
 import cv2
 import fitz
@@ -120,7 +118,7 @@ def _replace_line_width_in_form_xobjects(
     return total_subs
 
 
-def apply_cad_mode_to_pdf(pdf_bytes: bytes, line_width: float = 0.1) -> bytes:
+def apply_cad_mode_to_pdf(pdf_bytes: bytes, line_width: float = 0.2) -> bytes:
     """
     PDF 바이트 스트림을 읽어 모든 라인 굵기 연산자(`w`) 를 지정한 값으로 교체한다.
     페이지 Contents 및 Form XObject 내부 스트림 모두 처리한다.
@@ -129,7 +127,7 @@ def apply_cad_mode_to_pdf(pdf_bytes: bytes, line_width: float = 0.1) -> bytes:
     ----------
     pdf_bytes : bytes
         원본 PDF 파일 전체 바이트.
-    line_width : float, default 0.1
+    line_width : float, default 0.2
         라인 굵기로 강제 지정할 값 (PDF 단위는 point, 1 pt ≈ 0.352 mm).
         CAD 도면용 thin line은 0.1~0.3 권장.
 
@@ -213,26 +211,20 @@ def _estimate_pixmap_bytes(page, dpi: int, clip_rect: dict = None) -> int:
     return w * h * 3
 
 
-def fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None) -> np.ndarray:
-    """
-    fitz page 객체를 BGR numpy 배열로 변환.
-
-    Args:
-        page: fitz.Page 객체
-        dpi: 렌더링 해상도 (기본 200)
-        clip_rect: 선택적 crop 영역. {'x', 'y', 'width', 'height'} 정규화 좌표(0-1).
-                   None이면 전체 페이지 렌더링.
-
-    Returns:
-        BGR numpy 배열
-    """
+def _fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None) -> np.ndarray:
+    """공통 PDF 파이프라인 내부에서 fitz page 객체를 BGR numpy 배열로 렌더링한다."""
     zoom = dpi / 72
-    logger.debug("[pdf2img] fitz_page_to_bgr start: page=%s dpi=%s zoom=%.3f clip=%s", page.number, dpi, zoom, clip_rect is not None)
+    logger.debug(
+        "[pdf2img] render start: page=%s dpi=%s zoom=%.3f clip=%s",
+        page.number,
+        dpi,
+        zoom,
+        clip_rect is not None,
+    )
 
-    # --- 메모리 사전 체크: C 레벨 OOM → 프로세스 강제 종료 방지 ---
     estimated_bytes = _estimate_pixmap_bytes(page, dpi, clip_rect=clip_rect)
     logger.debug(
-        "[pdf2img] fitz_page_to_bgr estimated: %.1fMB (limit %.0fMB)",
+        "[pdf2img] render estimated: %.1fMB (limit %.0fMB)",
         estimated_bytes / 1024 / 1024,
         _MAX_PIXMAP_BYTES / 1024 / 1024,
     )
@@ -242,7 +234,6 @@ def fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None) -> n
             f"허용 한도 {_MAX_PIXMAP_BYTES / 1024 / 1024:.0f}MB를 초과합니다 "
             f"(dpi={dpi}). pdf_dpi 또는 처리 해상도를 낮춰 주세요."
         )
-    # ---------------------------------------------------------------
 
     matrix = fitz.Matrix(zoom, zoom)
     if clip_rect is not None:
@@ -255,8 +246,11 @@ def fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None) -> n
         )
         pix = page.get_pixmap(matrix=matrix, alpha=False, clip=fitz_clip)
         logger.debug(
-            "[pdf2img] fitz_page_to_bgr clip applied: pdf_rect=(%.1f,%.1f,%.1f,%.1f)",
-            fitz_clip.x0, fitz_clip.y0, fitz_clip.x1, fitz_clip.y1,
+            "[pdf2img] render clip applied: pdf_rect=(%.1f,%.1f,%.1f,%.1f)",
+            fitz_clip.x0,
+            fitz_clip.y0,
+            fitz_clip.x1,
+            fitz_clip.y1,
         )
     else:
         pix = page.get_pixmap(matrix=matrix, alpha=False)
@@ -264,7 +258,7 @@ def fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None) -> n
     img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
     img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
     logger.debug(
-        "[pdf2img] fitz_page_to_bgr done: size=%sx%s bytes=%.2fMB",
+        "[pdf2img] render done: size=%sx%s bytes=%.2fMB",
         pix.width,
         pix.height,
         img_bgr.nbytes / 1024 / 1024,
@@ -281,15 +275,14 @@ def _pypdf2_page_to_bgr(
     clip_rect: dict = None,
 ) -> Tuple[np.ndarray, int]:
     """
-    PyPDF2 경로: 암호화 PDF에서 특정 페이지를 BGR numpy 배열로 변환.
+    공통 PDF 파이프라인: 특정 페이지를 BGR numpy 배열로 변환.
 
-    PdfWriter로 페이지를 재기록하여 암호화 메타데이터를 제거한 뒤
-    fitz로 래스터라이즈한다.
+    PdfWriter로 단일 페이지를 재기록한 뒤 fitz로 최종 렌더링한다.
     """
     tmp_path = None
     try:
         logger.debug(
-            "[pdf2img] PyPDF2 fallback start: page_num=%s dpi=%s input_size=%.2fMB",
+            "[pdf2img] PDF pipeline start: page_num=%s dpi=%s input_size=%.2fMB",
             page_num,
             dpi,
             len(file_bytes) / 1024 / 1024,
@@ -322,7 +315,7 @@ def _pypdf2_page_to_bgr(
         #  - cad_pdf_bytes 를 먼저 page_pdf_bytes 로 초기화하여,
         #    CAD 변환 실패 시에도 원본 바이트로 안전하게 fallback 된다.
         # ────────────────────────────────────────────────────────────────
-        cad_pdf_bytes = page_pdf_bytes  # fallback 기본값: 원본 단일 페이지 바이트
+        cad_pdf_bytes = page_pdf_bytes  # CAD 변환 실패 시 원본 단일 페이지 바이트 유지
         if cad_mode:
             try:
                 cad_pdf_bytes = apply_cad_mode_to_pdf(page_pdf_bytes, line_width=cad_line_width)
@@ -331,8 +324,8 @@ def _pypdf2_page_to_bgr(
                 logger.warning("[pdf2img] CAD-mode 스트림 편집 실패 - 원본 바이트로 fallback (%s)", e)
 
         with fitz.open(stream=cad_pdf_bytes, filetype="pdf") as doc:
-            logger.debug("[pdf2img] fallback fitz open success: page_count=%s", doc.page_count)
-            img_bgr = fitz_page_to_bgr(doc.load_page(0), dpi, clip_rect=clip_rect)
+            logger.debug("[pdf2img] render fitz open success: page_count=%s", doc.page_count)
+            img_bgr = _fitz_page_to_bgr(doc.load_page(0), dpi=dpi, clip_rect=clip_rect)
 
         return img_bgr, total_pages
 
@@ -356,8 +349,7 @@ def pdf_to_bgr(
     """
     PDF bytes → BGR numpy 배열 변환 (메인 진입점).
 
-    1차: fitz 직접 렌더링 (일반 PDF)
-    2차: PyPDF2 폴백 (암호화 PDF 등 fitz 실패 시)
+    모든 PDF를 공통 2-step 파이프라인으로 처리한다.
 
     Args:
         file_bytes: PDF 파일 바이트
@@ -379,58 +371,21 @@ def pdf_to_bgr(
         len(file_bytes) / 1024 / 1024,
     )
 
-    _fallback_dpi = dpi
-
-    # 1차: fitz 직접 렌더링
     try:
-        render_bytes = file_bytes
-        if cad_mode:
-            try:
-                render_bytes = apply_cad_mode_to_pdf(file_bytes, line_width=cad_line_width)
-                logger.info("[pdf2img] fitz 직접 경로 CAD-mode 스트림 편집 성공")
-            except Exception as e:
-                logger.warning("[pdf2img] fitz 직접 경로 CAD-mode 실패 - 원본 바이트로 fallback (%s)", e)
-
-        with fitz.open(stream=render_bytes, filetype="pdf") as doc:
-            total_pages = doc.page_count
-            logger.debug("[pdf2img] fitz direct open success: total_pages=%s", total_pages)
-
-            if page_num >= total_pages:
-                page_num = 0
-                logger.debug("[pdf2img] fitz direct page_num reset to 0")
-
-            img_bgr = fitz_page_to_bgr(doc[page_num], dpi, clip_rect=clip_rect)
-
-            return img_bgr, total_pages
-
-    except MemoryError as e:
-        # 픽스맵 크기 초과: 폴백에서 DPI를 절반으로 줄여 메모리 압박 완화
-        _fallback_dpi = max(72, dpi // 2)
-        logger.warning(
-            "[pdf2img] fitz 렌더 메모리 초과, 폴백 DPI 축소: %s → %s (원인: %s)",
-            dpi,
-            _fallback_dpi,
-            e,
+        img_bgr, total_pages = _pypdf2_page_to_bgr(
+            file_bytes,
+            page_num=page_num,
+            dpi=dpi,
+            cad_mode=cad_mode,
+            cad_line_width=cad_line_width,
+            clip_rect=clip_rect,
         )
-    except Exception as e:
-        logger.warning(
-            "[pdf2img] fitz 직접 로드 실패, PyPDF2 폴백 시도 (원인: %s: %s)",
-            type(e).__name__,
-            e,
-        )
-
-    # 2차: PyPDF2 폴백 (메모리 초과 시 축소된 DPI 적용)
-    try:
-        if _fallback_dpi < dpi:
-            logger.info("[pdf2img] 폴백 DPI 축소 적용: %s → %s", dpi, _fallback_dpi)
-        img_bgr, total_pages = _pypdf2_page_to_bgr(file_bytes, page_num=page_num, dpi=_fallback_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width, clip_rect=clip_rect)
         logger.info(
-            "[pdf2img] PyPDF2 폴백 성공 — 페이지 %s/%s (dpi=%s)",
-            page_num + 1,
+            "[pdf2img] PDF pipeline success — total_pages=%s (dpi=%s)",
             total_pages,
-            _fallback_dpi,
+            dpi,
         )
         return img_bgr, total_pages
-    except Exception as fallback_e:
-        logger.error("[pdf2img] fitz + PyPDF2 모두 실패: %s: %s", type(fallback_e).__name__, fallback_e)
-        raise ValueError(f"PDF 변환 실패: {fallback_e}") from fallback_e
+    except Exception as e:
+        logger.error("[pdf2img] PDF pipeline failed: %s: %s", type(e).__name__, e)
+        raise ValueError(f"PDF 변환 실패: {e}") from e

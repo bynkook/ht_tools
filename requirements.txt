@@ -20,6 +20,7 @@ pymupdf
 Pillow
 numpy
 pypdf2
+pikepdf
 
 # Data Analysis & Visualization
 pandas
