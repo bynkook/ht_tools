@@ -41,10 +41,13 @@ export const fastApi = {
   },
 
   // 이미지 비교 요청
-  // params: { file1, file2, mode, diffThreshold, featureCount, page1, page2, cadMode, cadLineWidth, colors, quality, cropRect }
+  // params: { file1, file2, mode, diffThreshold, featureCount, alignmentAlgorithm, page1, page2, 
+  //           cadMode, cadLineWidth, cadLineWidthEnabled, cadAlignTolerance, cadQualityThreshold,
+  //           colors, quality, cropRect }
   compareImages: async (params) => {
     const { 
-      file1, file2, mode, diffThreshold, featureCount, page1, page2, cadMode, cadLineWidth,
+      file1, file2, mode, diffThreshold, featureCount, alignmentAlgorithm, page1, page2, 
+      cadMode, cadLineWidth, cadLineWidthEnabled, cadAlignTolerance, cadQualityThreshold,
       colors,    // { diff_file1, diff_file2, diff_common, overlay_file1, overlay_file2 }
       quality,   // { output_quality, output_resolution, processing_resolution, pdf_dpi }
       cropRect,  // { x, y, width, height } 정규화 0-1 또는 null
@@ -56,10 +59,16 @@ export const fastApi = {
     formData.append('mode', mode);
     formData.append('diff_threshold', diffThreshold);
     formData.append('feature_count', featureCount);
+    formData.append('alignment_algorithm', alignmentAlgorithm ?? 'orb');
     formData.append('page1', page1);
     formData.append('page2', page2);
-    formData.append('cad_mode', cadMode ? 'true' : 'false');
+    // CAD 선두께: ON/OFF에 따라 cad_mode 전송 여부 결정
+    const effectiveCadMode = cadMode && (cadLineWidthEnabled ?? true);
+    formData.append('cad_mode', effectiveCadMode ? 'true' : 'false');
     formData.append('cad_line_width', cadLineWidth ?? 0.2);
+    // CAD 정렬 파라미터 (CAD 모드일 때만 의미 있음)
+    formData.append('cad_align_tolerance', cadAlignTolerance ?? 0.22);
+    formData.append('cad_quality_threshold', cadQualityThreshold ?? 0.35);
     
     // crop 영역 파라미터 (4개 모두 있을 때만 전송)
     if (cropRect) {

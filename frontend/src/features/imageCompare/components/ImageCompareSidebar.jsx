@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image as ImageIcon, RotateCcw, Play, Home, ChevronLeft, LogOut, Upload, Crop, X } from 'lucide-react';
+import { Image as ImageIcon, RotateCcw, Play, Home, ChevronLeft, LogOut, Upload, Crop } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import FileUploader from './FileUploader';
 import SettingsPanel from './SettingsPanel';
@@ -113,42 +113,26 @@ const ImageCompareSidebar = ({
 
         {/* CROP 버튼 */}
         <button
-          onClick={onCropClick}
+          onClick={cropRect ? onCropReset : onCropClick}
           disabled={!canCrop || cropPreviewLoading}
           className={`
-            w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl
-            text-sm font-semibold transition-all shadow-md
+            w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
+            text-sm font-medium transition-all border
             ${cropRect
-              ? 'bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white hover:shadow-lg'
+              ? 'bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100'
               : canCrop
-                ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white hover:shadow-lg'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                ? 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+                : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
             }
             ${cropPreviewLoading ? 'opacity-70 cursor-wait' : ''}
           `}
         >
           {cropPreviewLoading
-            ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+            ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />
             : <Crop size={16} />}
-          {cropPreviewLoading ? '준비 중...' : 'Crop 영역 선택'}
+          {cropPreviewLoading ? '준비 중...' : cropRect ? 'Crop 해제' : 'Crop 영역 선택'}
         </button>
 
-        {/* CROP 활성 시: 해제 버튼 + 정보 표시 */}
-        {cropRect && (
-          <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
-            <span className="text-xs text-indigo-700 font-medium">
-              {Math.round(cropRect.width * 100)}% × {Math.round(cropRect.height * 100)}% 선택됨
-            </span>
-            <button
-              onClick={onCropReset}
-              className="flex items-center gap-1 text-xs text-indigo-500 hover:text-red-500 transition-colors"
-            >
-              <X size={12} />
-              CROP 해제
-            </button>
-          </div>
-        )}
-        
         <div>
           <SettingsPanel
             settings={settings}

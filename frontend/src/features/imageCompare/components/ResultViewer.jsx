@@ -8,6 +8,13 @@ const COLORS = {
   diff_file1: '#3B82F6', diff_file2: '#DC2626', diff_common: '#000000',
 };
 
+const ALGORITHM_LABELS = {
+  orb: 'ORB',
+  corner: 'CAD 도면용',
+  line: 'CAD 도면용',
+  drawing_hybrid: 'CAD 도면용',
+};
+
 // ─── Zoom Controls (inside TransformWrapper) ────────────────────────────────
 
 const ZoomControls = ({ onReset }) => {
@@ -206,7 +213,7 @@ const ResultViewer = ({ resultData, onDownload, colors }) => {
             {isDiffMode ? "비교 결과 (차이점 강조)" : isSplitOverlayMode ? "비교 결과 (차이점+오버레이)" : "비교 결과 (오버레이)"}
           </h3>
           <p className="text-xs text-gray-400 mt-0.5">
-            {metadata.result_size} • 매칭 품질: {(metadata.match_quality * 100).toFixed(0)}%
+            {metadata.result_size} • 알고리즘: {ALGORITHM_LABELS[metadata.algorithm_used] || metadata.algorithm_used || 'ORB'} • 매칭 품질: {(metadata.match_quality * 100).toFixed(0)}%
           </p>
         </div>
         <ColorLegend colors={activeColors} />

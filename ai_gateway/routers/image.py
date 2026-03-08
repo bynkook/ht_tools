@@ -54,6 +54,7 @@ async def compare_images(
     file2: UploadFile = File(...),
     diff_threshold: int = Form(30),
     feature_count: int = Form(4000),
+    alignment_algorithm: str = Form("orb"),
     page1: int = Form(0),
     page2: int = Form(0),
     # 품질 설정
@@ -63,6 +64,9 @@ async def compare_images(
     pdf_dpi: int = Form(200),                  # PDF 변환 DPI (100-300)
     cad_mode: bool = Form(False),
     cad_line_width: float = Form(0.2),
+    # CAD 모드 정렬 설정
+    cad_align_tolerance: float = Form(0.22),   # 정렬 허용도 (0.10~0.30)
+    cad_quality_threshold: float = Form(0.35), # 품질 기준 (0.20~0.50)
     # Optional crop parameters (정규화 좌표 0-1, 4개 모두 있을 때만 적용)
     crop_x: float = Form(None),
     crop_y: float = Form(None),
@@ -102,13 +106,13 @@ async def compare_images(
 
     logger.debug(
         "[req=%s] /image-compare/process start: file1=%s (%s), file2=%s (%s), "
-        "diff_threshold=%s, feature_count=%s, pages=(%s,%s), "
+        "diff_threshold=%s, feature_count=%s, alignment_algorithm=%s, pages=(%s,%s), "
         "processing_resolution=%s, output_resolution=%s, "
         "output_quality=%s, pdf_dpi=%s, cad_mode=%s, cad_line_width=%s",
         request_id,
         file1.filename, file1.content_type,
         file2.filename, file2.content_type,
-        diff_threshold, feature_count,
+        diff_threshold, feature_count, alignment_algorithm,
         page1, page2,
         processing_resolution, output_resolution,
         output_quality, pdf_dpi, cad_mode, cad_line_width,
@@ -150,6 +154,7 @@ async def compare_images(
                 file2.content_type,
                 diff_threshold,
                 feature_count,
+                alignment_algorithm,
                 page1,
                 page2,
                 colors,
@@ -159,6 +164,8 @@ async def compare_images(
                 pdf_dpi=pdf_dpi,
                 cad_mode=cad_mode,
                 cad_line_width=cad_line_width,
+                cad_align_tolerance=cad_align_tolerance,
+                cad_quality_threshold=cad_quality_threshold,
                 crop_rect=crop_rect,
                 request_id=request_id,
             )

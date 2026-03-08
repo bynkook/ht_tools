@@ -8,6 +8,9 @@ import CropSelector from './components/CropSelector';
 import { fastApi } from '../../api/fastapiApi';
 import { authApi, settingsApi } from '../../api/djangoApi';
 
+const normalizeAlignmentAlgorithm = (value) => value === 'orb' ? 'orb' : 'drawing_hybrid';
+const isDrawingHybridAlgorithm = (value) => normalizeAlignmentAlgorithm(value) === 'drawing_hybrid';
+
 // Extract PageControl component outside main component to prevent re-creation on each render
 const PageControl = memo(({ label, currentPage, totalPages, onPrev, onNext, disabled }) => (
   <div className="flex flex-col items-center gap-1">
@@ -88,11 +91,17 @@ const ImageComparePage = () => {
 
   useEffect(() => {
     // 앱 진입 시 사용자 설정 로드
-const loadSettings = async () => {
+    const loadSettings = async () => {
       try {
         const data = await settingsApi.getSettings();
         if (data && data.preferences && data.preferences.image_inspector) {
-          setUserSettings(data.preferences.image_inspector);
+          const imageInspectorSettings = data.preferences.image_inspector;
+          const alignmentAlgorithm = normalizeAlignmentAlgorithm(imageInspectorSettings.alignment_algorithm || 'orb');
+          setUserSettings(imageInspectorSettings);
+          setSettings(prev => ({
+            ...prev,
+            alignmentAlgorithm,
+          }));
         }
       } catch (error) {
         console.error('Failed to load user settings:', error);
@@ -108,8 +117,11 @@ const loadSettings = async () => {
     mode: 'difference',
     diffThreshold: 30,
     featureCount: 4000,
-    cadMode: false,
+    alignmentAlgorithm: 'orb',
     cadLineWidth: 0.2,
+    cadLineWidthEnabled: false,
+    cadAlignTolerance: 0.22,
+    cadQualityThreshold: 0.35,
   });
   const [resultData, setResultData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -121,6 +133,8 @@ const loadSettings = async () => {
   const [cropPreviewImage, setCropPreviewImage] = useState(null);    // base64 string (data URI 제외)
   const [cropPreviewCacheKey, setCropPreviewCacheKey] = useState(null);
   const [cropPreviewLoading, setCropPreviewLoading] = useState(false);
+  const isCadAlgorithm = isDrawingHybridAlgorithm(settings.alignmentAlgorithm);
+  const isCadLineWidthActive = isCadAlgorithm && settings.cadLineWidthEnabled;
 
   // 모드 변경 시 캐시된 결과의 _currentMode만 업데이트 (API 재호출 없음)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,7 +147,7 @@ const loadSettings = async () => {
   useEffect(() => {
     setCropPreviewImage(null);
     setCropPreviewCacheKey(null);
-  }, [file1, page1, settings.cadMode, settings.cadLineWidth, userSettings?.pdf_dpi]);
+  }, [file1, page1, settings.alignmentAlgorithm, settings.cadLineWidthEnabled, settings.cadLineWidth, userSettings?.pdf_dpi]);
 
 const handleFile1Select = useCallback((file, page) => {
     setFile1(file);
@@ -173,7 +187,10 @@ const handleFile1Select = useCallback((file, page) => {
     const cropKey = activeCropRect
       ? `crop(${activeCropRect.x.toFixed(4)},${activeCropRect.y.toFixed(4)},${activeCropRect.width.toFixed(4)},${activeCropRect.height.toFixed(4)})`
       : 'nocrop';
-    const cacheKey = `${p1}-${p2}-${settings.diffThreshold}-${settings.featureCount}-${settings.cadMode ? 'cad' : 'std'}-${settings.cadLineWidth}-${qualityKey}-${cropKey}`;
+    const cadKey = isCadAlgorithm
+      ? `cad-lw${settings.cadLineWidth}-en${settings.cadLineWidthEnabled ? 1 : 0}-tol${settings.cadAlignTolerance}-qt${settings.cadQualityThreshold}`
+      : 'std';
+    const cacheKey = `${settings.alignmentAlgorithm}-${p1}-${p2}-${settings.diffThreshold}-${settings.featureCount}-${cadKey}-${qualityKey}-${cropKey}`;
 
     // Check cache first - return immediately without triggering loading state
     const cachedResult = resultCache.current.get(cacheKey);
@@ -201,10 +218,14 @@ const handleFile1Select = useCallback((file, page) => {
         mode: settings.mode,
         diffThreshold: settings.diffThreshold,
         featureCount: settings.featureCount,
+        alignmentAlgorithm: settings.alignmentAlgorithm,
         page1: p1,
         page2: p2,
-        cadMode: settings.cadMode,
+        cadMode: isCadAlgorithm,
         cadLineWidth: settings.cadLineWidth,
+        cadLineWidthEnabled: settings.cadLineWidthEnabled,
+        cadAlignTolerance: settings.cadAlignTolerance,
+        cadQualityThreshold: settings.cadQualityThreshold,
         cropRect: activeCropRect ?? undefined,
         colors: userSettings
           ? {
@@ -262,7 +283,7 @@ const handleFile1Select = useCallback((file, page) => {
     } finally {
       setIsLoading(false);
     }
-  }, [settings, userSettings, file1, file2, page1, page2, cropRect]);
+  }, [settings, userSettings, file1, file2, page1, page2, cropRect, isCadAlgorithm]);
 
 const handleReset = useCallback(() => {
     // Reset all states
@@ -291,7 +312,8 @@ const handleReset = useCallback(() => {
       file1.size,
       file1.lastModified,
       page1,
-      settings.cadMode ? 'cad' : 'std',
+      settings.alignmentAlgorithm,
+      settings.cadLineWidthEnabled ? 'lw-on' : 'lw-off',
       settings.cadLineWidth,
       userSettings?.pdf_dpi ?? 150,
     ].join(':');
@@ -307,7 +329,7 @@ const handleReset = useCallback(() => {
         file: file1,
         page: page1,
         pdfDpi: userSettings?.pdf_dpi ?? 150,
-        cadMode: settings.cadMode,
+        cadMode: isCadLineWidthActive,
         cadLineWidth: settings.cadLineWidth,
       });
       setCropPreviewImage(previewResult.image_base64);
@@ -319,24 +341,24 @@ const handleReset = useCallback(() => {
     } finally {
       setCropPreviewLoading(false);
     }
-  }, [file1, page1, cropPreviewImage, cropPreviewCacheKey, settings.cadMode, settings.cadLineWidth, userSettings]);
+  }, [file1, page1, cropPreviewImage, cropPreviewCacheKey, settings.alignmentAlgorithm, settings.cadLineWidthEnabled, settings.cadLineWidth, userSettings, isCadLineWidthActive]);
 
-  // CropSelector에서 영역 확정 → crop 적용 후 즉시 비교 실행
+  // CropSelector에서 영역 확정 → crop 설정만 반영하고 비교 결과는 초기화
   const handleCropApply = useCallback((rect) => {
     setCropRect(rect);
     setShowCropSelector(false);
-    // setState는 비동기이므로 rect를 직접 전달
-    handleCompare(undefined, undefined, rect);
-  }, [handleCompare]);
+    setResultData(null);
+    setError(null);
+  }, []);
 
   // CROP 해제
   const handleCropReset = useCallback(() => {
     setCropRect(null);
     setCropPreviewImage(null);
     setCropPreviewCacheKey(null);
-    // crop 해제 후 즉시 재비교
-    handleCompare(undefined, undefined, null);
-  }, [handleCompare]);
+    setResultData(null);
+    setError(null);
+  }, []);
 
 const changePage = useCallback((fileNum, delta) => {
     if (isSyncNav) {
@@ -476,9 +498,6 @@ const handleLogout = useCallback(async () => {
               <h2 className="text-lg font-bold text-[var(--text-primary)]">
                 이미지/도면 비교 분석
               </h2>
-              <p className="text-xs text-[var(--text-secondary)]">
-                두 이미지의 차이점을 정밀하게 비교합니다
-              </p>
             </div>
           </header>
         )}

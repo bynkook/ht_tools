@@ -6,6 +6,8 @@ import { djangoClient } from '../../api/axiosConfig';
 import PresetAdminPanel from './components/PresetAdminPanel';
 import SliderInput from './components/SliderInput';
 
+const normalizeAlignmentAlgorithm = (value) => value === 'orb' ? 'orb' : 'drawing_hybrid';
+
 // Image Inspector 설정 기본값
 const COLOR_DEFAULTS = {
   diff_file1: '#3B82F6',
@@ -14,6 +16,7 @@ const COLOR_DEFAULTS = {
 };
 
 const QUALITY_DEFAULTS = {
+  alignment_algorithm: 'orb',
   output_quality: 85,
   output_resolution: 2000,
   processing_resolution: 6000,
@@ -51,8 +54,15 @@ const SettingsPage = () => {
     try {
       setLoading(true);
       const data = await settingsApi.getSettings();
-      setPreferences(data.preferences);
-      setOriginalPreferences(JSON.parse(JSON.stringify(data.preferences)));
+      const normalizedPreferences = {
+        ...data.preferences,
+        image_inspector: {
+          ...(data.preferences?.image_inspector || {}),
+          alignment_algorithm: normalizeAlignmentAlgorithm(data.preferences?.image_inspector?.alignment_algorithm ?? QUALITY_DEFAULTS.alignment_algorithm),
+        },
+      };
+      setPreferences(normalizedPreferences);
+      setOriginalPreferences(JSON.parse(JSON.stringify(normalizedPreferences)));
       setIsDirty(false);
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -309,12 +319,25 @@ const SettingsPage = () => {
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-6">
                 <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">비교 결과 출력 품질</h3>
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">정렬 및 출력 기본값</h3>
               </div>
               <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-                비교 연산이 완료된 후 브라우저에 표시할 이미지의 해상도와 품질입니다.
-                값을 낮추면 응답 속도가 향상됩니다.
+                기본 비교 알고리즘과 브라우저에 표시할 출력 품질을 함께 설정합니다.
               </p>
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-slate-800 mb-2">기본 비교 알고리즘</label>
+                <select
+                  value={normalizeAlignmentAlgorithm(preferences?.image_inspector?.alignment_algorithm ?? QUALITY_DEFAULTS.alignment_algorithm)}
+                  onChange={(e) => handleQualityChange('alignment_algorithm', e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-slate-400 focus:outline-none"
+                >
+                  <option value="orb">ORB: 사진/텍스처 중심</option>
+                  <option value="drawing_hybrid">CAD 도면용: 복잡한 선 구조 비교</option>
+                </select>
+                <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+                  ORB는 일반 이미지에, CAD 도면용은 복잡한 PDF 도면과 선 구조 중심 비교에 권장됩니다.
+                </p>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <SliderInput
                   label="출력 해상도"
