@@ -1,4 +1,4 @@
-# AGENTS.md - FabriX Development Guide for AI Agents
+# AGENTS.md - ht_fools readme
 
 This document provides essential context for AI coding agents working on the FabriX project.
 
@@ -255,6 +255,17 @@ const finishReason = parsed.finish_reason ?? parsed.finishReason;
 - FastAPI endpoints: `fastApiClient` / `fastapiApi.js`
 - Do NOT mix responsibilities
 
+### Frontend API Runtime Rules
+- Base URL is built dynamically from `window.location.protocol` + `window.location.hostname` (port only differs)
+- Auth token storage is `sessionStorage` (`authToken`)
+- Both `djangoClient` and `fastApiClient` inject `Authorization: Token <token>` via request interceptors
+
+### Gateway Prefixes (Prefix + Role)
+- `/health`: health check and liveness
+- `/chat-messages`: model chat streaming gateway + model list/rate-limit status
+- `/agent-messages`: agent chat streaming gateway + agent list/file upload/rate-limit status
+- `/image-compare`: image compare processing + preview
+
 ### HTTP Client (FastAPI)
 - ALWAYS use shared client: `request.app.state.http_client`
 - NEVER create `httpx.AsyncClient()` per request
@@ -303,6 +314,10 @@ mock_mode = true   # Returns mock SSE responses
 mock_mode = false  # Real FabriX API calls
 ```
 
+Note:
+- Current implementation applies mock streaming behavior to chat streaming paths.
+- Non-streaming APIs (for example image preview/process and dataset APIs) follow their normal backend flow.
+
 ## Data Explorer Specifics
 
 - Visualization: Graphic Walker (native React)
@@ -310,6 +325,24 @@ mock_mode = false  # Real FabriX API calls
 - Computation: DuckDB server-side mode
 - SQL: SELECT-only, forbidden patterns validated
 - Errors: Sanitize in production (no stack traces)
+- Projection model: keep full source in `raw_main_table`, recreate `main_table` as selected-columns projection
+- Cache rebuild flow: cache status -> rebuild start -> rebuild status polling
+- Frontend 429 behavior: `throttledUntilRef` blocks extra calls until `Retry-After` expires
+- Frontend loading split: Data Explorer shell renders first; Graphic Walker chart engine is lazy-loaded when the first dataset/preset chart is actually needed
+- Initial empty-state guidance is only for first entry; dataset/preset reloads must use a dedicated dataset-loading UI instead of reusing the empty-state message
+
+### Current limitation (Data Explorer)
+- This guide keeps endpoint depth at `prefix + role`; detailed request/response field specs are intentionally excluded.
+
+## Image Inspector Specifics
+
+- FastAPI handles heavy processing with endpoint roles under `/image-compare` (`/process`: compare, `/preview`: crop preview)
+- Concurrency control uses `asyncio.Semaphore(5)` (separate from chat global rate limiter)
+- One compare call returns `file1_base64`, `file2_base64`, `overlay_base64`; mode switching is frontend-only view logic
+- Frontend cache key includes pages, diff settings, CAD settings, quality settings, and crop rect
+
+### Current limitation (Image Inspector)
+- Page-count mismatch warning UI is not currently implemented; page navigation is clamped per file page range.
 
 ## Reference Documents
 
@@ -319,4 +352,4 @@ For detailed implementation:
 - `GEMINI.md` - Extended documentation
 - `doc.md/` - Feature-specific docs
 
-Last updated: 2026-02-20
+Last updated: 2026-03-08 (Gateway/API 규칙 동기화, Data Explorer/Image Inspector current limitation 명시)

@@ -1,6 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { Menu, AlertCircle } from 'lucide-react';
-import { GraphicWalker } from '@kanaries/graphic-walker';
+import React, { useState, useRef, useCallback, lazy, Suspense } from 'react';
+import { Menu, AlertCircle, LoaderCircle } from 'lucide-react';
 import DataExplorerSidebar from './components/DataExplorerSidebar';
 import ColumnConfigModal from './components/ColumnConfigModal';
 import PresetSaveModal from './components/PresetSaveModal';
@@ -8,6 +7,47 @@ import PresetRenameModal from './components/PresetRenameModal';
 import DeleteConfirmModal from './components/DeleteConfirmModal';
 import RebuildModal from './components/RebuildModal';
 import { dataExplorerApi, presetApi } from '../../api/djangoApi';
+
+const DataExplorerChart = lazy(() => import('./components/DataExplorerChart'));
+
+const BOOTSTRAP_CACHE_TTL_MS = 3000;
+const bootstrapCache = {
+  datasets: {
+    promise: null,
+    data: null,
+    loadedAt: 0,
+  },
+  presets: {
+    promise: null,
+    data: null,
+    loadedAt: 0,
+  },
+};
+
+const getBootstrapResource = async (key, loader) => {
+  const entry = bootstrapCache[key];
+  const now = Date.now();
+
+  if (entry.data && now - entry.loadedAt < BOOTSTRAP_CACHE_TTL_MS) {
+    return entry.data;
+  }
+
+  if (entry.promise) {
+    return entry.promise;
+  }
+
+  entry.promise = loader()
+    .then((data) => {
+      entry.data = data;
+      entry.loadedAt = Date.now();
+      return data;
+    })
+    .finally(() => {
+      entry.promise = null;
+    });
+
+  return entry.promise;
+};
 
 const DataExplorerPage = () => {
   // User info from session storage
@@ -17,6 +57,10 @@ const DataExplorerPage = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isDatasetsLoading, setIsDatasetsLoading] = useState(true);
+  const [arePresetsLoading, setArePresetsLoading] = useState(true);
+  const [isChartEngineReady, setIsChartEngineReady] = useState(false);
+  const [isDatasetTransitioning, setIsDatasetTransitioning] = useState(false);
   
   // 현재 선택된 파일명 (세션 키)
   const [currentFile, setCurrentFile] = useState(null);
@@ -91,6 +135,7 @@ const DataExplorerPage = () => {
 
   // 파일 선택/업로드 시 기존 차트 영역을 즉시 초기화
   const resetChartArea = useCallback(() => {
+    storeRef.current = null;
     setCurrentFile(null);
     setFields([]);
     setDisplayName(null);
@@ -98,44 +143,92 @@ const DataExplorerPage = () => {
     setChartSpec(null);
     setSelectedColumns([]);
     setIsServerDataset(false);
+    setIsChartEngineReady(false);
+  }, []);
+
+  const loadDatasets = useCallback(async ({ useBootstrapCache = false } = {}) => {
+    const response = useBootstrapCache
+      ? await getBootstrapResource('datasets', () => dataExplorerApi.getDatasets())
+      : await dataExplorerApi.getDatasets();
+
+    setServerDatasets(response.datasets || []);
+    return response;
+  }, []);
+
+  const loadPresets = useCallback(async ({ useBootstrapCache = false } = {}) => {
+    const response = useBootstrapCache
+      ? await getBootstrapResource('presets', () => presetApi.list())
+      : await presetApi.list();
+
+    setPresets(response.presets || []);
+    setIsAdmin(response.is_admin || false);
+    return response;
   }, []);
 
   // 데이터셋 목록 로드
   React.useEffect(() => {
+    let cancelled = false;
+
     const fetchDatasets = async () => {
+      setIsDatasetsLoading(true);
+
       try {
-        const response = await dataExplorerApi.getDatasets();
-        setServerDatasets(response.datasets || []);
+        await loadDatasets({ useBootstrapCache: true });
       } catch (err) {
-        console.error("Failed to fetch server datasets:", err);
+        if (!cancelled) {
+          console.error("Failed to fetch server datasets:", err);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsDatasetsLoading(false);
+        }
       }
     };
+
     fetchDatasets();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadDatasets]);
 
   // Preset 목록 로드
   React.useEffect(() => {
-    const fetchPresets = async () => {
+    let cancelled = false;
+    const timerId = window.setTimeout(async () => {
+      setArePresetsLoading(true);
+
       try {
-        const response = await presetApi.list();
-        setPresets(response.presets || []);
-        setIsAdmin(response.is_admin || false);
+        await loadPresets({ useBootstrapCache: true });
       } catch (err) {
-        console.error("Failed to fetch presets:", err);
+        if (!cancelled) {
+          console.error("Failed to fetch presets:", err);
+        }
+      } finally {
+        if (!cancelled) {
+          setArePresetsLoading(false);
+        }
       }
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
     };
-    fetchPresets();
-  }, []);
+  }, [loadPresets]);
 
   // Preset 목록 새로고침
   const refreshPresets = useCallback(async () => {
+    setArePresetsLoading(true);
+
     try {
-      const response = await presetApi.list();
-      setPresets(response.presets || []);
+      await loadPresets();
     } catch (err) {
       console.error("Failed to refresh presets:", err);
+    } finally {
+      setArePresetsLoading(false);
     }
-  }, []);
+  }, [loadPresets]);
 
   // ==== Preset 저장 핸들러 ====
   const handleOpenPresetSaveModal = useCallback(() => {
@@ -198,6 +291,7 @@ const DataExplorerPage = () => {
 
   // ==== Preset 로드 핸들러 ====
   const handleLoadPreset = useCallback(async (presetId) => {
+    setIsDatasetTransitioning(true);
     resetChartArea();
     setIsLoading(true);
     setError(null);
@@ -234,6 +328,7 @@ const DataExplorerPage = () => {
           files: [],
           pendingFile: filename,
         });
+        setIsDatasetTransitioning(false);
         setIsLoading(false);
         return;  // Rebuild 확인 후 진행
       }
@@ -245,6 +340,7 @@ const DataExplorerPage = () => {
       console.error("Preset load error:", err);
       const errorMessage = err.response?.data?.error || err.message || "프리셋 로드에 실패했습니다.";
       setError(errorMessage);
+      setIsDatasetTransitioning(false);
       setIsLoading(false);
     }
   }, [resetChartArea]);
@@ -253,6 +349,8 @@ const DataExplorerPage = () => {
   const loadPresetInternal = useCallback(async (preset) => {
     setIsLoading(true);
     setError(null);
+    storeRef.current = null;
+    setIsChartEngineReady(false);
 
     try {
       const { data_config, chart_spec, fields_meta } = preset;
@@ -283,6 +381,7 @@ const DataExplorerPage = () => {
       const errorMessage = err.response?.data?.error || err.message || "프리셋 로드에 실패했습니다.";
       setError(errorMessage);
     } finally {
+      setIsDatasetTransitioning(false);
       setIsLoading(false);
     }
   }, []);
@@ -394,8 +493,7 @@ const DataExplorerPage = () => {
   // Rebuild 완료 콜백
   const handleRebuildComplete = useCallback((result) => {
     // Refresh dataset list
-    dataExplorerApi.getDatasets()
-      .then(response => setServerDatasets(response.datasets || []))
+    loadDatasets()
       .catch(console.error);
     
     // If there's a pending file to load after rebuild (single mode - file click)
@@ -416,7 +514,7 @@ const DataExplorerPage = () => {
       loadPresetInternal(preset);
       return;
     }
-  }, [pendingLoadAfterRebuild, pendingPresetAfterRebuild, handleCloseRebuildModal, loadPresetInternal]);
+  }, [pendingLoadAfterRebuild, pendingPresetAfterRebuild, handleCloseRebuildModal, loadDatasets, loadPresetInternal]);
 
   // Cancel 버튼 핸들러 - 앱 초기 상태로 리셋 (클라이언트 전용, API 호출 없음)
   const handleCancelModal = () => {
@@ -436,6 +534,7 @@ const DataExplorerPage = () => {
     setChartSpec(null);
     setSelectedColumns([]);
     setIsServerDataset(false);
+    setIsDatasetTransitioning(false);
   };
 
   // OK 버튼 핸들러 - 선택된 컬럼으로 세션 초기화
@@ -443,7 +542,10 @@ const DataExplorerPage = () => {
     setModalOpen(false);
     setIsLoading(true);
     setError(null);
+    setIsDatasetTransitioning(true);
     setChartSpec(null); // 새 데이터셋 로드 시 차트 스펙 초기화
+    storeRef.current = null;
+    setIsChartEngineReady(false);
     
     // 업로드 파일인지 서버 데이터셋인지 저장
     const wasUpload = pendingIsUpload;
@@ -467,6 +569,7 @@ const DataExplorerPage = () => {
       const errorMessage = err.response?.data?.error || err.message || "데이터셋 로드에 실패했습니다.";
       setError(errorMessage);
     } finally {
+      setIsDatasetTransitioning(false);
       setIsLoading(false);
       setPendingFile(null);
       setPendingDisplayName(null);
@@ -487,8 +590,7 @@ const DataExplorerPage = () => {
       
       // 2. Refresh Dataset List (Optional, but good for UX)
       try {
-        const listResponse = await dataExplorerApi.getDatasets();
-        setServerDatasets(listResponse.datasets || []);
+        await loadDatasets();
       } catch (e) { console.warn("Failed to refresh list", e); }
 
       // 3. Get preview and show modal
@@ -515,6 +617,7 @@ const DataExplorerPage = () => {
 
   // [Computation Mode] 데이터셋 선택 핸들러 (캐시 상태 확인 → 필요시 Rebuild 팝업)
   const handleLoadDataset = async (filename) => {
+    setIsDatasetTransitioning(true);
     resetChartArea();
     setIsLoading(true);
     setError(null);
@@ -533,6 +636,7 @@ const DataExplorerPage = () => {
           files: [],
           pendingFile: filename,
         });
+        setIsDatasetTransitioning(false);
         setIsLoading(false);
         return;  // Don't proceed until rebuild is done
       }
@@ -543,6 +647,7 @@ const DataExplorerPage = () => {
       console.error(err);
       const errorMessage = err.response?.data?.error || err.message || "데이터셋 로드에 실패했습니다.";
       setError(errorMessage);
+      setIsDatasetTransitioning(false);
       setIsLoading(false);
     }
   };
@@ -563,6 +668,7 @@ const DataExplorerPage = () => {
         setDetectedColumns(response.detected_columns);
         setPendingIsUpload(false);  // 서버 데이터셋 표시
         setModalOpen(true);
+        setIsDatasetTransitioning(false);
       } else {
         throw new Error("Failed to get preview data");
       }
@@ -571,6 +677,9 @@ const DataExplorerPage = () => {
       const errorMessage = err.response?.data?.error || err.message || "데이터셋 로드에 실패했습니다.";
       setError(errorMessage);
     } finally {
+      if (!modalOpen) {
+        setIsDatasetTransitioning(false);
+      }
       setIsLoading(false);
     }
   };
@@ -656,14 +765,16 @@ const DataExplorerPage = () => {
                 onFileUpload={handleFileUpload}
                 onLoadLocalDataset={handleLoadDataset}
                 serverDatasets={serverDatasets}
+               datasetsLoading={isDatasetsLoading}
                 isLoading={isLoading}
                 // Preset props
                 presets={presets}
+               presetsLoading={arePresetsLoading}
                 onSavePreset={handleOpenPresetSaveModal}
                 onLoadPreset={handleLoadPreset}
                 onDeletePreset={handleDeletePreset}
                 onRenamePreset={handleRenamePreset}
-                canSavePreset={!!currentFile && fields.length > 0 && isServerDataset}
+               canSavePreset={!!currentFile && fields.length > 0 && isServerDataset && isChartEngineReady}
                 isAdmin={isAdmin}
                 // Rebuild props
                 onRebuildClick={handleRebuildButtonClick}
@@ -711,24 +822,34 @@ const DataExplorerPage = () => {
                                 </span>
                             )}
                         </div>
-                        {/* Computation Mode: data prop is NOT used. store/computation prop is used. */}
-                        {/* key prop forces remount when dataset changes */}
-                        {/* storeRef allows accessing chart state for preset save */}
-                        {/* chart prop loads saved preset visualization */}
-                        <GraphicWalker
-                            key={currentFile}
+                        <Suspense
+                          fallback={(
+                            <div className="flex h-[calc(100%-2rem)] items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50 text-gray-500">
+                              <div className="flex items-center gap-2 text-sm">
+                                <LoaderCircle size={18} className="animate-spin" />
+                                <span>차트 엔진을 불러오는 중입니다...</span>
+                              </div>
+                            </div>
+                          )}
+                        >
+                          <DataExplorerChart
+                            currentFile={currentFile}
                             fields={fields}
-                            appearance="light"
                             computation={computation}
                             storeRef={storeRef}
-                            chart={chartSpec}
-                            i18nLang="en-US"
-                            hideDataSourceConfig={true}
-                            hideProfiling={true}
-                            experimentalFeatures={{ computedField: true }}
-                            onError={(err) => setError(err.message)}
-                        />
+                            chartSpec={chartSpec}
+                            onError={setError}
+                            onReadyChange={setIsChartEngineReady}
+                          />
+                        </Suspense>
                     </div>
+                    ) : isDatasetTransitioning ? (
+                      <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <LoaderCircle size={18} className="animate-spin" />
+                          <span>선택한 데이터셋을 불러오는 중입니다...</span>
+                        </div>
+                      </div>
                 ) : (
                     <div className="flex flex-col items-center justify-center h-full text-gray-400">
                         <p>왼쪽 사이드바에서 데이터셋을 선택하세요.</p>

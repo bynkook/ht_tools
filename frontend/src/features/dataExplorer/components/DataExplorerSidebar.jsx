@@ -1,15 +1,17 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, BarChart3, ChevronLeft, ChevronDown, ChevronUp, Home, FileText, Database, Save, Globe, Lock, MoreVertical, Pencil, Trash2, LogOut, RefreshCw, Search } from 'lucide-react';
+import { Upload, BarChart3, ChevronLeft, ChevronDown, ChevronUp, Home, FileText, Database, Save, Globe, Lock, MoreVertical, Pencil, Trash2, LogOut, RefreshCw, Search, LoaderCircle } from 'lucide-react';
 
 const DataExplorerSidebar = ({ 
   onClose, 
   onFileUpload, 
   onLoadLocalDataset, 
   serverDatasets, 
+  datasetsLoading = false,
   isLoading,
   // Preset props
   presets = [],
+  presetsLoading = false,
   onSavePreset,
   onLoadPreset,
   onDeletePreset,
@@ -99,6 +101,33 @@ const DataExplorerSidebar = ({
     return date.toLocaleString('ko-KR');
   };
 
+  const presetGroups = useMemo(() => ([
+    {
+      key: 'public',
+      label: 'Public Presets',
+      icon: <Globe size={12} />,
+      expanded: isPublicExpanded,
+      setExpanded: setIsPublicExpanded,
+      filter: publicFilter,
+      setFilter: setPublicFilter,
+      items: presets
+        .filter((preset) => preset.is_public)
+        .sort((left, right) => left.name.localeCompare(right.name, 'ko')),
+    },
+    {
+      key: 'private',
+      label: 'My Presets',
+      icon: <Lock size={12} />,
+      expanded: isPrivateExpanded,
+      setExpanded: setIsPrivateExpanded,
+      filter: privateFilter,
+      setFilter: setPrivateFilter,
+      items: presets
+        .filter((preset) => !preset.is_public)
+        .sort((left, right) => new Date(right.updated_at) - new Date(left.updated_at)),
+    },
+  ]), [isPrivateExpanded, isPublicExpanded, presets, privateFilter, publicFilter]);
+
   return (
     <div className="w-full h-full bg-[var(--bg-secondary)] flex flex-col">
       {/* Header */}
@@ -171,7 +200,12 @@ const DataExplorerSidebar = ({
           </button>
           
           {isDatasetExpanded && <div className="space-y-2">
-            {serverDatasets.length > 0 ? (
+            {datasetsLoading ? (
+              <div className="flex items-center gap-2 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-4 text-xs text-gray-500">
+                <LoaderCircle size={14} className="animate-spin" />
+                <span>데이터셋 목록을 불러오는 중입니다...</span>
+              </div>
+            ) : serverDatasets.length > 0 ? (
               serverDatasets.map((dataset) => (
                 <button
                   key={dataset.name}
@@ -199,7 +233,7 @@ const DataExplorerSidebar = ({
             )}
             
             {/* Rebuild Cache Button */}
-            {serverDatasets.length > 0 && (
+            {!datasetsLoading && serverDatasets.length > 0 && (
               <button
                 onClick={onRebuildClick}
                 disabled={isLoading}
@@ -231,32 +265,7 @@ const DataExplorerSidebar = ({
           </button>
 
           {/* Preset Item 렌더 함수 */}
-          {[
-            {
-              key: 'public',
-              label: 'Public Presets',
-              icon: <Globe size={12} />,
-              expanded: isPublicExpanded,
-              setExpanded: setIsPublicExpanded,
-              filter: publicFilter,
-              setFilter: setPublicFilter,
-              items: presets
-                .filter(p => p.is_public)
-                .sort((a, b) => a.name.localeCompare(b.name, 'ko')),
-            },
-            {
-              key: 'private',
-              label: 'My Presets',
-              icon: <Lock size={12} />,
-              expanded: isPrivateExpanded,
-              setExpanded: setIsPrivateExpanded,
-              filter: privateFilter,
-              setFilter: setPrivateFilter,
-              items: presets
-                .filter(p => !p.is_public)
-                .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)),
-            },
-          ].map(({ key, label, icon, expanded, setExpanded, filter, setFilter, items }) => {
+          {presetGroups.map(({ key, label, icon, expanded, setExpanded, filter, setFilter, items }) => {
             const filtered = filter
               ? items.filter(p => p.name.toLowerCase().includes(filter.toLowerCase()))
               : items;
@@ -289,7 +298,18 @@ const DataExplorerSidebar = ({
 
                     {/* Preset List Box */}
                     <div className="max-h-[200px] overflow-y-auto custom-scrollbar space-y-1">
-                      {filtered.length > 0 ? filtered.map((preset) => (
+                      {presetsLoading && items.length === 0 ? (
+                        <div className="space-y-2 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-4 text-xs text-gray-500">
+                          <div className="flex items-center gap-2">
+                            <LoaderCircle size={14} className="animate-spin" />
+                            <span>프리셋 목록을 불러오는 중입니다...</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="h-10 rounded-lg bg-gray-200/70" />
+                            <div className="h-10 rounded-lg bg-gray-200/70" />
+                          </div>
+                        </div>
+                      ) : filtered.length > 0 ? filtered.map((preset) => (
                         <div
                           key={preset.id}
                           className="w-full flex items-center gap-2 p-1.5 bg-white rounded-lg border border-transparent hover:border-purple-200 hover:shadow-sm transition-all group"
