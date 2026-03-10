@@ -48,6 +48,7 @@ export const fastApi = {
     const { 
       file1, file2, mode, diffThreshold, featureCount, alignmentAlgorithm, page1, page2, 
       cadMode, cadLineWidth, cadLineWidthEnabled, cadAlignTolerance, cadQualityThreshold,
+      hideHatchTransparency,
       colors,    // { diff_file1, diff_file2, diff_common, overlay_file1, overlay_file2 }
       quality,   // { output_quality, output_resolution, processing_resolution, pdf_dpi }
       cropRect,  // { x, y, width, height } 정규화 0-1 또는 null
@@ -62,10 +63,12 @@ export const fastApi = {
     formData.append('alignment_algorithm', alignmentAlgorithm ?? 'orb');
     formData.append('page1', page1);
     formData.append('page2', page2);
-    // CAD 선두께: ON/OFF에 따라 cad_mode 전송 여부 결정
-    const effectiveCadMode = cadMode && (cadLineWidthEnabled ?? true);
+    // CAD 전처리: 선두께 변경 또는 해치 제거 중 하나라도 켜져 있으면 cad_mode 적용
+    const effectiveCadMode = cadMode && ((cadLineWidthEnabled ?? true) || !!hideHatchTransparency);
     formData.append('cad_mode', effectiveCadMode ? 'true' : 'false');
     formData.append('cad_line_width', cadLineWidth ?? 0.2);
+    formData.append('apply_line_width', cadLineWidthEnabled ?? false);
+    formData.append('hide_hatch_transparency', hideHatchTransparency ?? false);
     // CAD 정렬 파라미터 (CAD 모드일 때만 의미 있음)
     formData.append('cad_align_tolerance', cadAlignTolerance ?? 0.22);
     formData.append('cad_quality_threshold', cadQualityThreshold ?? 0.35);
@@ -97,7 +100,7 @@ export const fastApi = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
-      timeout: 120000, // 120초 타임아웃 (고해상도 처리 대응)
+      timeout: 240000, // 240초 타임아웃 (대용량/복잡 도면 비교 대응)
     });
     
     return response.data;
@@ -105,17 +108,19 @@ export const fastApi = {
 
   // 단일 파일 미리보기 요청 (CropSelector 표시용)
   // PDF는 cad_mode/cad_line_width 를 넣어서 실제 비교와 동일한 렌더링 조건 적용
-  previewFile: async ({ file, page, pdfDpi, cadMode, cadLineWidth }) => {
+  previewFile: async ({ file, page, pdfDpi, cadMode, cadLineWidth, applyLineWidth, hideHatchTransparency }) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('page', page ?? 0);
     formData.append('pdf_dpi', pdfDpi ?? 150);
     formData.append('cad_mode', cadMode ? 'true' : 'false');
     formData.append('cad_line_width', cadLineWidth ?? 0.2);
+    formData.append('apply_line_width', applyLineWidth ?? false);
+    formData.append('hide_hatch_transparency', hideHatchTransparency ?? false);
 
     const response = await fastApiClient.post('/image-compare/preview', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 30000,
+      timeout: 100000,
     });
     return response.data; // { image_base64, width, height, pages }
   },

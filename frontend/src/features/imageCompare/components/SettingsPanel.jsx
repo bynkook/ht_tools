@@ -5,6 +5,7 @@ const SettingsPanel = ({ settings, onSettingsChange, colors }) => {
   const { 
     mode, diffThreshold, featureCount, alignmentAlgorithm, 
     cadLineWidth, cadLineWidthEnabled,
+    hideHatchTransparency,
     cadAlignTolerance, cadQualityThreshold
   } = settings;
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -189,6 +190,22 @@ const SettingsPanel = ({ settings, onSettingsChange, colors }) => {
                       </p>
                     </div>
                   )}
+                </div>
+
+                {/* Solid hatch 제거 */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <input
+                      id="hideHatchTransparency"
+                      type="checkbox"
+                      checked={hideHatchTransparency ?? false}
+                      onChange={(e) => onSettingsChange({ ...settings, hideHatchTransparency: e.target.checked })}
+                      className="w-4 h-4 accent-blue-500 cursor-pointer"
+                    />
+                    <label htmlFor="hideHatchTransparency" className="text-xs font-medium text-gray-700 cursor-pointer select-none">
+                      Solid Hatch 제거
+                    </label>
+                  </div>
                 </div>
 
                 {/* 정렬 허용도 */}

@@ -161,6 +161,10 @@ def load_file(
     dpi: int = 200,
     cad_mode: bool = False,
     cad_line_width: float = 0.2,
+    apply_line_width: bool = True,
+    hide_hatch_transparency: bool = False,
+    request_id: str = "-",
+    source_label: Optional[str] = None,
     clip_rect: Optional[dict] = None,
 ) -> Tuple[np.ndarray, int, str]:
     """
@@ -194,6 +198,9 @@ def load_file(
                 dpi=dpi,
                 cad_mode=cad_mode,
                 cad_line_width=cad_line_width,
+                apply_line_width=apply_line_width,
+                hide_hatch_transparency=hide_hatch_transparency,
+                request_id=request_id,
                 clip_rect=clip_rect,
             )
             logger.debug("load_file complete (pdf): pages=%s %s", total_pages, _img_debug_info(img_bgr))
@@ -469,8 +476,10 @@ def _line_intersection(
     line_a: tuple[int, int, int, int],
     line_b: tuple[int, int, int, int],
 ) -> Optional[tuple[float, float]]:
-    x1, y1, x2, y2 = line_a
-    x3, y3, x4, y4 = line_b
+    # cv2 HoughLinesP 결과는 np.int32가 섞일 수 있어 곱셈 시 overflow 경고가 발생한다.
+    # 교차점 계산은 float64로 승격해 안전하게 수행한다.
+    x1, y1, x2, y2 = (float(v) for v in line_a)
+    x3, y3, x4, y4 = (float(v) for v in line_b)
     denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
     if abs(denominator) < 1e-6:
         return None
@@ -1746,6 +1755,8 @@ def process_comparison(
     file1_type: str,
     file2_bytes: bytes,
     file2_type: str,
+    file1_name: str = "file1",
+    file2_name: str = "file2",
     diff_threshold: int = 30,
     feature_count: int = 4000,
     alignment_algorithm: str = "orb",
@@ -1759,6 +1770,8 @@ def process_comparison(
     pdf_dpi: int = 300,                 # PDF 변환 DPI (100-600)
     cad_mode: bool = False,
     cad_line_width: float = 0.2,
+    apply_line_width: bool = True,
+    hide_hatch_transparency: bool = False,
     cad_align_tolerance: float = 0.22,  # CAD 정렬 허용도 (0.10~0.30)
     cad_quality_threshold: float = 0.35,  # CAD 품질 기준 (0.20~0.50)
     crop_rect: dict = None,
@@ -1813,8 +1826,32 @@ def process_comparison(
     try:
         # Stage 1-A. 파일 로드 (PDF는 사용자 지정 DPI 적용, crop_rect 있을 때만 clip 적용)
         logger.info("[req=%s] 파일 로드 중... (pdf_dpi=%s, cad_mode=%s, crop=%s)", request_id, pdf_dpi, cad_mode, crop_rect is not None)
-        img1, pages1, type1 = load_file(file1_bytes, file1_type, page1, dpi=pdf_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width, clip_rect=crop_rect)
-        img2, pages2, type2 = load_file(file2_bytes, file2_type, page2, dpi=pdf_dpi, cad_mode=cad_mode, cad_line_width=cad_line_width, clip_rect=crop_rect)
+        img1, pages1, type1 = load_file(
+            file1_bytes,
+            file1_type,
+            page1,
+            dpi=pdf_dpi,
+            cad_mode=cad_mode,
+            cad_line_width=cad_line_width,
+            apply_line_width=apply_line_width,
+            hide_hatch_transparency=hide_hatch_transparency,
+            request_id=request_id,
+            source_label=file1_name,
+            clip_rect=crop_rect,
+        )
+        img2, pages2, type2 = load_file(
+            file2_bytes,
+            file2_type,
+            page2,
+            dpi=pdf_dpi,
+            cad_mode=cad_mode,
+            cad_line_width=cad_line_width,
+            apply_line_width=apply_line_width,
+            hide_hatch_transparency=hide_hatch_transparency,
+            request_id=request_id,
+            source_label=file2_name,
+            clip_rect=crop_rect,
+        )
         logger.debug(
             "[req=%s] Stage1-A load complete: file1(type=%s,pages=%s,%s) file2(type=%s,pages=%s,%s)",
             request_id,

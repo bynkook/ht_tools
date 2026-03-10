@@ -120,6 +120,7 @@ const ImageComparePage = () => {
     alignmentAlgorithm: 'orb',
     cadLineWidth: 0.2,
     cadLineWidthEnabled: false,
+    hideHatchTransparency: false,
     cadAlignTolerance: 0.22,
     cadQualityThreshold: 0.35,
   });
@@ -135,6 +136,7 @@ const ImageComparePage = () => {
   const [cropPreviewLoading, setCropPreviewLoading] = useState(false);
   const isCadAlgorithm = isDrawingHybridAlgorithm(settings.alignmentAlgorithm);
   const isCadLineWidthActive = isCadAlgorithm && settings.cadLineWidthEnabled;
+  const isCadPreprocessActive = isCadAlgorithm && (settings.cadLineWidthEnabled || settings.hideHatchTransparency);
 
   // 모드 변경 시 캐시된 결과의 _currentMode만 업데이트 (API 재호출 없음)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -147,7 +149,15 @@ const ImageComparePage = () => {
   useEffect(() => {
     setCropPreviewImage(null);
     setCropPreviewCacheKey(null);
-  }, [file1, page1, settings.alignmentAlgorithm, settings.cadLineWidthEnabled, settings.cadLineWidth, userSettings?.pdf_dpi]);
+  }, [
+    file1,
+    page1,
+    settings.alignmentAlgorithm,
+    settings.cadLineWidthEnabled,
+    settings.cadLineWidth,
+    settings.hideHatchTransparency,
+    userSettings?.pdf_dpi,
+  ]);
 
 const handleFile1Select = useCallback((file, page) => {
     setFile1(file);
@@ -188,7 +198,7 @@ const handleFile1Select = useCallback((file, page) => {
       ? `crop(${activeCropRect.x.toFixed(4)},${activeCropRect.y.toFixed(4)},${activeCropRect.width.toFixed(4)},${activeCropRect.height.toFixed(4)})`
       : 'nocrop';
     const cadKey = isCadAlgorithm
-      ? `cad-lw${settings.cadLineWidth}-en${settings.cadLineWidthEnabled ? 1 : 0}-tol${settings.cadAlignTolerance}-qt${settings.cadQualityThreshold}`
+      ? `cad-lw${settings.cadLineWidth}-en${settings.cadLineWidthEnabled ? 1 : 0}-hh${settings.hideHatchTransparency ? 1 : 0}-tol${settings.cadAlignTolerance}-qt${settings.cadQualityThreshold}`
       : 'std';
     const cacheKey = `${settings.alignmentAlgorithm}-${p1}-${p2}-${settings.diffThreshold}-${settings.featureCount}-${cadKey}-${qualityKey}-${cropKey}`;
 
@@ -224,6 +234,8 @@ const handleFile1Select = useCallback((file, page) => {
         cadMode: isCadAlgorithm,
         cadLineWidth: settings.cadLineWidth,
         cadLineWidthEnabled: settings.cadLineWidthEnabled,
+        applyLineWidth: settings.cadLineWidthEnabled,
+        hideHatchTransparency: settings.hideHatchTransparency,
         cadAlignTolerance: settings.cadAlignTolerance,
         cadQualityThreshold: settings.cadQualityThreshold,
         cropRect: activeCropRect ?? undefined,
@@ -274,7 +286,11 @@ const handleFile1Select = useCallback((file, page) => {
       } else if (err.response?.status === 429) {
         setError('동시 처리 제한에 도달했습니다. 잠시 후 다시 시도해주세요.');
       } else if (err.response?.status === 504) {
-        setError('처리 시간이 초과되었습니다. 파일 크기를 줄이거나 잠시 후 다시 시도해주세요.');
+        setError('처리 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.');
+      } else if (err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '')) {
+        setError('비교 처리 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.');
+      } else if (err.request && !err.response) {
+        setError('서버 응답을 받지 못했습니다. 네트워크 상태 또는 처리 시간을 확인해주세요.');
       } else if (err.response?.data?.detail) {
         setError(err.response.data.detail);
       } else {
@@ -315,6 +331,7 @@ const handleReset = useCallback(() => {
       settings.alignmentAlgorithm,
       settings.cadLineWidthEnabled ? 'lw-on' : 'lw-off',
       settings.cadLineWidth,
+      settings.hideHatchTransparency ? 'hh-on' : 'hh-off',
       userSettings?.pdf_dpi ?? 150,
     ].join(':');
 
@@ -329,8 +346,10 @@ const handleReset = useCallback(() => {
         file: file1,
         page: page1,
         pdfDpi: userSettings?.pdf_dpi ?? 150,
-        cadMode: isCadLineWidthActive,
+        cadMode: isCadPreprocessActive,
         cadLineWidth: settings.cadLineWidth,
+        applyLineWidth: settings.cadLineWidthEnabled,
+        hideHatchTransparency: settings.hideHatchTransparency,
       });
       setCropPreviewImage(previewResult.image_base64);
       setCropPreviewCacheKey(currentPreviewKey);
@@ -341,7 +360,7 @@ const handleReset = useCallback(() => {
     } finally {
       setCropPreviewLoading(false);
     }
-  }, [file1, page1, cropPreviewImage, cropPreviewCacheKey, settings.alignmentAlgorithm, settings.cadLineWidthEnabled, settings.cadLineWidth, userSettings, isCadLineWidthActive]);
+  }, [file1, page1, cropPreviewImage, cropPreviewCacheKey, settings.alignmentAlgorithm, settings.cadLineWidthEnabled, settings.cadLineWidth, settings.hideHatchTransparency, userSettings, isCadPreprocessActive]);
 
   // CropSelector에서 영역 확정 → crop 설정만 반영하고 비교 결과는 초기화
   const handleCropApply = useCallback((rect) => {

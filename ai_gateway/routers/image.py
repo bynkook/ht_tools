@@ -64,6 +64,8 @@ async def compare_images(
     pdf_dpi: int = Form(200),                  # PDF 변환 DPI (100-300)
     cad_mode: bool = Form(False),
     cad_line_width: float = Form(0.2),
+    apply_line_width: bool = Form(True),
+    hide_hatch_transparency: bool = Form(False),
     # CAD 모드 정렬 설정
     cad_align_tolerance: float = Form(0.22),   # 정렬 허용도 (0.10~0.30)
     cad_quality_threshold: float = Form(0.35), # 품질 기준 (0.20~0.50)
@@ -108,14 +110,16 @@ async def compare_images(
         "[req=%s] /image-compare/process start: file1=%s (%s), file2=%s (%s), "
         "diff_threshold=%s, feature_count=%s, alignment_algorithm=%s, pages=(%s,%s), "
         "processing_resolution=%s, output_resolution=%s, "
-        "output_quality=%s, pdf_dpi=%s, cad_mode=%s, cad_line_width=%s",
+        "output_quality=%s, pdf_dpi=%s, cad_mode=%s, cad_line_width=%s, apply_line_width=%s, "
+        "hide_hatch_transparency=%s",
         request_id,
         file1.filename, file1.content_type,
         file2.filename, file2.content_type,
         diff_threshold, feature_count, alignment_algorithm,
         page1, page2,
         processing_resolution, output_resolution,
-        output_quality, pdf_dpi, cad_mode, cad_line_width,
+        output_quality, pdf_dpi, cad_mode, cad_line_width, apply_line_width,
+        hide_hatch_transparency,
     )
 
     # Semaphore로 동시 처리 제한
@@ -152,6 +156,8 @@ async def compare_images(
                 file1.content_type,
                 file2_bytes,
                 file2.content_type,
+                file1.filename or "file1",
+                file2.filename or "file2",
                 diff_threshold,
                 feature_count,
                 alignment_algorithm,
@@ -164,6 +170,8 @@ async def compare_images(
                 pdf_dpi=pdf_dpi,
                 cad_mode=cad_mode,
                 cad_line_width=cad_line_width,
+                apply_line_width=apply_line_width,
+                hide_hatch_transparency=hide_hatch_transparency,
                 cad_align_tolerance=cad_align_tolerance,
                 cad_quality_threshold=cad_quality_threshold,
                 crop_rect=crop_rect,
@@ -209,6 +217,8 @@ async def preview_file(
     pdf_dpi: int = Form(150),
     cad_mode: bool = Form(False),
     cad_line_width: float = Form(0.2),
+    apply_line_width: bool = Form(True),
+    hide_hatch_transparency: bool = Form(False),
 ):
     """
     [POST] /image-compare/preview
@@ -237,8 +247,15 @@ async def preview_file(
                 )
 
             logger.debug(
-                "[req=%s] /image-compare/preview: file=%s (%s) page=%s dpi=%s cad_mode=%s",
-                request_id, file.filename, file.content_type, page, pdf_dpi, cad_mode,
+                "[req=%s] /image-compare/preview: file=%s (%s) page=%s dpi=%s cad_mode=%s line_width=%s hatch_hide=%s",
+                request_id,
+                file.filename,
+                file.content_type,
+                page,
+                pdf_dpi,
+                cad_mode,
+                apply_line_width,
+                hide_hatch_transparency,
             )
 
             loop = asyncio.get_running_loop()
@@ -247,10 +264,14 @@ async def preview_file(
                 file_bytes,
                 file.content_type,
                 page,
-                pdf_dpi,
-                cad_mode,
-                cad_line_width,
-                None,  # clip_rect=None — 전체 페이지 표시
+                dpi=pdf_dpi,
+                cad_mode=cad_mode,
+                cad_line_width=cad_line_width,
+                apply_line_width=apply_line_width,
+                hide_hatch_transparency=hide_hatch_transparency,
+                request_id=request_id,
+                source_label=file.filename or "preview",
+                clip_rect=None,  # 전체 페이지 표시
             )
             img_bgr, total_pages, _ = await loop.run_in_executor(None, fn)
 
