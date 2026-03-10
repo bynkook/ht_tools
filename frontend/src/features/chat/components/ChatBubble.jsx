@@ -148,6 +148,19 @@ const ChatBubble = memo(({ message, isStreaming }) => {
           h3({ children }) {
             return <h3 className="text-xs font-semibold mb-2 text-[var(--text-primary)]">{children}</h3>;
           },
+          a({ children, href, ...props }) {
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500 underline hover:text-blue-600"
+                {...props}
+              >
+                {children}
+              </a>
+            );
+          },
         }}
       >
         {content || ''}
