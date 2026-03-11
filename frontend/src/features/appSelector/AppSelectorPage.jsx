@@ -116,16 +116,20 @@ const AppSelectorPage = () => {
           </div>
 
           {/* Direct Links */}
-          <div className="text-center mt-12">
+          <div className="text-center mt-12 space-y-1">
             <div className="text-sm text-gray-500">
-              직접 접속:
+              앱:
               <a href="/chat" className="ml-2 hover:underline">/chat</a>
-              <span className="mx-2">,</span>
+              <span className="mx-1">,</span>
               <a href="/agent-chat" className="hover:underline">/agent-chat</a>
-              <span className="mx-2">,</span>
+              <span className="mx-1">,</span>
               <a href="/image-compare" className="hover:underline">/image-compare</a>
-              <span className="mx-2">또는</span>
+              <span className="mx-1">,</span>
               <a href="/data-explorer" className="hover:underline">/data-explorer</a>
+            </div>
+            <div className="text-sm text-gray-500">
+              설정:
+              <a href="/dashboard-table" className="ml-2 hover:underline">/dashboard-table</a>
             </div>
           </div>
         </div>
@@ -140,45 +144,45 @@ const AppSelectorPage = () => {
           {/* Profile */}
           <button
             onClick={() => navigate('/profile')}
-            className="group flex flex-col items-center gap-2 text-gray-500 hover:text-blue-600 transition-colors"
+            className="group flex flex-col items-center gap-1.5 text-gray-500 hover:text-blue-600 transition-colors"
           >
-            <div className="p-3 bg-white rounded-full shadow-sm group-hover:shadow-md border border-gray-100 group-hover:border-blue-100 transition-all">
-              <UserCircle size={20} />
+            <div className="p-2.5 bg-white rounded-full shadow-sm group-hover:shadow-md border border-gray-100 group-hover:border-blue-100 transition-all">
+              <UserCircle size={16} />
             </div>
-            <span className="text-sm font-medium">Profile</span>
+            <span className="text-xs font-medium">Profile</span>
           </button>
 
           {/* Help */}
           <button
             onClick={() => navigate('/help')}
-            className="group flex flex-col items-center gap-2 text-gray-500 hover:text-blue-600 transition-colors"
+            className="group flex flex-col items-center gap-1.5 text-gray-500 hover:text-blue-600 transition-colors"
           >
-            <div className="p-3 bg-white rounded-full shadow-sm group-hover:shadow-md border border-gray-100 group-hover:border-blue-100 transition-all">
-              <HelpCircle size={20} />
+            <div className="p-2.5 bg-white rounded-full shadow-sm group-hover:shadow-md border border-gray-100 group-hover:border-blue-100 transition-all">
+              <HelpCircle size={16} />
             </div>
-            <span className="text-sm font-medium">Help</span>
+            <span className="text-xs font-medium">Help</span>
           </button>
 
           {/* Settings */}
           <button
             onClick={() => navigate('/settings')}
-            className="group flex flex-col items-center gap-2 text-gray-500 hover:text-gray-800 transition-colors"
+            className="group flex flex-col items-center gap-1.5 text-gray-500 hover:text-gray-800 transition-colors"
           >
-            <div className="p-3 bg-white rounded-full shadow-sm group-hover:shadow-md border border-gray-100 group-hover:border-gray-300 transition-all">
-              <Settings size={20} />
+            <div className="p-2.5 bg-white rounded-full shadow-sm group-hover:shadow-md border border-gray-100 group-hover:border-gray-300 transition-all">
+              <Settings size={16} />
             </div>
-            <span className="text-sm font-medium">Settings</span>
+            <span className="text-xs font-medium">Settings</span>
           </button>
 
           {/* Logout */}
           <button
             onClick={handleLogout}
-            className="group flex flex-col items-center gap-2 text-gray-500 hover:text-red-600 transition-colors"
+            className="group flex flex-col items-center gap-1.5 text-gray-500 hover:text-red-600 transition-colors"
           >
-            <div className="p-3 bg-white rounded-full shadow-sm group-hover:shadow-md border border-gray-100 group-hover:border-red-100 transition-all">
-              <LogOut size={20} />
+            <div className="p-2.5 bg-white rounded-full shadow-sm group-hover:shadow-md border border-gray-100 group-hover:border-red-100 transition-all">
+              <LogOut size={16} />
             </div>
-            <span className="text-sm font-medium">Log out</span>
+            <span className="text-xs font-medium">Log out</span>
           </button>
         </div>
       </div>

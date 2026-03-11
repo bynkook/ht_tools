@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
-import { memoryApi } from '../api/djangoApi';
-import dashboardsData from '../features/chat/data/dashboards.json';
+import { dashboardLinksApi, memoryApi } from '../api/djangoApi';
 
 /**
  * 자연어 → 커맨드 매핑 패턴
@@ -211,29 +210,34 @@ export const useCommands = ({
 
   // ===== Dashboard Command Handler =====
 
-  const handleDashboardCommand = useCallback(() => {
-    const { dashboards } = dashboardsData;
+  const handleDashboardCommand = useCallback(async () => {
+    setIsCommandLoading(true);
+    try {
+      const dashboards = await dashboardLinksApi.list();
 
-    if (!dashboards || dashboards.length === 0) {
-      setError('등록된 대시보드가 없습니다.');
-      return;
+      if (!dashboards || dashboards.length === 0) {
+        setError('등록된 대시보드가 없습니다.');
+        return;
+      }
+
+      const tableHeader = '| No | 대시보드 | 링크 | 설명 |';
+      const tableDivider = '|:---:|:---|:---:|:---|';
+      const tableRows = dashboards.map((dashboard, index) =>
+        `| ${dashboard.id ?? index + 1} | ${dashboard.dashboard_name} | [${dashboard.linkname}](${dashboard.url}) | ${dashboard.desc} |`
+      ).join('\n');
+
+      const markdownTable = `📊 **Tableau 대시보드 목록**\n\n${tableHeader}\n${tableDivider}\n${tableRows}`;
+
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: markdownTable
+      }]);
+    } catch (err) {
+      setError('대시보드 목록 조회에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
+    } finally {
+      setIsCommandLoading(false);
     }
-
-    // Markdown 테이블 생성
-    const tableHeader = '| No | 대시보드 | 링크 | 설명 |';
-    const tableDivider = '|:---:|:---|:---:|:---|';
-    const tableRows = dashboards.map(d => 
-      `| ${d.no} | ${d.dashboard_name} | [${d.linkname}](${d.url}) | ${d.desc} |`
-    ).join('\n');
-
-    const markdownTable = `📊 **Tableau 대시보드 목록**\n\n${tableHeader}\n${tableDivider}\n${tableRows}`;
-
-    // Assistant 메시지로 추가 (Markdown 렌더링 지원)
-    setMessages(prev => [...prev, {
-      role: 'assistant',
-      content: markdownTable
-    }]);
-  }, [setMessages, setError]);
+  }, [setError, setMessages]);
 
   // ===== Command Dispatcher =====
 
@@ -254,7 +258,7 @@ export const useCommands = ({
 
     // /dashboard 커맨드
     if (text === '/dashboard' || text === '/dashboard list') {
-      handleDashboardCommand();
+      await handleDashboardCommand();
       return { handled: true };
     }
 

@@ -147,6 +147,20 @@ export const modelChatApi = {
   },
 };
 
+export const dashboardLinksApi = {
+  list: async () => {
+    const response = await djangoClient.get('/api/chat/dashboard-links/');
+    return response.data;
+  },
+
+  bulkUpdate: async (rows) => {
+    const response = await djangoClient.put('/api/chat/dashboard-links/bulk/', {
+      rows,
+    });
+    return response.data;
+  },
+};
+
 // =============================================================================
 // Memory Snapshot APIs (/memory 커맨드용)
 // =============================================================================

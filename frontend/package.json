@@ -11,11 +11,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^7.0.2",
     "@kanaries/graphic-walker": "^0.5.0",
     "@microsoft/fetch-event-source": "^2.0.1",
     "axios": "^1.6.5",
     "clsx": "^2.1.0",
     "lucide-react": "^0.563.0",
+    "material-react-table": "^3.2.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-markdown": "^9.1.0",
