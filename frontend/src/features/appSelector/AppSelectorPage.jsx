@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, ImageIcon, Bot, ChevronRight, BarChart3, Settings, Sparkles, LogOut, UserCircle, HelpCircle } from 'lucide-react';
+import { MessageCircle, ImageIcon, Bot, ChevronRight, BarChart3, Settings, Sparkles, LogOut, UserCircle, HelpCircle, LayoutGrid } from 'lucide-react';
 
 const AppSelectorPage = () => {
   const navigate = useNavigate();
@@ -37,6 +37,14 @@ const AppSelectorPage = () => {
       icon: BarChart3,
       color: 'from-green-500 to-emerald-600',
       path: '/data-explorer'
+    },
+    {
+      id: 'dashboard-list',
+      name: 'Dashboard List',
+      description: '운영중인 태블로 대시보드 목록을 보여줍니다',
+      icon: LayoutGrid,
+      color: 'from-zinc-800 to-zinc-600',
+      path: '/dashboard-list'
     }
   ];
 
@@ -126,6 +134,8 @@ const AppSelectorPage = () => {
               <a href="/image-compare" className="hover:underline">/image-compare</a>
               <span className="mx-1">,</span>
               <a href="/data-explorer" className="hover:underline">/data-explorer</a>
+              <span className="mx-1">,</span>
+              <a href="/dashboard-list" className="hover:underline">/dashboard-list</a>
             </div>
             <div className="text-sm text-gray-500">
               설정:

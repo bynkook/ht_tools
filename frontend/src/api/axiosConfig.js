@@ -8,6 +8,8 @@ const getBaseUrl = (port) => {
   return `${protocol}//${hostname}:${port}`;
 };
 
+export const getDjangoUrl = (endpoint = '') => `${getBaseUrl(8000)}${endpoint}`;
+
 // 1. Django Client (Port 8000) - 데이터 및 인증 관리
 export const djangoClient = axios.create({
   baseURL: getBaseUrl(8000),

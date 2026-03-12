@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { getDjangoUrl } from './api/axiosConfig';
 
 // Lazy loading for code splitting and better performance
 const LoginPage = lazy(() => import('./features/auth/LoginPage'));
@@ -17,6 +18,7 @@ const ChatPage = lazy(() => import('./features/chat/ChatPage'));
 const ImageComparePage = lazy(() => import('./features/imageCompare/ImageComparePage'));
 const DataExplorerPage = lazy(() => import('./features/dataExplorer/DataExplorerPage'));
 const AppSelectorPage = lazy(() => import('./features/appSelector/AppSelectorPage'));
+const BoardPage = lazy(() => import('./features/board/BoardPage'));
 const DashboardTablePage = lazy(() => import('./features/dashboardTable/DashboardTablePage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
@@ -90,6 +92,17 @@ const LoadingFallback = () => (
   </div>
 );
 
+const DjangoAdminRedirect = () => {
+  const location = useLocation();
+
+  React.useEffect(() => {
+    const targetPath = `${location.pathname}${location.search}${location.hash}`;
+    window.location.replace(getDjangoUrl(targetPath));
+  }, [location]);
+
+  return <LoadingFallback />;
+};
+
 const App = () => {
   return (
     <ErrorBoundary>
@@ -113,6 +126,10 @@ const App = () => {
 
             {/* Image Compare - 독립적인 레이아웃 */}
             <Route path="/image-compare" element={<PrivateRoute><ImageComparePage /></PrivateRoute>} />
+
+            {/* Django Admin should never be claimed by board slug routing */}
+            <Route path="/admin/*" element={<DjangoAdminRedirect />} />
+            <Route path="/api/*" element={<DjangoAdminRedirect />} />
             
             {/* FabriX Chat (Model Chat) - 새 앱, /chat 경로 */}
             <Route path="/chat" element={<PrivateRoute><ChatLayout /></PrivateRoute>}>
@@ -126,6 +143,9 @@ const App = () => {
 
             {/* Data Explorer - Standalone Layout */}
             <Route path="/data-explorer" element={<PrivateRoute><DataExplorerPage /></PrivateRoute>} />
+
+            {/* Board Pages - root-level slug policy */}
+            <Route path="/:boardSlug" element={<PrivateRoute><BoardPage /></PrivateRoute>} />
 
             {/* 404: 알 수 없는 경로는 로그인 페이지로 리다이렉트 */}
             <Route path="*" element={<Navigate to="/login" replace />} />

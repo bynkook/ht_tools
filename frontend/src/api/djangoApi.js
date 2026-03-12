@@ -161,6 +161,41 @@ export const dashboardLinksApi = {
   },
 };
 
+export const boardApi = {
+  listBoards: async () => {
+    const response = await djangoClient.get('/api/board/boards/');
+    return response.data;
+  },
+
+  getBoard: async (slug) => {
+    const response = await djangoClient.get(`/api/board/boards/${slug}/`);
+    return response.data;
+  },
+
+  createPost: async (slug, formData) => {
+    const response = await djangoClient.post(`/api/board/boards/${slug}/posts/`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  updatePost: async (postId, formData) => {
+    const response = await djangoClient.patch(`/api/board/posts/${postId}/`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  deletePost: async (postId) => {
+    const response = await djangoClient.delete(`/api/board/posts/${postId}/`);
+    return response.data;
+  },
+};
+
 // =============================================================================
 // Memory Snapshot APIs (/memory 커맨드용)
 // =============================================================================

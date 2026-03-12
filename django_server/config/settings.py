@@ -83,6 +83,7 @@ INSTALLED_APPS = [
     'apps.fabrix_chat',          # FabriX Chat 앱 (Model 대화용)
     'apps.image_inspector',      # 이미지 비교 앱
     'apps.data_explorer',        # 데이터 분석 앱 (Graphic Walker)
+    'apps.board',                # 게시판 앱
 ]
 
 MIDDLEWARE = [
@@ -159,6 +160,8 @@ USE_TZ = True
 
 # 8. Static files
 STATIC_URL = 'static/'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = ROOT_DIR / 'media'
 
 # 9. Default Primary Key Field Type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

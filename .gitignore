@@ -17,6 +17,7 @@ log/
 *.bak
 *.old
 robocopy*.*
+media/
 
 # gemini-cli
 GEMINI.md

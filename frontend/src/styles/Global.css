@@ -90,6 +90,29 @@
   @apply bg-gray-300 rounded-full hover:bg-gray-400 transition-colors; 
 }
 
+.board-dark-scrollbar {
+  scrollbar-color: #3f3f46 #18181b;
+}
+
+.board-dark-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.board-dark-scrollbar::-webkit-scrollbar-track {
+  background: #18181b;
+}
+
+.board-dark-scrollbar::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 9999px;
+  border: 2px solid #18181b;
+}
+
+.board-dark-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
 /* Markdown 스타일링 */
 .markdown-body h1 { @apply text-2xl font-bold mb-4 mt-6; }
 .markdown-body h2 { @apply text-xl font-bold mb-3 mt-5; }
