@@ -65,10 +65,10 @@ const AppSelectorPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-indigo-100 flex flex-col">
       {/* Main Content */}
-      <div className="flex-grow flex items-center justify-center p-4">
-        <div className="max-w-3xl w-full">
+      <div className="px-4 pt-8 pb-3 md:pt-10">
+        <div className="mx-auto max-w-7xl w-full">
           {/* Header */}
-          <div className="text-center mb-10">
+          <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 mb-4 shadow-lg">
               <Bot className="text-white" size={28} />
             </div>
@@ -82,7 +82,7 @@ const AppSelectorPage = () => {
 
           {/* App Cards */}
           <div className="flex justify-center">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-[460px]">
+            <div className="flex w-full flex-wrap justify-center gap-4">
               {apps.map((app) => {
                 const Icon = app.icon;
                 const borderClass = app.id === 'chat'
@@ -93,7 +93,7 @@ const AppSelectorPage = () => {
                   <button
                     key={app.id}
                     onClick={() => handleSelectApp(app)}
-                    className={`group relative bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 p-4 text-left overflow-hidden border-2 ${borderClass} w-full`}
+                    className={`group relative w-[220px] flex-none bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 p-4 text-left overflow-hidden border-2 ${borderClass}`}
                   >
                     {/* Background Gradient */}
                     <div className={`absolute inset-0 bg-gradient-to-br ${app.color} opacity-0 group-hover:opacity-5 transition-opacity`} />
@@ -123,8 +123,13 @@ const AppSelectorPage = () => {
             </div>
           </div>
 
-          {/* Direct Links */}
-          <div className="text-center mt-12 space-y-1">
+        </div>
+      </div>
+
+      {/* Footer Settings & Logout */}
+      <div className="w-full max-w-7xl mx-auto px-4 pb-8 pt-0 md:pt-1">
+        <div className="flex flex-col gap-4 md:gap-5">
+          <div className="text-center space-y-1">
             <div className="text-sm text-gray-500">
               앱:
               <a href="/chat" className="ml-2 hover:underline">/chat</a>
@@ -142,15 +147,10 @@ const AppSelectorPage = () => {
               <a href="/dashboard-table" className="ml-2 hover:underline">/dashboard-table</a>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Footer Settings & Logout */}
-      <div className="w-full max-w-3xl mx-auto px-4 pb-8 pt-4">
-        {/* Divider */}
-        <div className="w-full h-px bg-gray-200 mb-6" />
+          <div className="w-full h-px bg-gray-200" />
 
-        <div className="flex justify-center items-center gap-12">
+          <div className="flex flex-wrap justify-center items-center gap-x-8 gap-y-4 md:gap-x-12">
           {/* Profile */}
           <button
             onClick={() => navigate('/profile')}
@@ -194,6 +194,7 @@ const AppSelectorPage = () => {
             </div>
             <span className="text-xs font-medium">Log out</span>
           </button>
+          </div>
         </div>
       </div>
     </div>

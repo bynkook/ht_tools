@@ -90,10 +90,6 @@
   @apply bg-gray-300 rounded-full hover:bg-gray-400 transition-colors; 
 }
 
-.board-dark-scrollbar {
-  scrollbar-color: #3f3f46 #18181b;
-}
-
 .board-dark-scrollbar::-webkit-scrollbar {
   width: 10px;
   height: 10px;
