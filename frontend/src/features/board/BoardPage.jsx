@@ -396,9 +396,15 @@ const BoardPage = () => {
   const [editingPost, setEditingPost] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isFetchingPost, setIsFetchingPost] = useState(false);
   const [error, setError] = useState('');
   const [openMenuId, setOpenMenuId] = useState(null);
   const menuRef = useRef(null);
+  const boardSlugRef = useRef(boardSlug);
+
+  useEffect(() => {
+    boardSlugRef.current = boardSlug;
+  }, [boardSlug]);
 
   const loadBoard = async () => {
     if (!boardSlug) {
@@ -423,6 +429,11 @@ const BoardPage = () => {
   };
 
   useEffect(() => {
+    setSelectedPost(null);
+    setEditingPost(null);
+    setIsFetchingPost(false);
+    setError('');
+    setOpenMenuId(null);
     void loadBoard();
   }, [boardSlug]);
 
@@ -448,6 +459,51 @@ const BoardPage = () => {
     : undefined;
 
   const sortedPosts = useMemo(() => posts, [posts]);
+
+  const fetchPostDetail = async (postId) => {
+    const detail = await boardApi.getPost(postId);
+    if (boardSlugRef.current !== boardSlug) {
+      return null;
+    }
+    return detail;
+  };
+
+  const handleSelectPost = async (post) => {
+    setError('');
+    setIsFetchingPost(true);
+    try {
+      const detail = await fetchPostDetail(post.id);
+      if (!detail) {
+        return;
+      }
+      setSelectedPost(detail);
+    } catch (loadError) {
+      setError(loadError.response?.data?.error || '게시글 상세를 불러오지 못했습니다.');
+    } finally {
+      if (boardSlugRef.current === boardSlug) {
+        setIsFetchingPost(false);
+      }
+    }
+  };
+
+  const handleEditPost = async (post) => {
+    setError('');
+    setOpenMenuId(null);
+    setIsFetchingPost(true);
+    try {
+      const detail = await fetchPostDetail(post.id);
+      if (!detail) {
+        return;
+      }
+      setEditingPost(detail);
+    } catch (loadError) {
+      setError(loadError.response?.data?.error || '게시글 편집 정보를 불러오지 못했습니다.');
+    } finally {
+      if (boardSlugRef.current === boardSlug) {
+        setIsFetchingPost(false);
+      }
+    }
+  };
 
   const handleDelete = async (postId) => {
     const confirmed = window.confirm('이 게시글을 삭제하시겠습니까?');
@@ -524,7 +580,10 @@ const BoardPage = () => {
             {canCreate && (
               <button
                 type="button"
-                onClick={() => setEditingPost({})}
+                onClick={() => {
+                  setError('');
+                  setEditingPost({});
+                }}
                 className="self-start rounded-full border border-emerald-300/20 bg-emerald-300/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-emerald-200 transition hover:border-emerald-200/40 hover:bg-emerald-300/20 hover:text-white"
               >
                 <span className="inline-flex items-center gap-2">
@@ -587,8 +646,7 @@ const BoardPage = () => {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                setOpenMenuId(null);
-                                setEditingPost(post);
+                                void handleEditPost(post);
                               }}
                               className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-zinc-700 transition hover:bg-zinc-100"
                             >
@@ -616,7 +674,8 @@ const BoardPage = () => {
 
                   <button
                     type="button"
-                    onClick={() => setSelectedPost(post)}
+                    onClick={() => void handleSelectPost(post)}
+                    disabled={isFetchingPost}
                     className="flex h-full w-full flex-col text-left"
                   >
                     <div className="relative aspect-[1.08/1] overflow-hidden rounded-t-[22px] bg-zinc-100">

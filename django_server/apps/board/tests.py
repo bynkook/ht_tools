@@ -99,3 +99,35 @@ class BoardPermissionTests(APITestCase):
         response = self.client.get(reverse('board-detail', kwargs={'slug': self.board.slug}))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual([post['title'] for post in response.data['posts'][:2]], ['Older', 'Newer'])
+
+    def test_board_detail_returns_lightweight_posts(self):
+        post = BoardPost.objects.create(
+            board=self.board,
+            author=self.moderator_user,
+            title='Summary Only',
+            body_markdown='Full markdown body',
+        )
+
+        self._authenticate(self.moderator_user)
+        response = self.client.get(reverse('board-detail', kwargs={'slug': self.board.slug}))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = response.data['posts'][0]
+        self.assertEqual(payload['id'], post.id)
+        self.assertNotIn('body_markdown', payload)
+        self.assertNotIn('images', payload)
+
+    def test_post_detail_returns_full_post_payload(self):
+        post = BoardPost.objects.create(
+            board=self.board,
+            author=self.moderator_user,
+            title='Detailed',
+            body_markdown='Full markdown body',
+        )
+
+        self._authenticate(self.moderator_user)
+        response = self.client.get(reverse('board-post-detail', kwargs={'post_id': post.id}))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['body_markdown'], 'Full markdown body')
+        self.assertIn('images', response.data)

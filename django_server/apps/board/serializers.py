@@ -93,6 +93,14 @@ class BoardPostListSerializer(serializers.ModelSerializer):
             'can_delete',
         ]
 
+    def _get_board_permissions(self, obj):
+        permissions = self.context.get('board_permissions')
+        if permissions is not None:
+            return permissions
+        request = self.context.get('request')
+        user = request.user if request else None
+        return get_board_permission_flags(user, obj.board)
+
     def get_preview_image_url(self, obj):
         preview = obj.preview_image
         if not preview or not preview.image:
@@ -103,14 +111,10 @@ class BoardPostListSerializer(serializers.ModelSerializer):
         return preview.image.url
 
     def get_can_edit(self, obj):
-        request = self.context.get('request')
-        user = request.user if request else None
-        return get_board_permission_flags(user, obj.board)['can_update']
+        return self._get_board_permissions(obj)['can_update']
 
     def get_can_delete(self, obj):
-        request = self.context.get('request')
-        user = request.user if request else None
-        return get_board_permission_flags(user, obj.board)['can_delete']
+        return self._get_board_permissions(obj)['can_delete']
 
     def get_excerpt(self, obj):
         cleaned = _MARKDOWN_SYMBOL_RE.sub(' ', obj.body_markdown or '')

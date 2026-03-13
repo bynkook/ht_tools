@@ -172,6 +172,11 @@ export const boardApi = {
     return response.data;
   },
 
+  getPost: async (postId) => {
+    const response = await djangoClient.get(`/api/board/posts/${postId}/`);
+    return response.data;
+  },
+
   createPost: async (slug, formData) => {
     const response = await djangoClient.post(`/api/board/boards/${slug}/posts/`, formData, {
       headers: {

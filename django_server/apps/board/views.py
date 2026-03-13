@@ -103,8 +103,13 @@ class BoardDetailView(APIView):
             return Response({'error': '비활성화된 게시판입니다.'}, status=status.HTTP_404_NOT_FOUND)
 
         posts = _post_queryset().filter(board=board)
+        board_permissions = get_board_permission_flags(request.user, board)
         board_serializer = BoardSerializer(board, context={'request': request})
-        post_serializer = BoardPostDetailSerializer(posts, many=True, context={'request': request})
+        post_serializer = BoardPostListSerializer(
+            posts,
+            many=True,
+            context={'request': request, 'board_permissions': board_permissions},
+        )
         return Response({
             'board': board_serializer.data,
             'posts': post_serializer.data,
@@ -120,7 +125,12 @@ class BoardPostListCreateView(APIView):
         if not board.is_active and not (request.user.is_staff or request.user.is_superuser):
             return Response({'error': '비활성화된 게시판입니다.'}, status=status.HTTP_404_NOT_FOUND)
         posts = _post_queryset().filter(board=board)
-        serializer = BoardPostListSerializer(posts, many=True, context={'request': request})
+        board_permissions = get_board_permission_flags(request.user, board)
+        serializer = BoardPostListSerializer(
+            posts,
+            many=True,
+            context={'request': request, 'board_permissions': board_permissions},
+        )
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, slug):
@@ -159,7 +169,11 @@ class BoardPostDetailView(APIView):
         post = self.get_object(post_id)
         if not post.board.is_active and not (request.user.is_staff or request.user.is_superuser):
             return Response({'error': '비활성화된 게시판입니다.'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = BoardPostDetailSerializer(post, context={'request': request})
+        board_permissions = get_board_permission_flags(request.user, post.board)
+        serializer = BoardPostDetailSerializer(
+            post,
+            context={'request': request, 'board_permissions': board_permissions},
+        )
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def patch(self, request, post_id):

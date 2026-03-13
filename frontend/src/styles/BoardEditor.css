@@ -34,6 +34,7 @@
 
 .board-md-editor .w-md-editor-content {
   background: transparent;
+  overflow: hidden;
 }
 
 .board-md-editor .w-md-editor-preview {
@@ -46,6 +47,11 @@
 .board-md-editor .w-md-editor-text-pre,
 .board-md-editor .w-md-editor-input {
   background: transparent;
+}
+
+.board-md-editor .w-md-editor-area,
+.board-md-editor .w-md-editor-input {
+  overflow: hidden;
 }
 
 .board-md-editor .wmde-markdown,
@@ -88,6 +94,7 @@
   color: #f4f4f5 !important;
   font-family: inherit !important;
   padding: 0.75rem !important;
+  overflow: auto !important;
 }
 
 .board-md-editor .w-md-editor-text-input {
