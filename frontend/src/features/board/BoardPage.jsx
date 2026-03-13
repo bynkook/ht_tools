@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -19,6 +19,24 @@ import { boardApi } from '../../api/djangoApi';
 
 
 const MAX_IMAGES = 6;
+const BoardMarkdownEditor = lazy(() => import('./BoardMarkdownEditor'));
+const DEFAULT_MARKDOWN_TEMPLATE = `# 제목 1
+## 제목 2
+### 제목 3
+
+**굵게**
+*이탤릭*
+~~취소선~~
+
+\`코드\`
+
+- 항목 1
+- 항목 2
+
+[링크 텍스트](https://example.com)
+
+구분선
+---`;
 
 const formatDate = (value) => {
   if (!value) {
@@ -33,7 +51,7 @@ const formatDate = (value) => {
 
 const EditorModal = ({ board, post, isSaving, onClose, onSave }) => {
   const [title, setTitle] = useState(post?.title ?? '');
-  const [bodyMarkdown, setBodyMarkdown] = useState(post?.body_markdown ?? '');
+  const [bodyMarkdown, setBodyMarkdown] = useState(post?.body_markdown ?? DEFAULT_MARKDOWN_TEMPLATE);
   const [existingImages, setExistingImages] = useState(post?.images ?? []);
   const [newFiles, setNewFiles] = useState([]);
   const [error, setError] = useState('');
@@ -55,6 +73,14 @@ const EditorModal = ({ board, post, isSaving, onClose, onSave }) => {
 
   const totalImageCount = existingImages.length + newFiles.length;
   const isEditMode = Boolean(post?.id);
+
+  useEffect(() => {
+    setTitle(post?.title ?? '');
+    setBodyMarkdown(post?.body_markdown ?? DEFAULT_MARKDOWN_TEMPLATE);
+    setExistingImages(post?.images ?? []);
+    setNewFiles([]);
+    setError('');
+  }, [post]);
 
   const handleFileChange = (event) => {
     const selectedFiles = Array.from(event.target.files ?? []);
@@ -142,12 +168,19 @@ const EditorModal = ({ board, post, isSaving, onClose, onSave }) => {
           <div className="space-y-2">
             <label className="text-xs uppercase tracking-[0.3em] text-zinc-500">Markdown Content</label>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-1">
-              <textarea
-                value={bodyMarkdown}
-                onChange={(event) => setBodyMarkdown(event.target.value)}
-                className="h-[220px] w-full resize-y rounded-[20px] bg-transparent px-3 py-3 text-sm leading-7 text-zinc-100 outline-none md:h-[280px]"
-                placeholder="Markdown 본문을 입력하세요."
-              />
+              <Suspense
+                fallback={
+                  <div className="flex h-[280px] items-center justify-center rounded-[20px] bg-transparent text-sm text-zinc-400">
+                    에디터를 불러오는 중입니다.
+                  </div>
+                }
+              >
+                <BoardMarkdownEditor
+                  value={bodyMarkdown}
+                  onChange={setBodyMarkdown}
+                  placeholder="Markdown 본문을 입력하세요."
+                />
+              </Suspense>
             </div>
           </div>
 
@@ -258,15 +291,15 @@ const ReadModal = ({ post, boardTitle, onClose }) => (
     <div className="flex min-h-full items-start justify-center">
       <div className="flex max-h-[calc(100vh-3rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[30px] border border-zinc-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-5">
-          <div>
+          <div className="min-w-0 flex-1 pr-4">
             <p className="text-[11px] uppercase tracking-[0.35em] text-zinc-400">{boardTitle}</p>
-            <h2 className="mt-2 text-2xl font-semibold text-zinc-950">{post.title}</h2>
+            <h2 className="mt-2 break-words text-2xl font-semibold text-zinc-950">{post.title}</h2>
             <p className="mt-2 text-sm text-zinc-500">@{post.author_username} · {formatDate(post.updated_at)}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-900 hover:text-zinc-950"
+            className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-900 hover:text-zinc-950"
           >
             <X size={16} />
             닫기
@@ -284,11 +317,46 @@ const ReadModal = ({ post, boardTitle, onClose }) => (
           </div>
         )}
 
-        <article className="markdown-body prose prose-zinc max-w-none text-zinc-800">
+        <article className="markdown-body max-w-none text-zinc-800">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             skipHtml
             components={{
+              h1: ({ children }) => (
+                <h1 className="mb-4 mt-6 text-3xl font-bold tracking-[-0.03em] text-zinc-950">{children}</h1>
+              ),
+              h2: ({ children }) => (
+                <h2 className="mb-3 mt-5 text-2xl font-semibold tracking-[-0.02em] text-zinc-950">{children}</h2>
+              ),
+              h3: ({ children }) => (
+                <h3 className="mb-3 mt-5 text-xl font-semibold text-zinc-900">{children}</h3>
+              ),
+              p: ({ children }) => (
+                <p className="mb-4 whitespace-pre-wrap leading-7 text-zinc-800 last:mb-0">{children}</p>
+              ),
+              ul: ({ children }) => (
+                <ul className="mb-4 list-disc space-y-1 pl-6 text-zinc-800">{children}</ul>
+              ),
+              ol: ({ children }) => (
+                <ol className="mb-4 list-decimal space-y-1 pl-6 text-zinc-800">{children}</ol>
+              ),
+              li: ({ children }) => <li className="leading-7">{children}</li>,
+              blockquote: ({ children }) => (
+                <blockquote className="my-5 border-l-4 border-zinc-300 pl-4 italic text-zinc-600">{children}</blockquote>
+              ),
+              pre: ({ children }) => (
+                <pre className="mb-4 overflow-x-auto rounded-2xl bg-zinc-950 p-4 text-sm text-zinc-100">{children}</pre>
+              ),
+              code: ({ children, className, ...props }) => {
+                if (className?.startsWith('language-')) {
+                  return <code className={className} {...props}>{children}</code>;
+                }
+                return (
+                  <code className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-sm text-pink-600" {...props}>
+                    {children}
+                  </code>
+                );
+              },
               a: ({ href, children, ...props }) => (
                 <a
                   {...props}
@@ -497,7 +565,7 @@ const BoardPage = () => {
               {sortedPosts.map((post) => (
                 <article
                   key={post.id}
-                  className="group relative w-full overflow-hidden rounded-[28px] border border-black/5 bg-white shadow-[0_12px_36px_rgba(0,0,0,0.08)] transition hover:-translate-y-1 hover:shadow-[0_18px_48px_rgba(0,0,0,0.12)]"
+                  className="group relative w-full overflow-hidden rounded-[22px] border border-black/5 bg-white shadow-[0_12px_36px_rgba(0,0,0,0.08)] transition hover:-translate-y-1 hover:shadow-[0_18px_48px_rgba(0,0,0,0.12)]"
                 >
                   {(post.can_edit || post.can_delete) && (
                     <div className="absolute right-4 top-4 z-10" ref={openMenuId === post.id ? menuRef : null}>
@@ -551,7 +619,7 @@ const BoardPage = () => {
                     onClick={() => setSelectedPost(post)}
                     className="flex h-full w-full flex-col text-left"
                   >
-                    <div className="relative aspect-[1.08/1] overflow-hidden rounded-t-[28px] bg-zinc-100">
+                    <div className="relative aspect-[1.08/1] overflow-hidden rounded-t-[22px] bg-zinc-100">
                       {post.preview_image_url ? (
                         <img
                           src={post.preview_image_url}
@@ -559,7 +627,7 @@ const BoardPage = () => {
                           className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
                         />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center rounded-t-[28px] bg-gradient-to-br from-zinc-200 via-zinc-100 to-white text-zinc-400">
+                        <div className="flex h-full w-full items-center justify-center rounded-t-[22px] bg-gradient-to-br from-zinc-200 via-zinc-100 to-white text-zinc-400">
                           <LayoutGrid size={34} />
                         </div>
                       )}
