@@ -1,5 +1,5 @@
 import React from 'react';
-import MDEditor from '@uiw/react-md-editor';
+import MDEditor, { commands } from '@uiw/react-md-editor';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
 
@@ -27,7 +27,9 @@ const BoardMarkdownEditor = ({ value, onChange, placeholder }) => (
       preview="edit"
       visibleDragbar={false}
       height={280}
+      highlightEnable={false}
       defaultTabEnable={false}
+      extraCommands={[commands.codeEdit, commands.codeLive]}
       previewOptions={{
         skipHtml: true,
         components: previewComponents,

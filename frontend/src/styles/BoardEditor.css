@@ -78,11 +78,20 @@
   line-height: 1.75rem !important;
 }
 
-.board-md-editor .w-md-editor-text-pre > code,
+.board-md-editor .w-md-editor-text-pre > code {
+  color: #f4f4f5 !important;
+  font-family: inherit !important;
+  padding: 0.75rem !important;
+}
+
 .board-md-editor .w-md-editor-text-input {
   color: #f4f4f5 !important;
   font-family: inherit !important;
   padding: 0.75rem !important;
+}
+
+.board-md-editor .w-md-editor-text-input {
+  caret-color: #f4f4f5;
 }
 
 .board-md-editor .w-md-editor-text-input {
