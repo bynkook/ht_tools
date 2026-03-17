@@ -317,12 +317,8 @@ const RedditBoardView = ({ board, posts, permissions, error: externalError, isSa
                 <ArrowLeft size={14} />
                 Home
               </button>
-              <div className="mt-6 flex items-center gap-2">
-                <LayoutList size={16} className="text-orange-400" />
-                <p className="text-[11px] uppercase tracking-[0.45em] text-zinc-500">Reddit Style Board</p>
-              </div>
               <h1
-                className="mt-3 text-4xl font-semibold tracking-[-0.04em] md:text-5xl"
+                className="mt-6 text-4xl font-semibold tracking-[-0.04em] md:text-5xl"
                 style={{ fontFamily: 'Georgia, Times New Roman, serif' }}
               >
                 {board?.title_display || 'Board'}
@@ -391,11 +387,6 @@ const RedditBoardView = ({ board, posts, permissions, error: externalError, isSa
                     <h2 className="text-base font-semibold text-zinc-900 transition group-hover:text-orange-600">
                       {post.title}
                     </h2>
-                    {post.excerpt && (
-                      <p className="mt-1 line-clamp-2 text-sm leading-6 text-zinc-500">
-                        {post.excerpt}
-                      </p>
-                    )}
                   </button>
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-zinc-400">
                     <span>

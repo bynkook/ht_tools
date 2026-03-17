@@ -331,7 +331,7 @@ const RedditPostDetailPage = () => {
         )}
 
         {post && (
-          <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+          <article className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
             {/* 게시글 헤더 */}
             <div className="border-b border-zinc-100 px-6 py-5 md:px-8">
               <h1 className="text-2xl font-bold leading-tight text-zinc-900 md:text-3xl">{post.title}</h1>
@@ -407,8 +407,8 @@ const RedditPostDetailPage = () => {
                     </a>
                   ),
                   table: ({ children }) => (
-                    <div className="mb-4 overflow-x-auto">
-                      <table className="min-w-full border-collapse text-sm">{children}</table>
+                    <div className="mb-4 w-full overflow-x-auto">
+                      <table className="w-max min-w-full border-collapse text-sm">{children}</table>
                     </div>
                   ),
                   th: ({ children }) => <th className="border border-zinc-200 bg-zinc-50 px-3 py-2 text-left font-semibold text-zinc-700">{children}</th>,

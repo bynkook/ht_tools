@@ -583,8 +583,7 @@ const BoardPage = () => {
                 <ArrowLeft size={14} />
                 Home
               </button>
-              <p className="mt-8 text-[11px] uppercase tracking-[0.45em] text-zinc-500">Board</p>
-              <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] md:text-6xl" style={{ fontFamily: 'Georgia, Times New Roman, serif' }}>
+              <h1 className="mt-8 text-4xl font-semibold tracking-[-0.04em] md:text-6xl" style={{ fontFamily: 'Georgia, Times New Roman, serif' }}>
                 {boardTitle}
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-300 md:text-base">
