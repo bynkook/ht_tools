@@ -19,6 +19,7 @@ const ImageComparePage = lazy(() => import('./features/imageCompare/ImageCompare
 const DataExplorerPage = lazy(() => import('./features/dataExplorer/DataExplorerPage'));
 const AppSelectorPage = lazy(() => import('./features/appSelector/AppSelectorPage'));
 const BoardPage = lazy(() => import('./features/board/BoardPage'));
+const RedditPostDetailPage = lazy(() => import('./features/board/RedditPostDetailPage'));
 const DashboardTablePage = lazy(() => import('./features/dashboardTable/DashboardTablePage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
@@ -145,6 +146,7 @@ const App = () => {
             <Route path="/data-explorer" element={<PrivateRoute><DataExplorerPage /></PrivateRoute>} />
 
             {/* Board Pages - root-level slug policy */}
+            <Route path="/:boardSlug/post/:postId" element={<PrivateRoute><RedditPostDetailPage /></PrivateRoute>} />
             <Route path="/:boardSlug" element={<PrivateRoute><BoardPage /></PrivateRoute>} />
 
             {/* 404: 알 수 없는 경로는 로그인 페이지로 리다이렉트 */}

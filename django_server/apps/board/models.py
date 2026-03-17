@@ -43,12 +43,21 @@ def board_header_upload_path(instance, filename):
     return f'board/{instance.slug}/header{safe_extension}'
 
 
+BOARD_STYLE_TILE = 'tile'
+BOARD_STYLE_REDDIT = 'reddit'
+BOARD_STYLE_CHOICES = [
+    (BOARD_STYLE_TILE, '타일형'),
+    (BOARD_STYLE_REDDIT, 'Reddit형'),
+]
+
+
 class Board(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=120, unique=True, db_index=True)
     title_display = models.CharField(max_length=200, blank=True)
     description = models.TextField(blank=True, default='')
     header_background_image = models.FileField(upload_to=board_header_upload_path, blank=True, null=True)
+    board_style = models.CharField(max_length=20, choices=BOARD_STYLE_CHOICES, default=BOARD_STYLE_TILE)
     is_active = models.BooleanField(default=True)
     allow_create = models.BooleanField(default=True)
     allow_update = models.BooleanField(default=True)
@@ -140,3 +149,22 @@ def delete_board_post_image_file(sender, instance, **kwargs):
 def delete_board_header_file(sender, instance, **kwargs):
     if instance.header_background_image:
         instance.header_background_image.delete(save=False)
+
+
+class BoardPostComment(models.Model):
+    post = models.ForeignKey(BoardPost, on_delete=models.CASCADE, related_name='comments')
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='board_comments')
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['post', 'created_at']),
+        ]
+        verbose_name = 'Board Post Comment'
+        verbose_name_plural = 'Board Post Comments'
+
+    def __str__(self):
+        return f'{self.post.title} :: {self.author.username} :: {self.body[:40]}'

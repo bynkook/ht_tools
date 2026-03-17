@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.db.models import Count
 
-from .models import Board, BoardModerator, BoardPost, BoardPostImage
+from .models import Board, BoardModerator, BoardPost, BoardPostComment, BoardPostImage
 
 
 class BoardModeratorInline(admin.TabularInline):
@@ -38,6 +38,7 @@ class BoardAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('기본 정보', {'fields': ('name', 'slug', 'title_display', 'description', 'header_background_image')}),
+        ('스타일', {'fields': ('board_style',)}),
         ('정책', {'fields': ('is_active', 'allow_create', 'allow_update', 'allow_delete')}),
         ('타임스탬프', {'fields': ('created_at', 'updated_at'), 'classes': ('collapse',)}),
     )
@@ -92,3 +93,16 @@ class BoardPostImageAdmin(admin.ModelAdmin):
     list_filter = ['post__board', 'created_at']
     search_fields = ['post__title', 'post__board__name', 'alt_text']
     autocomplete_fields = ['post']
+
+
+@admin.register(BoardPostComment)
+class BoardPostCommentAdmin(admin.ModelAdmin):
+    list_display = ['truncated_body', 'post', 'author', 'created_at']
+    list_filter = ['post__board', 'author', 'created_at']
+    search_fields = ['body', 'post__title', 'author__username']
+    readonly_fields = ['created_at', 'updated_at']
+    autocomplete_fields = ['post', 'author']
+
+    def truncated_body(self, obj):
+        return obj.body[:60] + ('...' if len(obj.body) > 60 else '')
+    truncated_body.short_description = '댓글 내용'

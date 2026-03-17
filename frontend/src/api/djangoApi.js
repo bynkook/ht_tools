@@ -199,6 +199,26 @@ export const boardApi = {
     const response = await djangoClient.delete(`/api/board/posts/${postId}/`);
     return response.data;
   },
+
+  listComments: async (postId) => {
+    const response = await djangoClient.get(`/api/board/posts/${postId}/comments/`);
+    return response.data;
+  },
+
+  createComment: async (postId, body) => {
+    const response = await djangoClient.post(`/api/board/posts/${postId}/comments/`, { body });
+    return response.data;
+  },
+
+  updateComment: async (commentId, body) => {
+    const response = await djangoClient.patch(`/api/board/comments/${commentId}/`, { body });
+    return response.data;
+  },
+
+  deleteComment: async (commentId) => {
+    const response = await djangoClient.delete(`/api/board/comments/${commentId}/`);
+    return response.data;
+  },
 };
 
 // =============================================================================

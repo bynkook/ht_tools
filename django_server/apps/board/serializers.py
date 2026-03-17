@@ -2,7 +2,7 @@ import re
 
 from rest_framework import serializers
 
-from .models import Board, BoardPost, BoardPostImage
+from .models import Board, BoardPost, BoardPostComment, BoardPostImage
 from .permissions import get_board_permission_flags
 
 
@@ -39,6 +39,7 @@ class BoardSerializer(serializers.ModelSerializer):
             'title_display',
             'description',
             'header_image_url',
+            'board_style',
             'is_active',
             'allow_create',
             'allow_update',
@@ -77,6 +78,7 @@ class BoardPostListSerializer(serializers.ModelSerializer):
     can_delete = serializers.SerializerMethodField()
     excerpt = serializers.SerializerMethodField()
     image_count = serializers.SerializerMethodField()
+    comment_count = serializers.SerializerMethodField()
 
     class Meta:
         model = BoardPost
@@ -87,6 +89,7 @@ class BoardPostListSerializer(serializers.ModelSerializer):
             'author_username',
             'preview_image_url',
             'image_count',
+            'comment_count',
             'created_at',
             'updated_at',
             'can_edit',
@@ -128,6 +131,11 @@ class BoardPostListSerializer(serializers.ModelSerializer):
             return len(obj._prefetched_objects_cache['images'])
         return obj.images.count()
 
+    def get_comment_count(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'comments' in obj._prefetched_objects_cache:
+            return len(obj._prefetched_objects_cache['comments'])
+        return obj.comments.count()
+
 
 class BoardPostDetailSerializer(BoardPostListSerializer):
     images = BoardPostImageSerializer(many=True, read_only=True)
@@ -143,6 +151,7 @@ class BoardPostDetailSerializer(BoardPostListSerializer):
             'author_username',
             'preview_image_url',
             'image_count',
+            'comment_count',
             'images',
             'created_at',
             'updated_at',
@@ -168,3 +177,27 @@ class BoardPostWriteSerializer(serializers.ModelSerializer):
         if not stripped:
             raise serializers.ValidationError('본문을 입력하세요.')
         return stripped
+
+
+class BoardPostCommentSerializer(serializers.ModelSerializer):
+    author_username = serializers.CharField(source='author.username', read_only=True)
+    can_edit = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BoardPostComment
+        fields = ['id', 'author_username', 'body', 'created_at', 'updated_at', 'can_edit', 'can_delete']
+
+    def _is_owner_or_admin(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_staff or request.user.is_superuser:
+            return True
+        return obj.author_id == request.user.id
+
+    def get_can_edit(self, obj):
+        return self._is_owner_or_admin(obj)
+
+    def get_can_delete(self, obj):
+        return self._is_owner_or_admin(obj)

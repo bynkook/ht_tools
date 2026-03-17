@@ -17,6 +17,7 @@ import remarkGfm from 'remark-gfm';
 
 import { boardApi } from '../../api/djangoApi';
 
+const RedditBoardView = lazy(() => import('./RedditBoardView'));
 
 const MAX_IMAGES = 6;
 const BoardMarkdownEditor = lazy(() => import('./BoardMarkdownEditor'));
@@ -548,6 +549,20 @@ const BoardPage = () => {
           게시판을 불러오는 중입니다.
         </div>
       </div>
+    );
+  }
+
+  if (board?.board_style === 'reddit') {
+    return (
+      <RedditBoardView
+        board={board}
+        posts={posts}
+        permissions={permissions}
+        error={error}
+        isLoading={isLoading}
+        isSaving={isSaving}
+        onRefresh={loadBoard}
+      />
     );
   }
 

@@ -9,9 +9,9 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Board, BoardPost, BoardPostImage
+from .models import Board, BoardPost, BoardPostComment, BoardPostImage
 from .permissions import get_board_permission_flags
-from .serializers import BoardPostDetailSerializer, BoardPostListSerializer, BoardPostWriteSerializer, BoardSerializer
+from .serializers import BoardPostCommentSerializer, BoardPostDetailSerializer, BoardPostListSerializer, BoardPostWriteSerializer, BoardSerializer
 
 
 ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
@@ -207,4 +207,65 @@ class BoardPostDetailView(APIView):
 
         with transaction.atomic():
             post.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class BoardPostCommentListCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, post_id):
+        post = get_object_or_404(BoardPost.objects.select_related('board'), id=post_id)
+        if not post.board.is_active and not (request.user.is_staff or request.user.is_superuser):
+            return Response({'error': '비활성화된 게시판입니다.'}, status=status.HTTP_404_NOT_FOUND)
+        comments = post.comments.select_related('author').order_by('created_at')
+        serializer = BoardPostCommentSerializer(comments, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, post_id):
+        post = get_object_or_404(BoardPost.objects.select_related('board'), id=post_id)
+        if not post.board.is_active:
+            return Response({'error': '비활성화된 게시판입니다.'}, status=status.HTTP_403_FORBIDDEN)
+        body = request.data.get('body', '').strip()
+        if not body:
+            return Response({'error': '댓글을 입력하세요.'}, status=status.HTTP_400_BAD_REQUEST)
+        comment = BoardPostComment.objects.create(post=post, author=request.user, body=body)
+        serializer = BoardPostCommentSerializer(comment, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class BoardPostCommentDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_comment(self, comment_id):
+        return get_object_or_404(
+            BoardPostComment.objects.select_related('post__board', 'author'),
+            id=comment_id,
+        )
+
+    def _check_permission(self, request, comment):
+        is_owner = comment.author_id == request.user.id
+        is_admin = request.user.is_staff or request.user.is_superuser
+        if not (is_owner or is_admin):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        return None
+
+    def patch(self, request, comment_id):
+        comment = self._get_comment(comment_id)
+        error_response = self._check_permission(request, comment)
+        if error_response:
+            return error_response
+        body = request.data.get('body', '').strip()
+        if not body:
+            return Response({'error': '댓글을 입력하세요.'}, status=status.HTTP_400_BAD_REQUEST)
+        comment.body = body
+        comment.save(update_fields=['body', 'updated_at'])
+        serializer = BoardPostCommentSerializer(comment, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def delete(self, request, comment_id):
+        comment = self._get_comment(comment_id)
+        error_response = self._check_permission(request, comment)
+        if error_response:
+            return error_response
+        comment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
