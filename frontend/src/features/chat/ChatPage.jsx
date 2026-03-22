@@ -7,6 +7,7 @@ import ChatBubble from './components/ChatBubble';
 import InputBox from './components/InputBox';
 import { modelChatApi } from '../../api/djangoApi';
 import { getFastApiUrl } from '../../api/axiosConfig';
+import { mcpRagApi } from '../../api/fastapiApi';
 import { useCommands, detectNaturalLanguageCommand } from '../../hooks/useCommands';
 
 // 대화 이력 제한: 최근 5턴 (10개 메시지)
@@ -57,7 +58,7 @@ const ChatPage = () => {
   const currentStreamingMsgRef = useRef(""); // 현재 스트리밍 중인 메시지 추적용
 
   // 커맨드 처리 훅
-  const { executeCommand, isCommandLoading } = useCommands({
+  const { executeCommand, isCommandLoading, activeCategory, ragEnabled, ragCacheRef } = useCommands({
     messages,
     setMessages,
     setError,
@@ -150,7 +151,7 @@ const ChatPage = () => {
       }
 
       await modelChatApi.saveMessage(sessionId, 'user', userMsg.content);
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: '', isRag: ragEnabled && !!activeCategory, ragCategory: activeCategory }]);
       assistantSavedRef.current = false;
       currentStreamingMsgRef.current = "";
      
@@ -158,6 +159,41 @@ const ChatPage = () => {
       let accumulatedAnswer = "";
 
       const token = sessionStorage.getItem('authToken');
+
+      // ===== RAG 전처리 (세션 캐시 포함) =====
+      let ragSystemPrompt = null;
+      if (ragEnabled) {
+        try {
+          const now = Date.now();
+          const cache = ragCacheRef.current;
+          const RAG_CACHE_TTL_MS = 5 * 60 * 1000; // 5분
+          const cacheHit = cache &&
+            cache.query === text &&
+            cache.category === (activeCategory ?? null) &&
+            (now - cache.cachedAt) < RAG_CACHE_TTL_MS;
+
+          if (cacheHit) {
+            ragSystemPrompt = cache.systemPrompt;
+          } else {
+            const ragRes = await mcpRagApi.search({
+              query: text,
+              category: activeCategory ?? undefined,
+            });
+            if (ragRes.data?.success && ragRes.data?.system_prompt) {
+              ragSystemPrompt = ragRes.data.system_prompt;
+              ragCacheRef.current = {
+                query: text,
+                category: activeCategory ?? null,
+                systemPrompt: ragSystemPrompt,
+                cachedAt: now,
+              };
+            }
+          }
+        } catch (e) {
+          console.warn('RAG 검색 실패 — 일반 채팅으로 진행:', e);
+        }
+      }
+      // ========================================
 
       // 대화 이력 기반 contents 배열 구성
       const contentsArray = buildContentsArray(
@@ -174,7 +210,8 @@ const ChatPage = () => {
         body: JSON.stringify({ 
           modelIds: [selectedModelId],
           contents: contentsArray,
-          isStream: true 
+          isStream: true,
+          ...(ragSystemPrompt ? { systemPrompt: ragSystemPrompt } : {}),
         }),
         signal: abortControllerRef.current.signal,
         async onopen(response) {
@@ -399,6 +436,18 @@ const ChatPage = () => {
       {/* Input Area */}
       <div className="flex-shrink-0 bg-[var(--bg-primary)] p-4 pb-6">
         <div className="max-w-3xl mx-auto">
+          {/* RAG 모드 배지 */}
+          {ragEnabled && (
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 text-xs font-medium dark:bg-cyan-900/40 dark:text-cyan-300">
+                📚 RAG
+                {activeCategory && <span className="opacity-70">· {activeCategory}</span>}
+              </span>
+              <span className="text-xs text-[var(--text-secondary)]">
+                질문 시 문서를 자동 검색합니다
+              </span>
+            </div>
+          )}
           <InputBox onSend={handleSend} isLoading={isLoading} onStop={handleStop} />
         </div>
       </div>

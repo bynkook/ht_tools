@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { dashboardLinksApi, memoryApi } from '../api/djangoApi';
 import { mcpCommandApi } from '../api/fastapiApi';
 
@@ -61,6 +61,8 @@ export const useCommands = ({
 }) => {
   const [isCommandLoading, setIsCommandLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState(null); // /mcp 세션 카테고리
+  const [ragEnabled, setRagEnabled] = useState(false);        // RAG 모드 활성화 여부
+  const ragCacheRef = useRef(null); // { query, category, systemPrompt, cachedAt }
 
   // ===== Memory Command Handlers =====
 
@@ -264,12 +266,19 @@ export const useCommands = ({
         `| \`/mcp list <카테고리>\` | 특정 카테고리의 문서 목록 |`,
         `| \`/mcp search <키워드>\` | 키워드로 문서 검색 (기본 카테고리 자동 적용) |`,
         `| \`/mcp read <파일경로>\` | 특정 문서 전체 내용 읽기 |`,
-        `| \`/mcp category set <이름>\` | 기본 카테고리 설정 |`,
-        `| \`/mcp category clear\` | 기본 카테고리 해제 |`,
+        `| \`/mcp category set <이름>\` | 카테고리 설정 + **RAG 자동 활성화** |`,
+        `| \`/mcp category clear\` | 카테고리 해제 + RAG 자동 비활성화 |`,
+        `| \`/mcp rag off\` | RAG 모드 비활성화 (카테고리 유지) |`,
+        `| \`/mcp rag on\` | RAG 모드 재활성화 |`,
+        `| \`/mcp rag status\` | RAG 모드 상태 + 캐시 정보 확인 |`,
+        `| \`/mcp rag refresh\` | RAG 검색 캐시 강제 초기화 |`,
         `| \`/mcp help\` | 이 도움말 표시 |`,
         ``,
         `---`,
         categoryStatus,
+        ragEnabled
+          ? `🤖 RAG 모드: **ON** — 일반 질문 입력 시 문서를 자동 검색합니다`
+          : `🤖 RAG 모드: **OFF** — \`/mcp category set <이름>\` 으로 활성화`,
       ].join('\n');
 
       setMessages(prev => [...prev, { role: 'assistant', content: helpContent }]);
@@ -283,18 +292,88 @@ export const useCommands = ({
         const cat = parts[3];
         if (!cat) { setError('카테고리 이름을 입력하세요. 예: /mcp category set safety'); return; }
         setActiveCategory(cat);
+        setRagEnabled(true);
+        ragCacheRef.current = null;
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: `🗂️ MCP 문서 카테고리 **"${cat}"** 가 설정되었습니다.\n검색 시 이 카테고리의 문서만 대상으로 합니다.\n해제하려면 \`/mcp category clear\` 를 입력하세요.`,
+          content: [
+            `## 🗂️ 문서 카테고리 설정`,
+            ``,
+            `카테고리 **"${cat}"** 이(가) 설정되었습니다.`,
+            `📚 **RAG 모드가 자동으로 활성화**되었습니다.`,
+            ``,
+            `> 이제 채팅창에서 일반 질문을 입력하면 해당 카테고리 문서를 자동 검색하여 답변에 활용합니다.`,
+            `> RAG를 끄려면 \`/mcp rag off\` 를 입력하세요.`,
+            `> 카테고리를 해제하려면 \`/mcp category clear\` 를 입력하세요.`,
+          ].join('\n'),
         }]);
       } else if (sub === 'clear') {
         setActiveCategory(null);
+        setRagEnabled(false);
+        ragCacheRef.current = null;
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: `🗂️ MCP 문서 카테고리가 해제되었습니다. 이후 검색은 전체 문서를 대상으로 합니다.`,
+          content: `🗂️ MCP 문서 카테고리가 해제되었습니다. RAG 모드도 비활성화되었습니다.`,
         }]);
       } else {
         setError('사용법: /mcp category set <이름>  또는  /mcp category clear');
+      }
+      return;
+    }
+
+    // /mcp rag on | off | status | refresh
+    if (action === 'rag') {
+      const sub = parts[2];
+      if (!sub || sub === 'status') {
+        const cacheAge = ragCacheRef.current
+          ? Math.round((Date.now() - ragCacheRef.current.cachedAt) / 1000)
+          : null;
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: ragEnabled
+            ? [
+                `## 🤖 RAG 모드: **ON**`,
+                `🗂️ 검색 카테고리: ${activeCategory ? `**"${activeCategory}"**` : '전체 (카테고리 미지정)'}`,
+                `📊 용량: 문서 최대 10개 × 1,500자 스니펫 (BM25 관련성 랭킹 + 최신 우선)`,
+                cacheAge !== null ? `🗃️ 캐시: ${cacheAge}초 전 검색 결과 보관 중` : `🗃️ 캐시: 없음 (첫 질문 시 검색)`,
+              ].join('\n')
+            : `🤖 RAG 모드: **OFF**\n\`/mcp category set <카테고리>\` 로 활성화하세요.`,
+        }]);
+      } else if (sub === 'on') {
+        setRagEnabled(true);
+        ragCacheRef.current = null;
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: [
+            `## 🤖 RAG 모드 활성화`,
+            ``,
+            `이제 일반 질문을 입력하면 **자동으로 문서를 검색**하여 LLM 답변에 활용합니다.`,
+            ``,
+            activeCategory
+              ? `🗂️ 검색 대상: **"${activeCategory}"** 카테고리`
+              : `🗂️ 검색 대상: 전체 문서 (카테고리 미지정)`,
+            `📊 검색 규모: 문서 **최대 10개** × 스니펫 **1,500자** (BM25 관련성 랭킹 + 최신 우선)`,
+            ``,
+            `> 카테고리를 지정하려면 \`/mcp category set <이름>\` 을 입력하세요.`,
+            `> 캐시를 초기화하려면 \`/mcp rag refresh\` 를 입력하세요.`,
+            `> RAG를 끄려면 \`/mcp rag off\` 를 입력하세요.`,
+          ].join('\n'),
+        }]);
+      } else if (sub === 'off') {
+        setRagEnabled(false);
+        ragCacheRef.current = null;
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `🤖 RAG 모드 **비활성화** — LLM이 자체 지식으로 답변합니다.`,
+        }]);
+      } else if (sub === 'refresh') {
+        ragCacheRef.current = null;
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `🗃️ RAG 캐시 초기화 완료 — 다음 질문 시 새로 문서를 검색합니다.`,
+        }]);
+      } else {
+        setError('사용법: /mcp rag on | off | status | refresh');
       }
       return;
     }
@@ -348,7 +427,7 @@ export const useCommands = ({
     } finally {
       setIsCommandLoading(false);
     }
-  }, [activeCategory, setMessages, setError, setSuccessMessage, setIsCommandLoading]);
+  }, [activeCategory, ragEnabled, setMessages, setError, setSuccessMessage, setIsCommandLoading]);
 
   // ===== Command Dispatcher =====
 
@@ -388,5 +467,7 @@ export const useCommands = ({
     executeCommand,
     isCommandLoading,
     activeCategory,
+    ragEnabled,
+    ragCacheRef,
   };
 };

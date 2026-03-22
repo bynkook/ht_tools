@@ -109,3 +109,88 @@ async def mcp_command(body: McpCommandRequest):
                 "서버가 실행 중인지 확인하세요 (fastmcp/run_server.bat)"
             ),
         }
+
+
+class RagSearchRequest(BaseModel):
+    query: str
+    category: Optional[str] = None
+    max_docs: int = 10
+    snippet_chars: int = 1500
+
+
+@router.post("/rag-search", dependencies=[Depends(verify_token)])
+async def rag_search(body: RagSearchRequest):
+    """
+    [POST] /mcp-command/rag-search
+
+    RAG 파이프라인 전용 검색 엔드포인트.
+    FastMCP search_docs_rag 도구를 호출하여 BM25 관련성 랭킹 + 최신 우선으로
+    문서 스니펫을 검색하고, LLM에 주입할 systemPrompt를 조립하여 반환한다.
+
+    Returns:
+        {
+          "success": bool,
+          "files": [{ "filename": str, "snippet": str, "bm25_score": float }],
+          "query": str,
+          "category": str | None,
+          "system_prompt": str | None  # LLM systemPrompt로 바로 주입 가능
+        }
+    """
+    doc_server_url = get_doc_server_url()
+    try:
+        async with Client(doc_server_url) as client:
+            result = await client.call_tool("search_docs_rag", {
+                "query": body.query,
+                "category": body.category,
+                "max_docs": body.max_docs,
+                "snippet_chars": body.snippet_chars,
+            })
+
+        # search_docs_rag가 -> dict를 반환하므로 result.data가 이미 dict
+        # (FastMCP 공식 권고: dict 반환 시 json.dumps/loads 불필요)
+        data = result.data
+        if data is None:
+            raw = "\n".join(c.text for c in result.content if hasattr(c, "text"))
+            import json
+            data = json.loads(raw) if raw else {}
+
+        files = data.get("files", [])
+
+        if not files:
+            return {
+                "success": True,
+                "files": [],
+                "query": body.query,
+                "category": body.category,
+                "system_prompt": None,
+            }
+
+        category_label = f" ({body.category})" if body.category else " (전체)"
+        doc_blocks = "\n\n---\n\n".join(
+            f"📄 파일: {f['filename']}\n\n{f['snippet']}"
+            for f in files
+        )
+        system_prompt = (
+            f"당신은 사내 문서 기반 질문 답변 어시스턴트입니다.\n"
+            f"아래 참고 문서{category_label}를 바탕으로 사용자의 질문에 답하세요.\n"
+            f"참고 문서에 없는 내용은 '제공된 문서에서 찾을 수 없습니다'라고 솔직하게 답하세요.\n\n"
+            f"=== 참고 문서 ===\n\n{doc_blocks}\n\n=================="
+        )
+
+        return {
+            "success": True,
+            "files": files,
+            "query": body.query,
+            "category": body.category,
+            "system_prompt": system_prompt,
+        }
+
+    except Exception as e:
+        logger.warning("RAG 검색 오류: %s", e)
+        return {
+            "success": False,
+            "files": [],
+            "query": body.query,
+            "category": body.category,
+            "system_prompt": None,
+        }

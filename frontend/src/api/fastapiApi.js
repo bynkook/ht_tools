@@ -142,3 +142,19 @@ export const mcpCommandApi = {
    */
   execute: (params) => fastApiClient.post('/mcp-command', params),
 };
+
+// =============================================================================
+// MCP RAG API
+// =============================================================================
+
+/**
+ * RAG 파이프라인 전용 문서 검색 API
+ * BM25 관련성 랭킹 + 최신 문서 우선으로 문서 스니펫 검색 후 systemPrompt 조립 반환
+ */
+export const mcpRagApi = {
+  /**
+   * @param {{ query: string, category?: string, max_docs?: number, snippet_chars?: number }} params
+   * @returns {Promise<AxiosResponse<{ success: boolean, files: Array, query: string, category: string|null, system_prompt: string|null }>>}
+   */
+  search: (params) => fastApiClient.post('/mcp-command/rag-search', params),
+};
