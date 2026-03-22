@@ -125,3 +125,20 @@ export const fastApi = {
     return response.data; // { image_base64, width, height, pages }
   },
 };
+
+// =============================================================================
+// MCP Command API
+// =============================================================================
+
+/**
+ * FastMCP Doc Server 커맨드 실행
+ * fastmcp 서버(포트 8002)를 FastAPI Gateway(포트 8001)를 통해 간접 호출한다.
+ * fastApi 객체가 아닌 fastApiClient axios 인스턴스를 직접 사용한다.
+ */
+export const mcpCommandApi = {
+  /**
+   * @param {{ action: string, query?: string, category?: string, filename?: string, max_results?: number }} params
+   * @returns {Promise<AxiosResponse<{ success: boolean, content: string }>>}
+   */
+  execute: (params) => fastApiClient.post('/mcp-command', params),
+};

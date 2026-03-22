@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { dashboardLinksApi, memoryApi } from '../api/djangoApi';
+import { mcpCommandApi } from '../api/fastapiApi';
 
 /**
  * 자연어 → 커맨드 매핑 패턴
@@ -41,6 +42,7 @@ export const detectNaturalLanguageCommand = (text) => {
  * 지원 커맨드:
  * - /memory save|load|delete|list|clear "이름"
  * - /dashboard
+ * - /mcp categories|list|search|read|category|help
  * 
  * @param {Object} params
  * @param {Array} params.messages - 현재 메시지 배열
@@ -58,6 +60,7 @@ export const useCommands = ({
   currentSessionId
 }) => {
   const [isCommandLoading, setIsCommandLoading] = useState(false);
+  const [activeCategory, setActiveCategory] = useState(null); // /mcp 세션 카테고리
 
   // ===== Memory Command Handlers =====
 
@@ -210,8 +213,7 @@ export const useCommands = ({
 
   // ===== Dashboard Command Handler =====
 
-  const handleDashboardCommand = useCallback(async () => {
-    setIsCommandLoading(true);
+  const handleDashboardCommand = useCallback(async () => {    setIsCommandLoading(true);
     try {
       const dashboards = await dashboardLinksApi.list();
 
@@ -239,6 +241,115 @@ export const useCommands = ({
     }
   }, [setError, setMessages]);
 
+  // ===== MCP Command Handler =====
+
+  const handleMcpCommand = useCallback(async (command) => {
+    const parts = command.trim().split(/\s+/);
+    // parts[0] = "/mcp", parts[1] = action, parts[2..] = args
+    const action = parts[1];
+
+    // /mcp  또는  /mcp help
+    if (!action || action === 'help') {
+      const categoryStatus = activeCategory
+        ? `🗂️ 현재 기본 카테고리: **"${activeCategory}"**`
+        : `🗂️ 기본 카테고리: 없음 (전체 문서 검색)`;
+
+      const helpContent = [
+        `## 📖 MCP 문서 검색 커맨드`,
+        ``,
+        `| 커맨드 | 설명 |`,
+        `|:---|:---|`,
+        `| \`/mcp categories\` | 카테고리 목록 조회 |`,
+        `| \`/mcp list\` | 전체 문서 목록 |`,
+        `| \`/mcp list <카테고리>\` | 특정 카테고리의 문서 목록 |`,
+        `| \`/mcp search <키워드>\` | 키워드로 문서 검색 (기본 카테고리 자동 적용) |`,
+        `| \`/mcp read <파일경로>\` | 특정 문서 전체 내용 읽기 |`,
+        `| \`/mcp category set <이름>\` | 기본 카테고리 설정 |`,
+        `| \`/mcp category clear\` | 기본 카테고리 해제 |`,
+        `| \`/mcp help\` | 이 도움말 표시 |`,
+        ``,
+        `---`,
+        categoryStatus,
+      ].join('\n');
+
+      setMessages(prev => [...prev, { role: 'assistant', content: helpContent }]);
+      return;
+    }
+
+    // /mcp category set <name>  |  /mcp category clear
+    if (action === 'category') {
+      const sub = parts[2];
+      if (sub === 'set') {
+        const cat = parts[3];
+        if (!cat) { setError('카테고리 이름을 입력하세요. 예: /mcp category set safety'); return; }
+        setActiveCategory(cat);
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `🗂️ MCP 문서 카테고리 **"${cat}"** 가 설정되었습니다.\n검색 시 이 카테고리의 문서만 대상으로 합니다.\n해제하려면 \`/mcp category clear\` 를 입력하세요.`,
+        }]);
+      } else if (sub === 'clear') {
+        setActiveCategory(null);
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `🗂️ MCP 문서 카테고리가 해제되었습니다. 이후 검색은 전체 문서를 대상으로 합니다.`,
+        }]);
+      } else {
+        setError('사용법: /mcp category set <이름>  또는  /mcp category clear');
+      }
+      return;
+    }
+
+    // 서버 요청이 필요한 액션
+    setIsCommandLoading(true);
+    try {
+      const params = { action };
+
+      if (action === 'categories') {
+        // 파라미터 없음
+
+      } else if (action === 'list') {
+        // /mcp list [카테고리]
+        const cat = parts[2] ?? null;
+        if (cat) params.category = cat;
+
+      } else if (action === 'search') {
+        // /mcp search <키워드...>
+        const queryParts = parts.slice(2);
+        if (!queryParts.length) {
+          setError('검색어를 입력하세요. 예: /mcp search 안전밸브');
+          return;
+        }
+        params.query = queryParts.join(' ');
+        if (activeCategory) params.category = activeCategory; // 세션 카테고리 자동 적용
+
+      } else if (action === 'read') {
+        // /mcp read <카테고리/파일명>
+        const filename = parts[2];
+        if (!filename) {
+          setError('파일 경로를 입력하세요. 예: /mcp read safety/doc.md');
+          return;
+        }
+        params.filename = filename;
+
+      } else {
+        setError(`알 수 없는 /mcp 커맨드: "${action}". /mcp help 로 확인하세요.`);
+        return;
+      }
+
+      const res = await mcpCommandApi.execute(params);
+      // res.data = { success: boolean, content: string }
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: res.data.content,
+      }]);
+
+    } catch (err) {
+      setError('/mcp 커맨드 실패: ' + (err.message || '알 수 없는 오류'));
+    } finally {
+      setIsCommandLoading(false);
+    }
+  }, [activeCategory, setMessages, setError, setSuccessMessage, setIsCommandLoading]);
+
   // ===== Command Dispatcher =====
 
   /**
@@ -249,6 +360,12 @@ export const useCommands = ({
   const executeCommand = useCallback(async (text) => {
     setSuccessMessage(null);
     setError(null);
+
+    // /mcp 커맨드
+    if (text.startsWith('/mcp')) {
+      await handleMcpCommand(text);
+      return { handled: true };
+    }
 
     // /memory 커맨드
     if (text.startsWith('/memory')) {
@@ -265,10 +382,11 @@ export const useCommands = ({
     // 알 수 없는 커맨드
     setError(`알 수 없는 커맨드입니다: "${text.split(' ')[0]}"`);
     return { handled: true };
-  }, [handleMemoryCommand, handleDashboardCommand, setError, setSuccessMessage]);
+  }, [handleMcpCommand, handleMemoryCommand, handleDashboardCommand, setError, setSuccessMessage]);
 
   return {
     executeCommand,
-    isCommandLoading
+    isCommandLoading,
+    activeCategory,
   };
 };

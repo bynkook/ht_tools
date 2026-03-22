@@ -30,6 +30,9 @@ python-dotenv
 # Graphic Walker DSL Parser (Official)
 gw-dsl-parser>=0.1.48
 
+# FastMCP Doc Server Client
+fastmcp>=2.0.0
+
 # for offline mock test
 pytest
 pytest-asyncio

@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .routers import health_router, agent_chat_router, chat_router, image_router
+from .routers import health_router, agent_chat_router, chat_router, image_router, doc_search_router
 from .services.rate_limiter_v2 import rate_limiter
 
 # 환경 설정 및 Secrets 로드
@@ -245,6 +245,7 @@ app.include_router(health_router, prefix="/health", tags=["Health"])
 app.include_router(agent_chat_router, prefix="/agent-messages", tags=["FabriX Agent Chat"])
 app.include_router(chat_router, prefix="/chat-messages", tags=["FabriX Chat"])
 app.include_router(image_router, prefix="/image-compare", tags=["Image"])
+app.include_router(doc_search_router, prefix="/mcp-command", tags=["MCP Command"])
 
 
 @app.exception_handler(Exception)
