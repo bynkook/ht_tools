@@ -2,12 +2,13 @@
 FastAPI Router: MCP Command
 /mcp 슬래시 커맨드 처리 — FastMCP Doc Server 연동
 """
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from typing import Optional
+import json
 import logging
 import toml
 from pathlib import Path
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
+from typing import Optional
 from fastmcp import Client
 
 from ..dependencies import verify_token
@@ -27,7 +28,7 @@ def get_doc_server_url() -> str:
 
 
 class McpCommandRequest(BaseModel):
-    action: str                     # "categories" | "search" | "read" | "list"
+    action: str                     # "search" | "read" | "list"
     query: Optional[str] = None     # search 시 검색어
     category: Optional[str] = None  # search/list 시 카테고리 필터
     filename: Optional[str] = None  # read 시 파일 경로
@@ -43,10 +44,10 @@ async def mcp_command(body: McpCommandRequest):
     FastMCP Doc Server(포트 8002)에 연결하여 문서를 검색·조회한다.
 
     Actions:
-    - categories: list_categories 도구 호출 — 카테고리 목록 반환
     - search:     search_docs(query, category) 도구 호출 — 문서 검색
     - read:       read_doc(filename) 도구 호출 — 문서 전체 내용 반환
-    - list:       docs://{category}/list 또는 docs://categories 리소스 읽기
+    - list:       list_categories_detail() 또는 list_docs_detail(category) 도구 호출
+                  카테고리 목록(문서 수 포함) 또는 파일 목록(최종 수정일 포함) 마크다운 표 반환
 
     Returns:
         {"success": True, "content": "..."} on success
@@ -56,10 +57,7 @@ async def mcp_command(body: McpCommandRequest):
     try:
         async with Client(doc_server_url) as client:
 
-            if body.action == "categories":
-                result = await client.call_tool("list_categories", {})
-
-            elif body.action == "search":
+            if body.action == "search":
                 if not body.query:
                     raise HTTPException(status_code=400, detail="검색어(query)가 필요합니다.")
                 tool_args: dict = {"query": body.query, "max_results": body.max_results}
@@ -70,18 +68,55 @@ async def mcp_command(body: McpCommandRequest):
             elif body.action == "read":
                 if not body.filename:
                     raise HTTPException(status_code=400, detail="파일 경로(filename)가 필요합니다.")
-                result = await client.call_tool("read_doc", {"filename": body.filename})
+                tool_args: dict = {"filename": body.filename}
+                if body.category:
+                    tool_args["category"] = body.category
+                result = await client.call_tool("read_doc", tool_args)
 
             elif body.action == "list":
                 if body.category:
-                    resource = await client.read_resource(f"docs://{body.category}/list")
+                    result = await client.call_tool("list_docs_detail", {"category": body.category})
+                    data = result.data if result.data is not None else None
+                    if data is None:
+                        raw = "\n".join(c.text for c in result.content if hasattr(c, "text"))
+                        data = json.loads(raw) if raw else {}
+                    error = data.get("error")
+                    if error:
+                        content = f"⚠️ {error}"
+                    else:
+                        files = data.get("files", [])
+                        if not files:
+                            content = f"**'{body.category}'** 카테고리에 문서가 없습니다."
+                        else:
+                            lines = [
+                                f"## 📁 `{body.category}` 문서 목록 ({len(files)}개)",
+                                "",
+                                "| 파일명 | 최종 수정일 |",
+                                "|:---|:---|",
+                            ]
+                            for f in files:
+                                lines.append(f"| `{f['filename']}` | {f['last_modified']} |")
+                            content = "\n".join(lines)
                 else:
-                    resource = await client.read_resource("docs://categories")
-                # read_resource() → list[TextResourceContents | BlobResourceContents]
-                if resource and hasattr(resource[0], "text"):
-                    content = resource[0].text
-                else:
-                    content = "문서가 없습니다."
+                    result = await client.call_tool("list_categories_detail", {})
+                    data = result.data if result.data is not None else None
+                    if data is None:
+                        raw = "\n".join(c.text for c in result.content if hasattr(c, "text"))
+                        data = json.loads(raw) if raw else {}
+                    categories = data.get("categories", [])
+                    if not categories:
+                        content = "등록된 카테고리가 없습니다."
+                    else:
+                        total_docs = sum(c["doc_count"] for c in categories)
+                        lines = [
+                            f"## 📚 문서 카테고리 목록  ({len(categories)}개 카테고리 · 총 {total_docs}개 문서)",
+                            "",
+                            "| 카테고리 | 문서 수 |",
+                            "|:---|---:|",
+                        ]
+                        for cat in categories:
+                            lines.append(f"| {cat['name']} | {cat['doc_count']} |")
+                        content = "\n".join(lines)
                 return {"success": True, "content": content}
 
             else:

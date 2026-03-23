@@ -42,7 +42,7 @@ export const detectNaturalLanguageCommand = (text) => {
  * 지원 커맨드:
  * - /memory save|load|delete|list|clear "이름"
  * - /dashboard
- * - /mcp categories|list|search|read|category|help
+ * - /mcp list|search|read|category|help
  * 
  * @param {Object} params
  * @param {Array} params.messages - 현재 메시지 배열
@@ -261,11 +261,11 @@ export const useCommands = ({
         ``,
         `| 커맨드 | 설명 |`,
         `|:---|:---|`,
-        `| \`/mcp categories\` | 카테고리 목록 조회 |`,
-        `| \`/mcp list\` | 전체 문서 목록 |`,
-        `| \`/mcp list <카테고리>\` | 특정 카테고리의 문서 목록 |`,
+        `| \`/mcp list\` | 카테고리 목록 + 문서 수 조회 |`,
+        `| \`/mcp list <카테고리>\` | 해당 카테고리의 파일 목록 + 최종 수정일 조회 |`,
         `| \`/mcp search <키워드>\` | 키워드로 문서 검색 (기본 카테고리 자동 적용) |`,
-        `| \`/mcp read <파일경로>\` | 특정 문서 전체 내용 읽기 |`,
+        `| \`/mcp read <파일명>\` | 문서 읽기 (카테고리 설정 시 해당 카테고리 내 탐색, 없으면 전체 탐색) |`,
+        `| \`/mcp read <카테고리/파일명>\` | 특정 카테고리의 문서 전체 내용 읽기 |`,
         `| \`/mcp category set <이름>\` | 카테고리 설정 + **RAG 자동 활성화** |`,
         `| \`/mcp category clear\` | 카테고리 해제 + RAG 자동 비활성화 |`,
         `| \`/mcp rag off\` | RAG 모드 비활성화 (카테고리 유지) |`,
@@ -383,10 +383,7 @@ export const useCommands = ({
     try {
       const params = { action };
 
-      if (action === 'categories') {
-        // 파라미터 없음
-
-      } else if (action === 'list') {
+      if (action === 'list') {
         // /mcp list [카테고리]
         const cat = parts[2] ?? null;
         if (cat) params.category = cat;
@@ -402,13 +399,21 @@ export const useCommands = ({
         if (activeCategory) params.category = activeCategory; // 세션 카테고리 자동 적용
 
       } else if (action === 'read') {
-        // /mcp read <카테고리/파일명>
-        const filename = parts[2];
+        // /mcp read <파일명> 또는 /mcp read <카테고리/파일명>  (공백 포함 가능)
+        const filename = parts.slice(2).join(' ').trim();
         if (!filename) {
-          setError('파일 경로를 입력하세요. 예: /mcp read safety/doc.md');
+          setError('파일명을 입력하세요. 예: /mcp read valve_spec.md');
+          return;
+        }
+        if (filename.includes('*') || filename.includes('?')) {
+          setError('와일드카드(*, ?)는 허용하지 않습니다.');
           return;
         }
         params.filename = filename;
+        // 파일명에 경로 구분자가 없고 세션 카테고리가 설정된 경우 → 카테고리 내에서 탐색
+        if (!filename.includes('/') && !filename.includes('\\') && activeCategory) {
+          params.category = activeCategory;
+        }
 
       } else {
         setError(`알 수 없는 /mcp 커맨드: "${action}". /mcp help 로 확인하세요.`);
