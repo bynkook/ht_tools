@@ -1,6 +1,8 @@
 import React, { useState, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { User, Bot, Copy, Check } from 'lucide-react';
@@ -81,6 +83,15 @@ const ChatBubble = memo(({ message, isStreaming }) => {
   const isUser = message.role === 'user';
   const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
 
+  // SyntaxHighlighter의 className 속성이 rehype-sanitize 기본 스키마에서 제거되지 않도록 허용
+  const sanitizeSchema = {
+    ...defaultSchema,
+    attributes: {
+      ...defaultSchema.attributes,
+      '*': [...(defaultSchema.attributes?.['*'] || []), 'className'],
+    },
+  };
+
   // System 메시지 (메모리 커맨드 결과 표시용)
   if (message.role === 'system') {
     return (
@@ -96,6 +107,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
     return (
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
         components={{
           pre({ children }) {
             return <CodeBlock theme={theme}>{children}</CodeBlock>;
