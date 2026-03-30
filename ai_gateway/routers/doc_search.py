@@ -153,6 +153,103 @@ class RagSearchRequest(BaseModel):
     snippet_chars: int = 1500
 
 
+def _classify_query_shape(query: str) -> dict:
+    """질문 형태를 약하게 추정해 budget에 작은 bias만 준다."""
+    query_lower = query.lower()
+    raw_tokens = [t for t in query.split() if t.strip()]
+    procedural_keywords = ("절차", "단계", "방법", "순서", "비교", "차이", "예외", "주의")
+    expand_hint = any(keyword in query_lower for keyword in procedural_keywords)
+    compact_hint = len(raw_tokens) <= 2 and len(query.strip()) <= 20 and not expand_hint
+    return {"expand_hint": expand_hint, "compact_hint": compact_hint}
+
+
+def _decide_prompt_budget(query: str, snippets: list[dict]) -> dict:
+    """질문 길이와 coverage-first 원칙으로 prompt budget 결정."""
+    shape = _classify_query_shape(query)
+    unique_docs = len({snippet.get("filename", "") for snippet in snippets if snippet.get("filename")})
+
+    if shape["compact_hint"]:
+        max_total = 4
+        max_total_chars = 3200
+    elif shape["expand_hint"]:
+        max_total = 6
+        max_total_chars = 4500
+    else:
+        max_total = 5
+        max_total_chars = 3800
+
+    min_docs_covered = min(unique_docs, max(3, min(5, max_total)))
+    return {
+        "max_per_doc": 2,
+        "max_total": max_total,
+        "max_total_chars": max_total_chars,
+        "min_docs_covered": min_docs_covered,
+    }
+
+
+def _select_prompt_snippets(
+    snippets: list[dict],
+    max_per_doc: int = 2,
+    max_total: int = 6,
+    max_total_chars: int = 4500,
+    min_docs_covered: int = 4,
+) -> list[dict]:
+    """Prompt 조립용 coverage-first + budget 적용."""
+    selected: list[dict] = []
+    doc_counts: dict[str, int] = {}
+    total_chars = 0
+    covered_docs: set[str] = set()
+
+    # 1차: 상위 문서 coverage 확보
+    for snippet in snippets:
+        if len(selected) >= max_total or len(covered_docs) >= min_docs_covered:
+            break
+        filename = snippet.get("filename", "")
+        if not filename or filename in covered_docs:
+            continue
+        snippet_text = str(snippet.get("snippet", "")).strip()
+        if not snippet_text:
+            continue
+        next_total = total_chars + len(snippet_text)
+        if selected and next_total > max_total_chars:
+            continue
+
+        selected.append(snippet)
+        doc_counts[filename] = 1
+        covered_docs.add(filename)
+        total_chars = next_total
+
+    # 2차: 남는 budget으로 추가 snippet 채우기
+    for snippet in snippets:
+        filename = snippet.get("filename", "")
+        if not filename or doc_counts.get(filename, 0) >= max_per_doc:
+            continue
+        if any(
+            selected_item.get("filename") == filename
+            and selected_item.get("start") == snippet.get("start")
+            and selected_item.get("end") == snippet.get("end")
+            for selected_item in selected
+        ):
+            continue
+
+        snippet_text = str(snippet.get("snippet", "")).strip()
+        if not snippet_text:
+            continue
+
+        next_total = total_chars + len(snippet_text)
+        if selected and next_total > max_total_chars:
+            continue
+
+        selected.append(snippet)
+        doc_counts[filename] = doc_counts.get(filename, 0) + 1
+        total_chars = next_total
+
+        if len(selected) >= max_total:
+            break
+
+    return selected
+
+
 @router.post("/rag-search", dependencies=[Depends(verify_token)])
 async def rag_search(body: RagSearchRequest):
     """
@@ -162,10 +259,11 @@ async def rag_search(body: RagSearchRequest):
     FastMCP search_docs_rag 도구를 호출하여 BM25 관련성 랭킹 + 최신 우선으로
     문서 스니펫을 검색하고, LLM에 주입할 systemPrompt를 조립하여 반환한다.
 
-    Returns:
+        Returns:
         {
           "success": bool,
           "files": [{ "filename": str, "snippet": str, "bm25_score": float }],
+          "snippets": [{ "filename": str, "snippet": str, "snippet_score": float }],
           "query": str,
           "category": str | None,
           "system_prompt": str | None  # LLM systemPrompt로 바로 주입 가능
@@ -190,21 +288,32 @@ async def rag_search(body: RagSearchRequest):
             data = json.loads(raw) if raw else {}
 
         files = data.get("files", [])
+        snippets = data.get("snippets", [])
 
-        if not files:
+        if not files and not snippets:
             return {
                 "success": True,
                 "files": [],
+                "snippets": [],
                 "query": body.query,
                 "category": body.category,
                 "system_prompt": None,
             }
 
         category_label = f" ({body.category})" if body.category else " (전체)"
-        doc_blocks = "\n\n---\n\n".join(
-            f"📄 파일: {f['filename']}\n\n{f['snippet']}"
-            for f in files
-        )
+        if snippets:
+            budget = _decide_prompt_budget(body.query, snippets)
+            selected_snippets = _select_prompt_snippets(snippets, **budget)
+            doc_blocks = "\n\n---\n\n".join(
+                f"📄 파일: {s['filename']}\n🔹 발췌 구간: {s.get('start', '-')}-{s.get('end', '-')}\n\n{s['snippet']}"
+                for s in selected_snippets
+            )
+        else:
+            selected_snippets = []
+            doc_blocks = "\n\n---\n\n".join(
+                f"📄 파일: {f['filename']}\n\n{f['snippet']}"
+                for f in files[:4]
+            )
         system_prompt = (
             f"당신은 사내 문서 기반 질문 답변 어시스턴트입니다.\n"
             f"아래 참고 문서{category_label}를 바탕으로 사용자의 질문에 답하세요.\n"
@@ -215,6 +324,7 @@ async def rag_search(body: RagSearchRequest):
         return {
             "success": True,
             "files": files,
+            "snippets": selected_snippets if snippets else [],
             "query": body.query,
             "category": body.category,
             "system_prompt": system_prompt,
@@ -225,6 +335,7 @@ async def rag_search(body: RagSearchRequest):
         return {
             "success": False,
             "files": [],
+            "snippets": [],
             "query": body.query,
             "category": body.category,
             "system_prompt": None,
