@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { dashboardLinksApi, memoryApi } from '../api/djangoApi';
 import { mcpCommandApi } from '../api/fastapiApi';
 
@@ -63,6 +63,13 @@ export const useCommands = ({
   const [activeCategory, setActiveCategory] = useState(null); // /mcp 세션 카테고리
   const [ragEnabled, setRagEnabled] = useState(false);        // RAG 모드 활성화 여부
   const ragCacheRef = useRef(null); // { query, category, systemPrompt, cachedAt }
+
+  // 세션 변경(New Chat, 다른 대화 이동) 시 RAG 상태 초기화
+  useEffect(() => {
+    setActiveCategory(null);
+    setRagEnabled(false);
+    ragCacheRef.current = null;
+  }, [currentSessionId]);
 
   // ===== Memory Command Handlers =====
 

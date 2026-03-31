@@ -7,6 +7,9 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
+  const historyRef    = useRef([]);  // 최근 5개 전송 메시지 (최신=index 0)
+  const historyIdxRef = useRef(-1);  // 탐색 위치 (-1: 탐색 중 아님)
+  const draftRef      = useRef('');  // 탐색 시작 전 입력값 보존
   const { requestRestoreFocus } = useInputFocusRestore({
     inputRef: textareaRef,
     isLoading,
@@ -19,6 +22,10 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
     const messageToSend = message;
     const fileToSend = selectedFile;
 
+    if (messageToSend.trim() && historyRef.current[0] !== messageToSend.trim()) {
+      historyRef.current = [messageToSend.trim(), ...historyRef.current].slice(0, 5);
+    }
+    historyIdxRef.current = -1;
     setMessage('');
     setSelectedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -38,6 +45,24 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
 
   const handleKeyDown = (e) => {
     if (e.nativeEvent?.isComposing) return;
+    if (e.key === 'ArrowUp') {
+      const ta = textareaRef.current;
+      const onFirstLine = !message.includes('\n') ||
+        (ta && ta.selectionStart <= message.indexOf('\n'));
+      if (onFirstLine && historyRef.current.length > 0) {
+        e.preventDefault();
+        if (historyIdxRef.current === -1) draftRef.current = message;
+        historyIdxRef.current = Math.min(historyIdxRef.current + 1, historyRef.current.length - 1);
+        setMessage(historyRef.current[historyIdxRef.current]);
+        return;
+      }
+    }
+    if (e.key === 'ArrowDown' && historyIdxRef.current >= 0) {
+      e.preventDefault();
+      historyIdxRef.current -= 1;
+      setMessage(historyIdxRef.current === -1 ? draftRef.current : historyRef.current[historyIdxRef.current]);
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend('keyboard');
@@ -52,6 +77,7 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
     const target = e.target;
     target.style.height = 'auto';
     target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
+    historyIdxRef.current = -1;
     setMessage(target.value);
   };
 

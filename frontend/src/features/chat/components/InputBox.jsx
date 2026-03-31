@@ -10,6 +10,9 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
   const [text, setText] = useState('');
   const [isTemplateActive, setIsTemplateActive] = useState(false);
   const textareaRef = useRef(null);
+  const historyRef    = useRef([]);  // 최근 5개 전송 메시지 (최신=index 0)
+  const historyIdxRef = useRef(-1);  // 탐색 위치 (-1: 탐색 중 아님)
+  const draftRef      = useRef('');  // 탐색 시작 전 입력값 보존
 
   // Auto-resize textarea
   useEffect(() => {
@@ -24,6 +27,10 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
     if (!text.trim() || isLoading) return;
 
     const message = text.trim();
+    if (historyRef.current[0] !== message) {
+      historyRef.current = [message, ...historyRef.current].slice(0, 5);
+    }
+    historyIdxRef.current = -1;
     setText('');
     setIsTemplateActive(false);
     if (textareaRef.current) {
@@ -34,6 +41,24 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
 
   const handleKeyDown = (e) => {
     if (e.nativeEvent?.isComposing) return;
+    if (e.key === 'ArrowUp') {
+      const ta = textareaRef.current;
+      const onFirstLine = !text.includes('\n') ||
+        (ta && ta.selectionStart <= text.indexOf('\n'));
+      if (onFirstLine && historyRef.current.length > 0) {
+        e.preventDefault();
+        if (historyIdxRef.current === -1) draftRef.current = text;
+        historyIdxRef.current = Math.min(historyIdxRef.current + 1, historyRef.current.length - 1);
+        setText(historyRef.current[historyIdxRef.current]);
+        return;
+      }
+    }
+    if (e.key === 'ArrowDown' && historyIdxRef.current >= 0) {
+      e.preventDefault();
+      historyIdxRef.current -= 1;
+      setText(historyIdxRef.current === -1 ? draftRef.current : historyRef.current[historyIdxRef.current]);
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -70,7 +95,7 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
         <textarea
           ref={textareaRef}
           value={text}
-          onChange={(e) => { setText(e.target.value); if (isTemplateActive) setIsTemplateActive(false); }}
+          onChange={(e) => { setText(e.target.value); historyIdxRef.current = -1; if (isTemplateActive) setIsTemplateActive(false); }}
           onKeyDown={handleKeyDown}
           placeholder="Message FabriX Chat..."
           rows={1}

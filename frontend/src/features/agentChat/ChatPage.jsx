@@ -519,7 +519,7 @@ const updateLastMessage = useCallback((content) => {
       {/* Input Area */}
       <div className="flex-shrink-0 bg-[var(--bg-primary)] p-4 pb-6">
         <div className="max-w-3xl mx-auto">
-          <InputBox onSend={handleSend} isLoading={isLoading} onStop={handleStop} />
+          <InputBox key={currentSessionId ?? 'new'} onSend={handleSend} isLoading={isLoading} onStop={handleStop} />
         </div>
       </div>
     </div>

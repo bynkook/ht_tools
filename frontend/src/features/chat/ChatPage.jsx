@@ -448,7 +448,7 @@ const ChatPage = () => {
               </span>
             </div>
           )}
-          <InputBox onSend={handleSend} isLoading={isLoading} onStop={handleStop} />
+          <InputBox key={currentSessionId ?? 'new'} onSend={handleSend} isLoading={isLoading} onStop={handleStop} />
         </div>
       </div>
     </div>
