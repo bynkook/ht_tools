@@ -311,7 +311,16 @@ async def rag_search(body: RagSearchRequest):
 
         category_label = f" ({body.category})" if body.category else " (전체)"
         if snippets:
-            budget = _decide_prompt_budget(body.query, snippets)
+            if body.filename_filter:
+                # 단일 파일 @mention 모드: 더 많은 스니펫 허용 (문서 커버리지 불필요)
+                budget = {
+                    "max_per_doc": 12,
+                    "max_total": 12,
+                    "max_total_chars": 14000,
+                    "min_docs_covered": 1,
+                }
+            else:
+                budget = _decide_prompt_budget(body.query, snippets)
             selected_snippets = _select_prompt_snippets(snippets, **budget)
             doc_blocks = "\n\n---\n\n".join(
                 f"📄 파일: {s['filename']}\n🔹 발췌 구간: {s.get('start', '-')}-{s.get('end', '-')}\n\n{s['snippet']}"
