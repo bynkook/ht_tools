@@ -65,8 +65,32 @@ const ChatPage = () => {
     return () => window.removeEventListener('agent-selected', handleAgentSelected);
   }, [handleAgentSelected]);
 
+  // New Chat 이벤트 수신: null→null 세션 전환 및 스트리밍 중 New Chat 처리
+  useEffect(() => {
+    const onNewChatRequested = () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      setIsLoading(false);
+      setMessages([]);
+      setError(null);
+      setSuccessMessage(null);
+      assistantSavedRef.current = false;
+      currentStreamingMsgRef.current = '';
+    };
+    window.addEventListener('new-chat-requested', onNewChatRequested);
+    return () => window.removeEventListener('new-chat-requested', onNewChatRequested);
+  }, []);
+
   // --- Session Load ---
   useEffect(() => {
+    // 세션 전환 시 진행 중인 스트림 중단 (Race Condition 방지)
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+    }
     if (currentSessionId) {
       if (location.state?.skipLoad) {
         // state를 초기화하여 새로고침 시에는 정상 로드되도록 함

@@ -140,6 +140,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
 
   // Handle new chat
   const handleNewChat = () => {
+    window.dispatchEvent(new CustomEvent('new-chat-requested'));
     navigate('/chat');
   };
 

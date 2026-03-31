@@ -64,12 +64,24 @@ export const useCommands = ({
   const [ragEnabled, setRagEnabled] = useState(false);        // RAG 모드 활성화 여부
   const ragCacheRef = useRef(null); // { query, category, systemPrompt, cachedAt }
 
-  // 세션 변경(New Chat, 다른 대화 이동) 시 RAG 상태 초기화
+  // 세션 변경(다른 대화 이동, 세션 생성) 시 RAG 상태 초기화
   useEffect(() => {
     setActiveCategory(null);
     setRagEnabled(false);
     ragCacheRef.current = null;
   }, [currentSessionId]);
+
+  // null→null New Chat(세션 없는 상태에서 New Chat) 시 RAG 상태 초기화
+  // currentSessionId 의존 useEffect는 null→null 변화를 감지하지 못하므로 이벤트 패턴 사용
+  useEffect(() => {
+    const onNewChatRequested = () => {
+      setActiveCategory(null);
+      setRagEnabled(false);
+      ragCacheRef.current = null;
+    };
+    window.addEventListener('new-chat-requested', onNewChatRequested);
+    return () => window.removeEventListener('new-chat-requested', onNewChatRequested);
+  }, []);
 
   // ===== Memory Command Handlers =====
 

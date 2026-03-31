@@ -89,7 +89,10 @@ const AgentChatLayout = () => {
   }, []);
 
   // Handlers
-  const handleNewChat = () => navigate('/agent-chat');
+  const handleNewChat = () => {
+    window.dispatchEvent(new CustomEvent('new-chat-requested'));
+    navigate('/agent-chat');
+  };
   
   const handleSelectSession = (sessionId) => {
     navigate(`/agent-chat?session_id=${sessionId}`);
