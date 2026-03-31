@@ -222,6 +222,8 @@ def _select_prompt_snippets(
 
     # 2차: 남는 budget으로 추가 snippet 채우기
     for snippet in snippets:
+        if len(selected) >= max_total:  # 1차에서 이미 채워진 경우 방어
+            break
         filename = snippet.get("filename", "")
         if not filename or doc_counts.get(filename, 0) >= max_per_doc:
             continue
