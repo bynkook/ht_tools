@@ -266,8 +266,8 @@ export const useCommands = ({
         `| \`/mcp search <키워드>\` | 키워드로 문서 검색 (기본 카테고리 자동 적용) |`,
         `| \`/mcp read <파일명>\` | 문서 읽기 (카테고리 설정 시 해당 카테고리 내 탐색, 없으면 전체 탐색) |`,
         `| \`/mcp read <카테고리/파일명>\` | 특정 카테고리의 문서 전체 내용 읽기 |`,
-        `| \`/mcp category set <이름>\` | 카테고리 설정 + **RAG 자동 활성화** |`,
-        `| \`/mcp category clear\` | 카테고리 해제 + RAG 자동 비활성화 |`,
+        `| \`/mcp set <카테고리명>\` | 카테고리 설정 + **RAG 자동 활성화** |`,
+        `| \`/mcp clear\` | 카테고리 해제 + RAG 자동 비활성화 |`,
         `| \`/mcp rag off\` | RAG 모드 비활성화 (카테고리 유지) |`,
         `| \`/mcp rag on\` | RAG 모드 재활성화 |`,
         `| \`/mcp rag status\` | RAG 모드 상태 + 캐시 정보 확인 |`,
@@ -278,46 +278,45 @@ export const useCommands = ({
         categoryStatus,
         ragEnabled
           ? `🤖 RAG 모드: **ON** — 일반 질문 입력 시 문서를 자동 검색합니다`
-          : `🤖 RAG 모드: **OFF** — \`/mcp category set <이름>\` 으로 활성화`,
+          : `🤖 RAG 모드: **OFF** — \`/mcp set <카테고리명>\` 으로 활성화`,
       ].join('\n');
 
       setMessages(prev => [...prev, { role: 'assistant', content: helpContent }]);
       return;
     }
 
-    // /mcp category set <name>  |  /mcp category clear
-    if (action === 'category') {
-      const sub = parts[2];
-      if (sub === 'set') {
-        const cat = parts[3];
-        if (!cat) { setError('카테고리 이름을 입력하세요. 예: /mcp category set safety'); return; }
-        setActiveCategory(cat);
-        setRagEnabled(true);
-        ragCacheRef.current = null;
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: [
-            `## 🗂️ 문서 카테고리 설정`,
-            ``,
-            `카테고리 **"${cat}"** 이(가) 설정되었습니다.`,
-            `📚 **RAG 모드가 자동으로 활성화**되었습니다.`,
-            ``,
-            `> 이제 채팅창에서 일반 질문을 입력하면 해당 카테고리 문서를 자동 검색하여 답변에 활용합니다.`,
-            `> RAG를 끄려면 \`/mcp rag off\` 를 입력하세요.`,
-            `> 카테고리를 해제하려면 \`/mcp category clear\` 를 입력하세요.`,
-          ].join('\n'),
-        }]);
-      } else if (sub === 'clear') {
-        setActiveCategory(null);
-        setRagEnabled(false);
-        ragCacheRef.current = null;
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `🗂️ MCP 문서 카테고리가 해제되었습니다. RAG 모드도 비활성화되었습니다.`,
-        }]);
-      } else {
-        setError('사용법: /mcp category set <이름>  또는  /mcp category clear');
-      }
+    // /mcp set <카테고리명>  (카테고리 설정 + RAG 자동 활성화)
+    if (action === 'set') {
+      const cat = parts.slice(2).join(' ').trim();
+      if (!cat) { setError('카테고리 이름을 입력하세요. 예: /mcp set safety'); return; }
+      setActiveCategory(cat);
+      setRagEnabled(true);
+      ragCacheRef.current = null;
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: [
+          `## 🗂️ 문서 카테고리 설정`,
+          ``,
+          `카테고리 **"${cat}"** 이(가) 설정되었습니다.`,
+          `📚 **RAG 모드가 자동으로 활성화**되었습니다.`,
+          ``,
+          `> 이제 채팅창에서 일반 질문을 입력하면 해당 카테고리 문서를 자동 검색하여 답변에 활용합니다.`,
+          `> RAG를 끄려면 \`/mcp rag off\` 를 입력하세요.`,
+          `> 카테고리를 해제하려면 \`/mcp clear\` 를 입력하세요.`,
+        ].join('\n'),
+      }]);
+      return;
+    }
+
+    // /mcp clear  (카테고리 해제 + RAG 비활성화)
+    if (action === 'clear') {
+      setActiveCategory(null);
+      setRagEnabled(false);
+      ragCacheRef.current = null;
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `🗂️ MCP 문서 카테고리가 해제되었습니다. RAG 모드도 비활성화되었습니다.`,
+      }]);
       return;
     }
 
@@ -337,7 +336,7 @@ export const useCommands = ({
                 `📊 용량: 문서 최대 10개 × 1,500자 스니펫 (BM25 관련성 랭킹 + 최신 우선)`,
                 cacheAge !== null ? `🗃️ 캐시: ${cacheAge}초 전 검색 결과 보관 중` : `🗃️ 캐시: 없음 (첫 질문 시 검색)`,
               ].join('\n')
-            : `🤖 RAG 모드: **OFF**\n\`/mcp category set <카테고리>\` 로 활성화하세요.`,
+            : `🤖 RAG 모드: **OFF**\n\`/mcp set <카테고리>\` 로 활성화하세요.`,
         }]);
       } else if (sub === 'on') {
         setRagEnabled(true);
@@ -354,7 +353,7 @@ export const useCommands = ({
               : `🗂️ 검색 대상: 전체 문서 (카테고리 미지정)`,
             `📊 검색 규모: 문서 **최대 10개** × 스니펫 **1,500자** (BM25 관련성 랭킹 + 최신 우선)`,
             ``,
-            `> 카테고리를 지정하려면 \`/mcp category set <이름>\` 을 입력하세요.`,
+            `> 카테고리를 지정하려면 \`/mcp set <카테고리명>\` 을 입력하세요.`,
             `> 캐시를 초기화하려면 \`/mcp rag refresh\` 를 입력하세요.`,
             `> RAG를 끄려면 \`/mcp rag off\` 를 입력하세요.`,
           ].join('\n'),
@@ -384,8 +383,8 @@ export const useCommands = ({
       const params = { action };
 
       if (action === 'list') {
-        // /mcp list [카테고리]
-        const cat = parts[2] ?? null;
+        // /mcp list [카테고리]  — 공백 포함 카테고리명 지원
+        const cat = parts.slice(2).join(' ').trim() || null;
         if (cat) params.category = cat;
 
       } else if (action === 'search') {

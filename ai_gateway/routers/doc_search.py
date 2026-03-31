@@ -321,6 +321,18 @@ async def rag_search(body: RagSearchRequest):
             f"=== 참고 문서 ===\n\n{doc_blocks}\n\n=================="
         )
 
+        # Context budget 로깅: 실제 비용·품질 저하 원인 측정용
+        prompt_chars = len(system_prompt)
+        prompt_tokens_est = prompt_chars // 2  # 한국어 기준 대략 1토큰 ≈ 2자
+        logger.info(
+            "RAG prompt budget — query=%r category=%s snippets=%d chars=%d tokens≈%d",
+            body.query,
+            body.category or "all",
+            len(selected_snippets) if snippets else len(files[:4]),
+            prompt_chars,
+            prompt_tokens_est,
+        )
+
         return {
             "success": True,
             "files": files,
