@@ -8,6 +8,7 @@ import InputBox from './components/InputBox';
 import { agentChatApi, agentMemoryApi } from '../../api/djangoApi';
 import { fastApi } from '../../api/fastapiApi';
 import { getFastApiUrl } from '../../api/axiosConfig';
+import { parseAtMentions, stripAtMentions, resolveAtMentions } from '../../hooks/useCommands';
 
 // 대화 이력 제한: 최근 5턴 (10개 메시지)
 const MAX_HISTORY_TURNS = 5;
@@ -330,6 +331,43 @@ const ChatPage = () => {
 
 const token = sessionStorage.getItem('authToken');
 
+        // ===== @<파일명> mention 전처리 =====
+        const mentions = parseAtMentions(text);
+        let atMentionSystemPrompt = null;
+        if (mentions.length > 0) {
+          const cleanQuery = stripAtMentions(text);
+          try {
+            const { resolved, errors } = await resolveAtMentions(mentions, cleanQuery, null);
+            if (errors.length > 0) {
+              setError(`파일을 찾을 수 없습니다: ${errors.map(e => `@"${e}"`).join(', ')}`);
+              if (resolved.length === 0) {
+                setIsLoading(false);
+                setMessages(prev => prev.slice(0, -2)); // userMsg + assistant 빈 메시지 되돌리기
+                return;
+              }
+            }
+            if (resolved.length === 1 && resolved[0].system_prompt) {
+              atMentionSystemPrompt = resolved[0].system_prompt;
+            } else if (resolved.length > 1) {
+              const allBlocks = resolved
+                .flatMap(({ filename, snippets }) =>
+                  snippets.map(s => `📄 **파일: ${filename}**\n\n${s.snippet}`)
+                )
+                .join('\n\n---\n\n');
+              if (allBlocks) {
+                atMentionSystemPrompt =
+                  `당신은 사내 문서 기반 질문 답변 어시스턴트입니다.\n` +
+                  `아래 참고 문서를 바탕으로 사용자의 질문에 답하세요.\n` +
+                  `참고 문서에 없는 내용은 '제공된 문서에서 찾을 수 없습니다'라고 솔직하게 답하세요.\n\n` +
+                  `=== 참고 문서 ===\n\n${allBlocks}\n\n==================`;
+              }
+            }
+          } catch (e) {
+            console.warn('@mention 해석 실패 — 일반 채팅으로 진행:', e);
+          }
+        }
+        // =====================================
+
         // 대화 이력 기반 contents 배열 구성
         const contentsArray = buildContentsArray(
           messages.filter(m => m.role !== undefined && m.content),
@@ -342,7 +380,8 @@ const token = sessionStorage.getItem('authToken');
             'Content-Type': 'application/json',
             'Authorization': `Token ${token}`
           },
-          body: JSON.stringify({ agentId: selectedAgentId, contents: contentsArray, isStream: true, isRagOn: true }),
+          body: JSON.stringify({ agentId: selectedAgentId, contents: contentsArray, isStream: true, isRagOn: true,
+            ...(atMentionSystemPrompt ? { systemPrompt: atMentionSystemPrompt } : {}) }),
           signal: abortControllerRef.current.signal,
           async onopen(response) {
             if (response.status === 429) {

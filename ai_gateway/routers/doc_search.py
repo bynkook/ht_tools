@@ -149,6 +149,7 @@ async def mcp_command(body: McpCommandRequest):
 class RagSearchRequest(BaseModel):
     query: str
     category: Optional[str] = None
+    filename_filter: Optional[str] = None  # @<파일명> 문법용: 특정 파일로 검색 제한
     max_docs: int = 10
     snippet_chars: int = 1500
 
@@ -271,13 +272,17 @@ async def rag_search(body: RagSearchRequest):
     """
     doc_server_url = get_doc_server_url()
     try:
+        tool_args: dict = {
+            "query": body.query,
+            "category": body.category,
+            "max_docs": body.max_docs,
+            "snippet_chars": body.snippet_chars,
+        }
+        if body.filename_filter:
+            tool_args["filename_filter"] = body.filename_filter
+
         async with Client(doc_server_url) as client:
-            result = await client.call_tool("search_docs_rag", {
-                "query": body.query,
-                "category": body.category,
-                "max_docs": body.max_docs,
-                "snippet_chars": body.snippet_chars,
-            })
+            result = await client.call_tool("search_docs_rag", tool_args)
 
         # search_docs_rag가 -> dict를 반환하므로 result.data가 이미 dict
         # (FastMCP 공식 권고: dict 반환 시 json.dumps/loads 불필요)
@@ -286,6 +291,10 @@ async def rag_search(body: RagSearchRequest):
             raw = "\n".join(c.text for c in result.content if hasattr(c, "text"))
             import json
             data = json.loads(raw) if raw else {}
+
+        # filename_filter 모드에서 파일 미발견 시 404
+        if data.get("error"):
+            raise HTTPException(status_code=404, detail=data["error"])
 
         files = data.get("files", [])
         snippets = data.get("snippets", [])

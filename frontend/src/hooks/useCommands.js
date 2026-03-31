@@ -1,6 +1,81 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { dashboardLinksApi, memoryApi } from '../api/djangoApi';
-import { mcpCommandApi } from '../api/fastapiApi';
+import { mcpCommandApi, mcpRagApi } from '../api/fastapiApi';
+
+// =============================================================================
+// @<파일명> mention 파싱 유틸리티 (ChatPage에서 import하여 사용)
+// =============================================================================
+
+/**
+ * 입력 텍스트에서 @<파일명> 멘션 목록을 파싱한다.
+ * 문법:
+ *   @파일명.md               — 공백 없는 단순 파일명
+ *   @"파일명 공백 있음.md"   — 공백/특수문자 포함 시 큰따옴표 감싸기
+ *   @카테고리/파일명.md      — 카테고리 경로 포함
+ * @param {string} text
+ * @returns {string[]} 파싱된 파일명 목록 (따옴표 제거 후 trim)
+ */
+export function parseAtMentions(text) {
+  const mentions = [];
+  const regex = /@"([^"]+)"|@([^\s"@]+)/g;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    const raw = (m[1] ?? m[2]).trim();
+    if (raw) mentions.push(raw);
+  }
+  return mentions;
+}
+
+/**
+ * 텍스트에서 @<파일명> 멘션을 제거하고 정리된 쿼리를 반환한다.
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripAtMentions(text) {
+  return text.replace(/@"[^"]+"|@[^\s"@]+/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
+ * @mention 파일 목록을 rag-search API로 해석하여 관련 스니펫을 수집한다.
+ * BM25 건너뜀 — 지정 파일만 semantic block 스니펫 추출.
+ * @param {string[]} mentions  parseAtMentions() 결과
+ * @param {string} cleanQuery  stripAtMentions() 결과 (LLM에 전달할 실제 질문)
+ * @param {string|null} activeCategory  현재 세션 카테고리
+ * @returns {Promise<{ resolved: Array<{filename, system_prompt, snippets}>, errors: string[] }>}
+ */
+export async function resolveAtMentions(mentions, cleanQuery, activeCategory) {
+  const results = await Promise.allSettled(
+    mentions.map(async (raw) => {
+      let filename_filter = raw;
+      let category = undefined;
+      const slashIdx = raw.indexOf('/');
+      if (slashIdx > 0) {
+        category = raw.slice(0, slashIdx);
+        filename_filter = raw.slice(slashIdx + 1);
+      } else if (activeCategory) {
+        category = activeCategory;
+      }
+      const res = await mcpRagApi.search({
+        query: cleanQuery || raw,
+        filename_filter,
+        ...(category ? { category } : {}),
+      });
+      if (!res.data?.success) throw new Error(`not found: ${raw}`);
+      return {
+        filename: raw,
+        system_prompt: res.data.system_prompt ?? null,
+        snippets: res.data.snippets ?? [],
+      };
+    })
+  );
+  const resolved = results
+    .filter(r => r.status === 'fulfilled')
+    .map(r => r.value);
+  const errors = results.flatMap((r, i) =>
+    r.status === 'rejected' ? [mentions[i]] : []
+  );
+  return { resolved, errors };
+}
 
 /**
  * 자연어 → 커맨드 매핑 패턴
@@ -292,6 +367,18 @@ export const useCommands = ({
         `| \`/mcp rag status\` | RAG 모드 상태 + 캐시 정보 확인 |`,
         `| \`/mcp rag refresh\` | RAG 검색 캐시 강제 초기화 |`,
         `| \`/mcp help\` | 이 도움말 표시 |`,
+        ``,
+        `---`,
+        `### 📎 @파일명 문법 (특정 파일 직접 지정)`,
+        ``,
+        `| 문법 | 설명 |`,
+        `|:---|:---|`,
+        `| \`@파일명.md 질문\` | 해당 파일의 관련 스니펫을 LLM 컨텍스트에 주입 (RAG 대신) |`,
+        `| \`@"파일명 공백.md" 질문\` | 공백/특수문자 포함 파일명은 **큰따옴표**로 감싸기 |`,
+        `| \`@카테고리/파일명.md 질문\` | 카테고리 경로 포함 지정 |`,
+        `| \`@file1.md @"file 2.md" 질문\` | 복수 파일 동시 지정 가능 |`,
+        ``,
+        `> \`@\`는 질문 어느 위치에나 사용 가능. 세션 카테고리 설정 시 경로 없는 파일명은 해당 카테고리 내 탐색.`,
         ``,
         `---`,
         categoryStatus,
