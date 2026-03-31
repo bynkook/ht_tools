@@ -6,9 +6,9 @@ import json
 import logging
 import toml
 from pathlib import Path
+from typing import Any
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional
 from fastmcp import Client
 
 from ..dependencies import verify_token
@@ -28,10 +28,10 @@ def get_doc_server_url() -> str:
 
 
 class McpCommandRequest(BaseModel):
-    action: str                     # "search" | "read" | "list"
-    query: Optional[str] = None     # search 시 검색어
-    category: Optional[str] = None  # search/list 시 카테고리 필터
-    filename: Optional[str] = None  # read 시 파일 경로
+    action: str                       # "search" | "read" | "list"
+    query: str | None = None          # search 시 검색어
+    category: str | None = None       # search/list 시 카테고리 필터
+    filename: str | None = None       # read 시 파일 경로
     max_results: int = 5
 
 
@@ -60,7 +60,7 @@ async def mcp_command(body: McpCommandRequest):
             if body.action == "search":
                 if not body.query:
                     raise HTTPException(status_code=400, detail="검색어(query)가 필요합니다.")
-                tool_args: dict = {"query": body.query, "max_results": body.max_results}
+                tool_args: dict[str, Any] = {"query": body.query, "max_results": body.max_results}
                 if body.category:
                     tool_args["category"] = body.category
                 result = await client.call_tool("search_docs", tool_args)
@@ -68,7 +68,7 @@ async def mcp_command(body: McpCommandRequest):
             elif body.action == "read":
                 if not body.filename:
                     raise HTTPException(status_code=400, detail="파일 경로(filename)가 필요합니다.")
-                tool_args: dict = {"filename": body.filename}
+                tool_args: dict[str, Any] = {"filename": body.filename}
                 if body.category:
                     tool_args["category"] = body.category
                 result = await client.call_tool("read_doc", tool_args)
@@ -148,14 +148,18 @@ async def mcp_command(body: McpCommandRequest):
 
 class RagSearchRequest(BaseModel):
     query: str
-    category: Optional[str] = None
-    filename_filter: Optional[str] = None  # @<파일명> 문법용: 특정 파일로 검색 제한
+    category: str | None = None
+    filename_filter: str | None = None  # @<파일명> 문법용: 특정 파일로 검색 제한
     max_docs: int = 10
     snippet_chars: int = 1500
 
 
 def _classify_query_shape(query: str) -> dict:
-    """질문 형태를 약하게 추정해 budget에 작은 bias만 준다."""
+    """질문 형태를 약하게 추정해 budget에 작은 bias만 준다.
+
+    Note: fastmcp/tools.py의 _classify_query_shape와 동일한 로직을 유지한다.
+    두 프로젝트가 독립 레포이므로 공유 모듈 불가 — 변경 시 양쪽 동시 적용 필요.
+    """
     query_lower = query.lower()
     raw_tokens = [t for t in query.split() if t.strip()]
     procedural_keywords = ("절차", "단계", "방법", "순서", "비교", "차이", "예외", "주의")
@@ -274,7 +278,7 @@ async def rag_search(body: RagSearchRequest):
     """
     doc_server_url = get_doc_server_url()
     try:
-        tool_args: dict = {
+        tool_args: dict[str, Any] = {
             "query": body.query,
             "category": body.category,
             "max_docs": body.max_docs,
@@ -291,7 +295,6 @@ async def rag_search(body: RagSearchRequest):
         data = result.data
         if data is None:
             raw = "\n".join(c.text for c in result.content if hasattr(c, "text"))
-            import json
             data = json.loads(raw) if raw else {}
 
         # filename_filter 모드에서 파일 미발견 시 404
