@@ -27,6 +27,23 @@ def get_doc_server_url() -> str:
     return secrets.get("doc_server", {}).get("base_url", "http://127.0.0.1:8002/mcp")
 
 
+def _result_to_dict(result) -> dict:
+    """CallToolResult → plain dict 변환 (FastMCP 공식 API 준수).
+
+    FastMCP 공식 문서 (https://gofastmcp.com/clients/tools):
+    - result.structured_content: Standard MCP structured JSON (dict | None) — raw dict 접근용
+    - result.data: Fully hydrated Python objects (TypedDict → Pydantic model) — 타입 객체 접근용
+    - result.content: list[ContentBlock] — legacy/no-schema fallback
+
+    dict 접근이 필요한 경우 structured_content를 우선 사용하고,
+    없으면 content fallback(legacy 도구 호환)으로 처리한다.
+    """
+    if result.structured_content is not None:
+        return result.structured_content
+    raw = "\n".join(c.text for c in result.content if hasattr(c, "text"))
+    return json.loads(raw) if raw else {}
+
+
 class McpCommandRequest(BaseModel):
     action: str                       # "search" | "read" | "list"
     query: str | None = None          # search 시 검색어
@@ -76,10 +93,7 @@ async def mcp_command(body: McpCommandRequest):
             elif body.action == "list":
                 if body.category:
                     result = await client.call_tool("list_docs_detail", {"category": body.category})
-                    data = result.data if result.data is not None else None
-                    if data is None:
-                        raw = "\n".join(c.text for c in result.content if hasattr(c, "text"))
-                        data = json.loads(raw) if raw else {}
+                    data = _result_to_dict(result)
                     error = data.get("error")
                     if error:
                         content = f"⚠️ {error}"
@@ -99,10 +113,7 @@ async def mcp_command(body: McpCommandRequest):
                             content = "\n".join(lines)
                 else:
                     result = await client.call_tool("list_categories_detail", {})
-                    data = result.data if result.data is not None else None
-                    if data is None:
-                        raw = "\n".join(c.text for c in result.content if hasattr(c, "text"))
-                        data = json.loads(raw) if raw else {}
+                    data = _result_to_dict(result)
                     categories = data.get("categories", [])
                     if not categories:
                         content = "등록된 카테고리가 없습니다."
@@ -291,11 +302,8 @@ async def rag_search(body: RagSearchRequest):
             result = await client.call_tool("search_docs_rag", tool_args)
 
         # search_docs_rag가 -> dict를 반환하므로 result.data가 이미 dict
-        # (FastMCP 공식 권고: dict 반환 시 json.dumps/loads 불필요)
-        data = result.data
-        if data is None:
-            raw = "\n".join(c.text for c in result.content if hasattr(c, "text"))
-            data = json.loads(raw) if raw else {}
+        # FastMCP 공식: structured_content(raw dict) 우선, content fallback (_result_to_dict)
+        data = _result_to_dict(result)
 
         # filename_filter 모드에서 파일 미발견 시 404
         if data.get("error"):
