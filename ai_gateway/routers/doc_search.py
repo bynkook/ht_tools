@@ -170,18 +170,18 @@ def _decide_prompt_budget(query: str, snippets: list[dict]) -> dict:
     unique_docs = len({snippet.get("filename", "") for snippet in snippets if snippet.get("filename")})
 
     if shape["compact_hint"]:
-        max_total = 4
-        max_total_chars = 3200
-    elif shape["expand_hint"]:
         max_total = 6
-        max_total_chars = 4500
+        max_total_chars = 6000
+    elif shape["expand_hint"]:
+        max_total = 12
+        max_total_chars = 12000
     else:
-        max_total = 5
-        max_total_chars = 3800
+        max_total = 9
+        max_total_chars = 9000
 
-    min_docs_covered = min(unique_docs, max(3, min(5, max_total)))
+    min_docs_covered = min(unique_docs, max(3, min(6, max_total)))
     return {
-        "max_per_doc": 2,
+        "max_per_doc": 3,
         "max_total": max_total,
         "max_total_chars": max_total_chars,
         "min_docs_covered": min_docs_covered,
