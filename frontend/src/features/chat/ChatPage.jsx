@@ -12,6 +12,7 @@ import { useCommands, detectNaturalLanguageCommand, parseAtMentions, stripAtMent
 
 // 대화 이력 제한: 최근 5턴 (10개 메시지)
 const MAX_HISTORY_TURNS = 5;
+const DEFAULT_SESSION_TITLE = 'New Chat';
 
 /**
  * 대화 이력을 FabriX API contents 배열 형식으로 변환
@@ -58,12 +59,13 @@ const ChatPage = () => {
   const currentStreamingMsgRef = useRef(""); // 현재 스트리밍 중인 메시지 추적용
   const activeSessionIdRef = useRef(currentSessionId);
   const pendingBootstrapSessionIdRef = useRef(null);
+  const currentSessionTitleRef = useRef(DEFAULT_SESSION_TITLE);
 
   useEffect(() => {
     activeSessionIdRef.current = currentSessionId;
   }, [currentSessionId]);
 
-  const ensureSession = useCallback(async (seedText) => {
+  const ensureSession = useCallback(async ({ titleSeed } = {}) => {
     if (activeSessionIdRef.current) {
       return activeSessionIdRef.current;
     }
@@ -73,14 +75,36 @@ const ChatPage = () => {
       return null;
     }
 
-    const title = seedText ? seedText.slice(0, 30) : "New Conversation";
+    const normalizedTitleSeed = titleSeed?.trim();
+    const title = normalizedTitleSeed ? normalizedTitleSeed.slice(0, 30) : DEFAULT_SESSION_TITLE;
     const newSession = await modelChatApi.createSession(selectedModelId, title);
     activeSessionIdRef.current = String(newSession.id);
     pendingBootstrapSessionIdRef.current = String(newSession.id);
+    currentSessionTitleRef.current = newSession.title || title;
     navigate(`/chat?session_id=${newSession.id}`, { replace: true, state: { skipLoad: true } });
     window.dispatchEvent(new Event('session-created'));
     return String(newSession.id);
   }, [navigate, selectedModelId]);
+
+  const syncSessionTitleIfNeeded = useCallback(async (sessionId, userText) => {
+    const normalizedText = (userText || '').trim();
+    if (!sessionId || !normalizedText) {
+      return;
+    }
+
+    if (currentSessionTitleRef.current && currentSessionTitleRef.current !== DEFAULT_SESSION_TITLE) {
+      return;
+    }
+
+    const nextTitle = normalizedText.slice(0, 30);
+    if (!nextTitle || nextTitle === currentSessionTitleRef.current) {
+      return;
+    }
+
+    const updatedSession = await modelChatApi.updateSession(sessionId, { title: nextTitle });
+    currentSessionTitleRef.current = updatedSession.title || nextTitle;
+    window.dispatchEvent(new Event('session-updated'));
+  }, []);
 
   // 커맨드 처리 훅
   const { executeCommand, isCommandLoading, activeCategory, ragEnabled, ragCacheRef, resetCommandState } = useCommands({
@@ -120,6 +144,7 @@ const ChatPage = () => {
       currentStreamingMsgRef.current = '';
       activeSessionIdRef.current = null;
       pendingBootstrapSessionIdRef.current = null;
+      currentSessionTitleRef.current = DEFAULT_SESSION_TITLE;
     };
     window.addEventListener('new-chat-requested', onNewChatRequested);
     return () => window.removeEventListener('new-chat-requested', onNewChatRequested);
@@ -154,6 +179,7 @@ const ChatPage = () => {
           const data = await modelChatApi.getSessionDetail(currentSessionId);
           setMessages(data.messages || []);
           if (data.model_id) setSelectedModelId(data.model_id);
+          currentSessionTitleRef.current = data.title || DEFAULT_SESSION_TITLE;
         } catch (err) { /* Ignore error - deleted session etc */ }
         finally { setIsLoading(false); }
       };
@@ -161,6 +187,7 @@ const ChatPage = () => {
     } else {
       activeSessionIdRef.current = null;
       pendingBootstrapSessionIdRef.current = null;
+      currentSessionTitleRef.current = DEFAULT_SESSION_TITLE;
       resetCommandState();
       setMessages([]);
     }
@@ -201,13 +228,14 @@ const ChatPage = () => {
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      const sessionId = await ensureSession(text);
+      const sessionId = await ensureSession({ titleSeed: text });
       if (!sessionId) {
         setIsLoading(false);
         setMessages(prev => prev.slice(0, -1));
         return;
       }
 
+      await syncSessionTitleIfNeeded(sessionId, text);
       await modelChatApi.saveMessage(sessionId, 'user', userMsg.content);
       setMessages(prev => [...prev, { role: 'assistant', content: '', isRag: ragEnabled && !!activeCategory, ragCategory: activeCategory }]);
       assistantSavedRef.current = false;

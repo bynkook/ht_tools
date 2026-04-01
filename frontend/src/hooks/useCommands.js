@@ -509,7 +509,7 @@ export const useCommands = ({
     setSuccessMessage(null);
     setError(null);
 
-    const sessionId = currentSessionId || await ensureSession(originalText);
+    const sessionId = currentSessionId || await ensureSession();
     if (!sessionId) {
       return { handled: true };
     }

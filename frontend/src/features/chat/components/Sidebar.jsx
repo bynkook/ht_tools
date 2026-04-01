@@ -115,13 +115,17 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
     loadSessions();
   }, [loadSessions]);
 
-  // Listen for session-created event
+  // Listen for session-created / session-updated event
   useEffect(() => {
-    const handleSessionCreated = () => {
+    const handleSessionChanged = () => {
       loadSessions();
     };
-    window.addEventListener('session-created', handleSessionCreated);
-    return () => window.removeEventListener('session-created', handleSessionCreated);
+    window.addEventListener('session-created', handleSessionChanged);
+    window.addEventListener('session-updated', handleSessionChanged);
+    return () => {
+      window.removeEventListener('session-created', handleSessionChanged);
+      window.removeEventListener('session-updated', handleSessionChanged);
+    };
   }, [loadSessions]);
 
   // Handle model selection

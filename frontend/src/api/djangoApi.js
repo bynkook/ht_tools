@@ -131,6 +131,12 @@ export const modelChatApi = {
     return response.data;
   },
 
+  // 대화방 정보 수정 (예: 제목 갱신)
+  updateSession: async (sessionId, data) => {
+    const response = await djangoClient.patch(`/api/chat/sessions/${sessionId}/`, data);
+    return response.data;
+  },
+
   // 메시지 저장 (User 질문 또는 AI 답변)
   saveMessage: async (sessionId, role, content) => {
     const response = await djangoClient.post(`/api/chat/sessions/${sessionId}/messages/`, {
