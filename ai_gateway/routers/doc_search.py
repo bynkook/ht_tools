@@ -313,13 +313,20 @@ async def rag_search(body: RagSearchRequest):
         snippets = data.get("snippets", [])
 
         if not files and not snippets:
+            # RAG 무결과: LLM에 명시적 지시 전달 (system_prompt=None이면 대화이력 기반 슬래시 커맨드 생성 위험)
+            no_result_prompt = (
+                "당신은 사내 문서 기반 질문 답변 어시스턴트입니다.\n"
+                "검색 결과 관련 문서를 찾을 수 없었습니다.\n"
+                "일반 지식으로 답변하거나 사용자에게 더 구체적인 검색 키워드를 제안하세요.\n"
+                "절대 /mcp read, /mcp list 같은 시스템 커맨드를 직접 출력하지 마세요."
+            )
             return {
                 "success": True,
                 "files": [],
                 "snippets": [],
                 "query": body.query,
                 "category": body.category,
-                "system_prompt": None,
+                "system_prompt": no_result_prompt,
             }
 
         category_label = f" ({body.category})" if body.category else " (전체)"
