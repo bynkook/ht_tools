@@ -141,6 +141,11 @@ export const mcpCommandApi = {
    * @returns {Promise<AxiosResponse<{ success: boolean, content: string }>>}
    */
   execute: (params) => fastApiClient.post('/mcp-command', params),
+
+  /**
+   * `/mcp set`는 `/mcp list`와 같은 backend category catalog를 통과한 값만 수용한다.
+   */
+  validateCategory: (category) => fastApiClient.post('/mcp-command/validate-category', { category }),
 };
 
 // =============================================================================

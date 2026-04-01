@@ -95,6 +95,13 @@ const NATURAL_LANGUAGE_PATTERNS = [
   // 추후 다른 커맨드 패턴 추가 가능
 ];
 
+const getApiErrorMessage = (err, fallback) => {
+  return err?.response?.data?.detail
+    || err?.response?.data?.content
+    || err?.message
+    || fallback;
+};
+
 /**
  * 자연어 입력에서 커맨드 감지
  * @param {string} text - 사용자 입력
@@ -375,13 +382,18 @@ export const useCommands = ({
     if (action === 'set') {
       const cat = parts.slice(2).join(' ').trim();
       if (!cat) { await emitCommandError(sessionId, '카테고리 이름을 입력하세요. 예: /mcp set safety'); return; }
-      setActiveCategory(cat);
+
+      // `/mcp set`는 로컬 토글이 아니라 backend category catalog를 통과한 값만 수용한다.
+      const validation = await mcpCommandApi.validateCategory(cat);
+      const validatedCategory = validation.data?.category || cat;
+
+      setActiveCategory(validatedCategory);
       setRagEnabled(true);
       ragCacheRef.current = null;
       await appendSystemHistory(sessionId, [
         `## 🗂️ 문서 카테고리 설정`,
         ``,
-        `카테고리 **"${cat}"** 이(가) 설정되었습니다.`,
+        `카테고리 **"${validatedCategory}"** 이(가) 설정되었습니다.`,
         `📚 **RAG 모드가 자동으로 활성화**되었습니다.`,
         ``,
         `> 이제 채팅창에서 일반 질문을 입력하면 해당 카테고리 문서를 자동 검색하여 답변에 활용합니다.`,
@@ -467,18 +479,27 @@ export const useCommands = ({
 
       } else if (action === 'read') {
         // /mcp read <파일명> 또는 /mcp read <카테고리/파일명>  (공백 포함 가능)
-        const filename = parts.slice(2).join(' ').trim();
-        if (!filename) {
+        const rawTarget = parts.slice(2).join(' ').trim();
+        if (!rawTarget) {
           await emitCommandError(sessionId, '파일명을 입력하세요. 예: /mcp read valve_spec.md');
           return;
         }
-        if (filename.includes('*') || filename.includes('?')) {
+        if (rawTarget.includes('*') || rawTarget.includes('?')) {
           await emitCommandError(sessionId, '와일드카드(*, ?)는 허용하지 않습니다.');
           return;
         }
-        params.filename = filename;
+
+        // 카테고리/파일명 입력도 `/mcp set`와 동일한 backend category 검증 경로를 타게 한다.
+        const pathMatch = rawTarget.match(/^([^/\\]+)[/\\](.+)$/);
+        if (pathMatch) {
+          params.category = pathMatch[1].trim();
+          params.filename = pathMatch[2].trim();
+        } else {
+          params.filename = rawTarget;
+        }
+
         // 파일명에 경로 구분자가 없고 세션 카테고리가 설정된 경우 → 카테고리 내에서 탐색
-        if (!filename.includes('/') && !filename.includes('\\') && activeCategory) {
+        if (!pathMatch && !rawTarget.includes('/') && !rawTarget.includes('\\') && activeCategory) {
           params.category = activeCategory;
         }
 
@@ -491,7 +512,7 @@ export const useCommands = ({
       await appendSystemHistory(sessionId, res.data.content);
 
     } catch (err) {
-      await emitCommandError(sessionId, '/mcp 커맨드 실패: ' + (err.message || '알 수 없는 오류'));
+      await emitCommandError(sessionId, '/mcp 커맨드 실패: ' + getApiErrorMessage(err, '알 수 없는 오류'));
     } finally {
       setIsCommandLoading(false);
     }

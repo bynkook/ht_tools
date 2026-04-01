@@ -52,6 +52,65 @@ class McpCommandRequest(BaseModel):
     max_results: int = 5
 
 
+class ValidateCategoryRequest(BaseModel):
+    category: str
+
+
+async def _list_category_catalog(client: Client) -> list[dict[str, Any]]:
+    """`/mcp list`가 사용하는 것과 동일한 category catalog를 조회한다."""
+    result = await client.call_tool("list_categories_detail", {})
+    data = _result_to_dict(result)
+    categories = data.get("categories", [])
+    return categories if isinstance(categories, list) else []
+
+
+def _match_category_exact(categories: list[dict[str, Any]], requested: str) -> dict[str, Any] | None:
+    """Category 선택은 exact match만 허용한다. 휴리스틱 보정은 금지한다."""
+    normalized_requested = requested.strip()
+    if not normalized_requested:
+        return None
+
+    for category in categories:
+        if category.get("name") == normalized_requested:
+            return category
+    return None
+
+
+async def _require_existing_category(client: Client, requested: str) -> dict[str, Any]:
+    """
+    `/mcp set`와 `/mcp list`가 동일한 backend catalog를 참조하도록 강제한다.
+
+    invalid category는 RAG 무검색 결과와 다른 오류이므로, 선택 단계에서 즉시 차단한다.
+    """
+    categories = await _list_category_catalog(client)
+    matched = _match_category_exact(categories, requested)
+    if matched is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"존재하지 않는 카테고리입니다: {requested}",
+        )
+    return matched
+
+
+@router.post("/validate-category", dependencies=[Depends(verify_token)])
+async def validate_category(body: ValidateCategoryRequest):
+    """`/mcp set` 전용 category validation 엔드포인트."""
+    doc_server_url = get_doc_server_url()
+    try:
+        async with Client(doc_server_url) as client:
+            matched = await _require_existing_category(client, body.category)
+        return {
+            "success": True,
+            "category": matched.get("name"),
+            "doc_count": matched.get("doc_count", 0),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("카테고리 검증 오류: %s", e)
+        raise HTTPException(status_code=502, detail=f"카테고리 검증 실패: {e}")
+
+
 @router.post("", dependencies=[Depends(verify_token)])
 async def mcp_command(body: McpCommandRequest):
     """
@@ -79,6 +138,7 @@ async def mcp_command(body: McpCommandRequest):
                     raise HTTPException(status_code=400, detail="검색어(query)가 필요합니다.")
                 tool_args: dict[str, Any] = {"query": body.query, "max_results": body.max_results}
                 if body.category:
+                    await _require_existing_category(client, body.category)
                     tool_args["category"] = body.category
                 result = await client.call_tool("search_docs", tool_args)
 
@@ -87,11 +147,13 @@ async def mcp_command(body: McpCommandRequest):
                     raise HTTPException(status_code=400, detail="파일 경로(filename)가 필요합니다.")
                 tool_args: dict[str, Any] = {"filename": body.filename}
                 if body.category:
+                    await _require_existing_category(client, body.category)
                     tool_args["category"] = body.category
                 result = await client.call_tool("read_doc", tool_args)
 
             elif body.action == "list":
                 if body.category:
+                    await _require_existing_category(client, body.category)
                     result = await client.call_tool("list_docs_detail", {"category": body.category})
                     data = _result_to_dict(result)
                     error = data.get("error")
@@ -299,6 +361,8 @@ async def rag_search(body: RagSearchRequest):
             tool_args["filename_filter"] = body.filename_filter
 
         async with Client(doc_server_url) as client:
+            if body.category:
+                await _require_existing_category(client, body.category)
             result = await client.call_tool("search_docs_rag", tool_args)
 
         # search_docs_rag가 -> dict를 반환하므로 result.data가 이미 dict
@@ -380,6 +444,8 @@ async def rag_search(body: RagSearchRequest):
             "system_prompt": system_prompt,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning("RAG 검색 오류: %s", e)
         return {
