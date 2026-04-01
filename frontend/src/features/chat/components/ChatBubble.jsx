@@ -92,17 +92,6 @@ const ChatBubble = memo(({ message, isStreaming }) => {
     },
   };
 
-  // System 메시지 (메모리 커맨드 결과 표시용)
-  if (message.role === 'system') {
-    return (
-      <div className="flex justify-center animate-fade-in-up my-3">
-        <div className="text-gray-400 text-xs max-w-[80%] text-center whitespace-pre-wrap">
-          {message.content}
-        </div>
-      </div>
-    );
-  }
-
   const renderMarkdown = (content) => {
     return (
       <ReactMarkdown
@@ -179,6 +168,17 @@ const ChatBubble = memo(({ message, isStreaming }) => {
       </ReactMarkdown>
     );
   };
+
+  // System 메시지 (커맨드 히스토리 / 메모리 결과 표시용)
+  if (message.role === 'system') {
+    return (
+      <div className="flex justify-center animate-fade-in-up my-3">
+        <div className="max-w-[85%] rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/70 px-4 py-3 text-xs text-[var(--text-secondary)]">
+          {renderMarkdown(message.content)}
+        </div>
+      </div>
+    );
+  }
 
   if (isUser) {
     return (

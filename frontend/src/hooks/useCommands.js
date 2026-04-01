@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { dashboardLinksApi, memoryApi } from '../api/djangoApi';
 import { mcpCommandApi, mcpRagApi } from '../api/fastapiApi';
 
@@ -132,189 +132,172 @@ export const useCommands = ({
   setMessages,
   setError,
   setSuccessMessage,
-  currentSessionId
+  currentSessionId,
+  ensureSession,
 }) => {
   const [isCommandLoading, setIsCommandLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState(null); // /mcp 세션 카테고리
   const [ragEnabled, setRagEnabled] = useState(false);        // RAG 모드 활성화 여부
   const ragCacheRef = useRef(null); // { query, category, systemPrompt, cachedAt }
 
-  // 세션 변경(다른 대화 이동, 세션 생성) 시 RAG 상태 초기화
-  useEffect(() => {
+  const resetCommandState = useCallback(() => {
     setActiveCategory(null);
     setRagEnabled(false);
     ragCacheRef.current = null;
-  }, [currentSessionId]);
-
-  // null→null New Chat(세션 없는 상태에서 New Chat) 시 RAG 상태 초기화
-  // currentSessionId 의존 useEffect는 null→null 변화를 감지하지 못하므로 이벤트 패턴 사용
-  useEffect(() => {
-    const onNewChatRequested = () => {
-      setActiveCategory(null);
-      setRagEnabled(false);
-      ragCacheRef.current = null;
-    };
-    window.addEventListener('new-chat-requested', onNewChatRequested);
-    return () => window.removeEventListener('new-chat-requested', onNewChatRequested);
   }, []);
+
+  const appendSystemHistory = useCallback(async (_sessionId, content) => {
+    setMessages(prev => [...prev, { role: 'system', content }]);
+  }, [setMessages]);
+
+  const emitCommandError = useCallback(async (sessionId, message) => {
+    setError(message);
+    await appendSystemHistory(sessionId, `⚠️ ${message}`);
+  }, [appendSystemHistory, setError]);
 
   // ===== Memory Command Handlers =====
 
-  const handleMemorySave = useCallback(async (name) => {
-    if (!currentSessionId) {
-      setError('세션을 먼저 생성한 후 스냅샷을 저장해주세요.');
-      return;
-    }
+  const handleMemorySave = useCallback(async (sessionId, name) => {
     setIsCommandLoading(true);
     try {
       const snapshotMessages = messages.filter(m => m.role !== 'system');
       if (snapshotMessages.length === 0) {
-        setError('저장할 대화 내용이 없습니다.');
+        await emitCommandError(sessionId, '저장할 대화 내용이 없습니다.');
         return;
       }
-      await memoryApi.saveSnapshot(currentSessionId, name, snapshotMessages);
-      setSuccessMessage(`메모리 저장 완료: "${name}" (${snapshotMessages.length}개 메시지)`);
+      await memoryApi.saveSnapshot(sessionId, name, snapshotMessages);
+      const successText = `메모리 저장 완료: "${name}" (${snapshotMessages.length}개 메시지)`;
+      setSuccessMessage(successText);
+      await appendSystemHistory(sessionId, `✅ ${successText}`);
     } catch (err) {
       if (err.response?.data?.error?.includes('이미 존재')) {
-        setError(`스냅샷 "${name}"이(가) 이미 존재합니다. 다른 이름을 사용해주세요.`);
+        await emitCommandError(sessionId, `스냅샷 "${name}"이(가) 이미 존재합니다. 다른 이름을 사용해주세요.`);
       } else {
-        setError('스냅샷 저장에 실패했습니다: ' + (err.response?.data?.error || err.message || '알 수 없는 오류'));
+        await emitCommandError(sessionId, '스냅샷 저장에 실패했습니다: ' + (err.response?.data?.error || err.message || '알 수 없는 오류'));
       }
     } finally {
       setIsCommandLoading(false);
     }
-  }, [currentSessionId, messages, setError, setSuccessMessage]);
+  }, [messages, emitCommandError, appendSystemHistory, setSuccessMessage]);
 
-  const handleMemoryLoad = useCallback(async (name) => {
-    if (!currentSessionId) {
-      setError('세션을 먼저 생성한 후 스냅샷을 로드해주세요.');
-      return;
-    }
+  const handleMemoryLoad = useCallback(async (sessionId, name) => {
     setIsCommandLoading(true);
     try {
-      const snapshot = await memoryApi.getSnapshotByName(currentSessionId, name);
+      const snapshot = await memoryApi.getSnapshotByName(sessionId, name);
       if (!snapshot) {
-        setError(`스냅샷 "${name}"을(를) 찾을 수 없습니다.`);
+        await emitCommandError(sessionId, `스냅샷 "${name}"을(를) 찾을 수 없습니다.`);
         return;
       }
       const restoredMessages = snapshot.snapshot_data?.messages || [];
       if (restoredMessages.length === 0) {
-        setError(`스냅샷 "${name}"에 저장된 메시지가 없습니다.`);
+        await emitCommandError(sessionId, `스냅샷 "${name}"에 저장된 메시지가 없습니다.`);
         return;
       }
-      setMessages(restoredMessages);
-      setSuccessMessage(`메모리 로드 완료: "${name}" (${restoredMessages.length}개 메시지, ${new Date(snapshot.created_at).toLocaleString('ko-KR')})`);
+      const successText = `메모리 로드 완료: "${name}" (${restoredMessages.length}개 메시지, ${new Date(snapshot.created_at).toLocaleString('ko-KR')})`;
+      const historyMessage = { role: 'system', content: `✅ ${successText}` };
+      setMessages([...restoredMessages, historyMessage]);
+      setSuccessMessage(successText);
     } catch (err) {
-      setError('스냅샷 로드에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
+      await emitCommandError(sessionId, '스냅샷 로드에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
     } finally {
       setIsCommandLoading(false);
     }
-  }, [currentSessionId, setMessages, setError, setSuccessMessage]);
+  }, [emitCommandError, setMessages, setSuccessMessage]);
 
-  const handleMemoryList = useCallback(async () => {
-    if (!currentSessionId) {
-      setError('세션을 먼저 생성한 후 목록을 조회해주세요.');
-      return;
-    }
+  const handleMemoryList = useCallback(async (sessionId) => {
     setIsCommandLoading(true);
     try {
-      const snapshots = await memoryApi.listSnapshots(currentSessionId);
+      const snapshots = await memoryApi.listSnapshots(sessionId);
       if (snapshots.length === 0) {
-        setMessages(prev => [...prev, { role: 'system', content: '저장된 스냅샷이 없습니다.' }]);
+        await appendSystemHistory(sessionId, '저장된 스냅샷이 없습니다.');
       } else {
         const listText = snapshots.map((s, i) =>
           `${i + 1}. "${s.name}" (${new Date(s.created_at).toLocaleString('ko-KR')})`
         ).join('\n');
-        setMessages(prev => [...prev, {
-          role: 'system',
-          content: `저장된 스냅샷 (${snapshots.length}개):\n${listText}`
-        }]);
+        await appendSystemHistory(sessionId, `저장된 스냅샷 (${snapshots.length}개):\n${listText}`);
       }
     } catch (err) {
-      setError('스냅샷 목록 조회에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
+      await emitCommandError(sessionId, '스냅샷 목록 조회에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
     } finally {
       setIsCommandLoading(false);
     }
-  }, [currentSessionId, setMessages, setError]);
+  }, [appendSystemHistory, emitCommandError]);
 
-  const handleMemoryClear = useCallback(async () => {
-    if (!currentSessionId) {
-      setError('세션을 먼저 생성한 후 스냅샷을 삭제해주세요.');
-      return;
-    }
+  const handleMemoryClear = useCallback(async (sessionId) => {
     setIsCommandLoading(true);
     try {
-      const result = await memoryApi.clearSnapshots(currentSessionId);
-      setSuccessMessage(`메모리 초기화 완료: ${result.deleted}개의 스냅샷 삭제`);
+      const result = await memoryApi.clearSnapshots(sessionId);
+      const successText = `메모리 초기화 완료: ${result.deleted}개의 스냅샷 삭제`;
+      setSuccessMessage(successText);
+      await appendSystemHistory(sessionId, `✅ ${successText}`);
     } catch (err) {
-      setError('스냅샷 삭제에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
+      await emitCommandError(sessionId, '스냅샷 삭제에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
     } finally {
       setIsCommandLoading(false);
     }
-  }, [currentSessionId, setError, setSuccessMessage]);
+  }, [appendSystemHistory, emitCommandError, setSuccessMessage]);
 
-  const handleMemoryDelete = useCallback(async (name) => {
-    if (!currentSessionId) {
-      setError('세션을 먼저 생성한 후 스냅샷을 삭제해주세요.');
-      return;
-    }
+  const handleMemoryDelete = useCallback(async (sessionId, name) => {
     setIsCommandLoading(true);
     try {
-      const result = await memoryApi.deleteSnapshotByName(currentSessionId, name);
+      const result = await memoryApi.deleteSnapshotByName(sessionId, name);
       if (!result) {
-        setError(`스냅샷 "${name}"을(를) 찾을 수 없습니다.`);
+        await emitCommandError(sessionId, `스냅샷 "${name}"을(를) 찾을 수 없습니다.`);
       } else {
-        setSuccessMessage(`스냅샷 "${name}" 삭제 완료`);
+        const successText = `스냅샷 "${name}" 삭제 완료`;
+        setSuccessMessage(successText);
+        await appendSystemHistory(sessionId, `✅ ${successText}`);
       }
     } catch (err) {
-      setError('스냅샷 삭제에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
+      await emitCommandError(sessionId, '스냅샷 삭제에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
     } finally {
       setIsCommandLoading(false);
     }
-  }, [currentSessionId, setError, setSuccessMessage]);
+  }, [appendSystemHistory, emitCommandError, setSuccessMessage]);
 
-  const handleMemoryCommand = useCallback(async (command) => {
+  const handleMemoryCommand = useCallback(async (sessionId, command) => {
     if (command.startsWith('/memory save ')) {
       const name = command.replace('/memory save ', '').trim().replace(/^["']|["']$/g, '');
-      if (!name) { setError('스냅샷 이름을 입력해주세요. 예: /memory save "이름"'); return; }
-      await handleMemorySave(name);
+      if (!name) { await emitCommandError(sessionId, '스냅샷 이름을 입력해주세요. 예: /memory save "이름"'); return; }
+      await handleMemorySave(sessionId, name);
       return;
     }
     if (command.startsWith('/memory load ')) {
       const name = command.replace('/memory load ', '').trim().replace(/^["']|["']$/g, '');
-      if (!name) { setError('스냅샷 이름을 입력해주세요. 예: /memory load "이름"'); return; }
-      await handleMemoryLoad(name);
+      if (!name) { await emitCommandError(sessionId, '스냅샷 이름을 입력해주세요. 예: /memory load "이름"'); return; }
+      await handleMemoryLoad(sessionId, name);
       return;
     }
     if (command.startsWith('/memory delete ')) {
       const name = command.replace('/memory delete ', '').trim().replace(/^["']|["']$/g, '');
-      if (!name) { setError('스냅샷 이름을 입력해주세요. 예: /memory delete "이름"'); return; }
-      await handleMemoryDelete(name);
+      if (!name) { await emitCommandError(sessionId, '스냅샷 이름을 입력해주세요. 예: /memory delete "이름"'); return; }
+      await handleMemoryDelete(sessionId, name);
       return;
     }
     if (command === '/memory list') {
-      await handleMemoryList();
+      await handleMemoryList(sessionId);
       return;
     }
     if (command === '/memory clear') {
-      await handleMemoryClear();
+      await handleMemoryClear(sessionId);
       return;
     }
     if (command === '/memory') {
-      setError('사용법: /memory [save|load|delete|list|clear] "이름"');
+      await emitCommandError(sessionId, '사용법: /memory [save|load|delete|list|clear] "이름"');
       return;
     }
-    setError('알 수 없는 /memory 커맨드입니다. 사용 가능한 커맨드: save, load, delete, list, clear');
-  }, [handleMemorySave, handleMemoryLoad, handleMemoryDelete, handleMemoryList, handleMemoryClear, setError]);
+    await emitCommandError(sessionId, '알 수 없는 /memory 커맨드입니다. 사용 가능한 커맨드: save, load, delete, list, clear');
+  }, [handleMemorySave, handleMemoryLoad, handleMemoryDelete, handleMemoryList, handleMemoryClear, emitCommandError]);
 
   // ===== Dashboard Command Handler =====
 
-  const handleDashboardCommand = useCallback(async () => {    setIsCommandLoading(true);
+  const handleDashboardCommand = useCallback(async (sessionId) => {
+    setIsCommandLoading(true);
     try {
       const dashboards = await dashboardLinksApi.list();
 
       if (!dashboards || dashboards.length === 0) {
-        setError('등록된 대시보드가 없습니다.');
+        await emitCommandError(sessionId, '등록된 대시보드가 없습니다.');
         return;
       }
 
@@ -326,20 +309,17 @@ export const useCommands = ({
 
       const markdownTable = `📊 **Tableau 대시보드 목록**\n\n${tableHeader}\n${tableDivider}\n${tableRows}`;
 
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: markdownTable
-      }]);
+      await appendSystemHistory(sessionId, markdownTable);
     } catch (err) {
-      setError('대시보드 목록 조회에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
+      await emitCommandError(sessionId, '대시보드 목록 조회에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
     } finally {
       setIsCommandLoading(false);
     }
-  }, [setError, setMessages]);
+  }, [appendSystemHistory, emitCommandError]);
 
   // ===== MCP Command Handler =====
 
-  const handleMcpCommand = useCallback(async (command) => {
+  const handleMcpCommand = useCallback(async (sessionId, command) => {
     const parts = command.trim().split(/\s+/);
     // parts[0] = "/mcp", parts[1] = action, parts[2..] = args
     const action = parts[1];
@@ -387,30 +367,27 @@ export const useCommands = ({
           : `🤖 RAG 모드: **OFF** — \`/mcp set <카테고리명>\` 으로 활성화`,
       ].join('\n');
 
-      setMessages(prev => [...prev, { role: 'assistant', content: helpContent }]);
+      await appendSystemHistory(sessionId, helpContent);
       return;
     }
 
     // /mcp set <카테고리명>  (카테고리 설정 + RAG 자동 활성화)
     if (action === 'set') {
       const cat = parts.slice(2).join(' ').trim();
-      if (!cat) { setError('카테고리 이름을 입력하세요. 예: /mcp set safety'); return; }
+      if (!cat) { await emitCommandError(sessionId, '카테고리 이름을 입력하세요. 예: /mcp set safety'); return; }
       setActiveCategory(cat);
       setRagEnabled(true);
       ragCacheRef.current = null;
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: [
-          `## 🗂️ 문서 카테고리 설정`,
-          ``,
-          `카테고리 **"${cat}"** 이(가) 설정되었습니다.`,
-          `📚 **RAG 모드가 자동으로 활성화**되었습니다.`,
-          ``,
-          `> 이제 채팅창에서 일반 질문을 입력하면 해당 카테고리 문서를 자동 검색하여 답변에 활용합니다.`,
-          `> RAG를 끄려면 \`/mcp rag off\` 를 입력하세요.`,
-          `> 카테고리를 해제하려면 \`/mcp clear\` 를 입력하세요.`,
-        ].join('\n'),
-      }]);
+      await appendSystemHistory(sessionId, [
+        `## 🗂️ 문서 카테고리 설정`,
+        ``,
+        `카테고리 **"${cat}"** 이(가) 설정되었습니다.`,
+        `📚 **RAG 모드가 자동으로 활성화**되었습니다.`,
+        ``,
+        `> 이제 채팅창에서 일반 질문을 입력하면 해당 카테고리 문서를 자동 검색하여 답변에 활용합니다.`,
+        `> RAG를 끄려면 \`/mcp rag off\` 를 입력하세요.`,
+        `> 카테고리를 해제하려면 \`/mcp clear\` 를 입력하세요.`,
+      ].join('\n'));
       return;
     }
 
@@ -419,10 +396,7 @@ export const useCommands = ({
       setActiveCategory(null);
       setRagEnabled(false);
       ragCacheRef.current = null;
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `🗂️ MCP 문서 카테고리가 해제되었습니다. RAG 모드도 비활성화되었습니다.`,
-      }]);
+      await appendSystemHistory(sessionId, `🗂️ MCP 문서 카테고리가 해제되었습니다. RAG 모드도 비활성화되었습니다.`);
       return;
     }
 
@@ -433,52 +407,40 @@ export const useCommands = ({
         const cacheAge = ragCacheRef.current
           ? Math.round((Date.now() - ragCacheRef.current.cachedAt) / 1000)
           : null;
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: ragEnabled
-            ? [
-                `## 🤖 RAG 모드: **ON**`,
-                `🗂️ 검색 카테고리: ${activeCategory ? `**"${activeCategory}"**` : '전체 (카테고리 미지정)'}`,
-                `📊 용량: 문서 최대 10개 × 1,500자 스니펫 (BM25 관련성 랭킹 + 최신 우선)`,
-                cacheAge !== null ? `🗃️ 캐시: ${cacheAge}초 전 검색 결과 보관 중` : `🗃️ 캐시: 없음 (첫 질문 시 검색)`,
-              ].join('\n')
-            : `🤖 RAG 모드: **OFF**\n\`/mcp set <카테고리>\` 로 활성화하세요.`,
-        }]);
+        await appendSystemHistory(sessionId, ragEnabled
+          ? [
+              `## 🤖 RAG 모드: **ON**`,
+              `🗂️ 검색 카테고리: ${activeCategory ? `**"${activeCategory}"**` : '전체 (카테고리 미지정)'}`,
+              `📊 용량: 문서 최대 10개 × 1,500자 스니펫 (BM25 관련성 랭킹 + 최신 우선)`,
+              cacheAge !== null ? `🗃️ 캐시: ${cacheAge}초 전 검색 결과 보관 중` : `🗃️ 캐시: 없음 (첫 질문 시 검색)`,
+            ].join('\n')
+          : `🤖 RAG 모드: **OFF**\n\`/mcp set <카테고리>\` 로 활성화하세요.`);
       } else if (sub === 'on') {
         setRagEnabled(true);
         ragCacheRef.current = null;
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: [
-            `## 🤖 RAG 모드 활성화`,
-            ``,
-            `이제 일반 질문을 입력하면 **자동으로 문서를 검색**하여 LLM 답변에 활용합니다.`,
-            ``,
-            activeCategory
-              ? `🗂️ 검색 대상: **"${activeCategory}"** 카테고리`
-              : `🗂️ 검색 대상: 전체 문서 (카테고리 미지정)`,
-            `📊 검색 규모: 문서 **최대 10개** × 스니펫 **1,500자** (BM25 관련성 랭킹 + 최신 우선)`,
-            ``,
-            `> 카테고리를 지정하려면 \`/mcp set <카테고리명>\` 을 입력하세요.`,
-            `> 캐시를 초기화하려면 \`/mcp rag refresh\` 를 입력하세요.`,
-            `> RAG를 끄려면 \`/mcp rag off\` 를 입력하세요.`,
-          ].join('\n'),
-        }]);
+        await appendSystemHistory(sessionId, [
+          `## 🤖 RAG 모드 활성화`,
+          ``,
+          `이제 일반 질문을 입력하면 **자동으로 문서를 검색**하여 LLM 답변에 활용합니다.`,
+          ``,
+          activeCategory
+            ? `🗂️ 검색 대상: **"${activeCategory}"** 카테고리`
+            : `🗂️ 검색 대상: 전체 문서 (카테고리 미지정)`,
+          `📊 검색 규모: 문서 **최대 10개** × 스니펫 **1,500자** (BM25 관련성 랭킹 + 최신 우선)`,
+          ``,
+          `> 카테고리를 지정하려면 \`/mcp set <카테고리명>\` 을 입력하세요.`,
+          `> 캐시를 초기화하려면 \`/mcp rag refresh\` 를 입력하세요.`,
+          `> RAG를 끄려면 \`/mcp rag off\` 를 입력하세요.`,
+        ].join('\n'));
       } else if (sub === 'off') {
         setRagEnabled(false);
         ragCacheRef.current = null;
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `🤖 RAG 모드 **비활성화** — LLM이 자체 지식으로 답변합니다.`,
-        }]);
+        await appendSystemHistory(sessionId, `🤖 RAG 모드 **비활성화** — LLM이 자체 지식으로 답변합니다.`);
       } else if (sub === 'refresh') {
         ragCacheRef.current = null;
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `🗃️ RAG 캐시 초기화 완료 — 다음 질문 시 새로 문서를 검색합니다.`,
-        }]);
+        await appendSystemHistory(sessionId, `🗃️ RAG 캐시 초기화 완료 — 다음 질문 시 새로 문서를 검색합니다.`);
       } else {
-        setError('사용법: /mcp rag on | off | status | refresh');
+        await emitCommandError(sessionId, '사용법: /mcp rag on | off | status | refresh');
       }
       return;
     }
@@ -497,7 +459,7 @@ export const useCommands = ({
         // /mcp search <키워드...>
         const queryParts = parts.slice(2);
         if (!queryParts.length) {
-          setError('검색어를 입력하세요. 예: /mcp search 안전밸브');
+          await emitCommandError(sessionId, '검색어를 입력하세요. 예: /mcp search 안전밸브');
           return;
         }
         params.query = queryParts.join(' ');
@@ -507,11 +469,11 @@ export const useCommands = ({
         // /mcp read <파일명> 또는 /mcp read <카테고리/파일명>  (공백 포함 가능)
         const filename = parts.slice(2).join(' ').trim();
         if (!filename) {
-          setError('파일명을 입력하세요. 예: /mcp read valve_spec.md');
+          await emitCommandError(sessionId, '파일명을 입력하세요. 예: /mcp read valve_spec.md');
           return;
         }
         if (filename.includes('*') || filename.includes('?')) {
-          setError('와일드카드(*, ?)는 허용하지 않습니다.');
+          await emitCommandError(sessionId, '와일드카드(*, ?)는 허용하지 않습니다.');
           return;
         }
         params.filename = filename;
@@ -521,23 +483,19 @@ export const useCommands = ({
         }
 
       } else {
-        setError(`알 수 없는 /mcp 커맨드: "${action}". /mcp help 로 확인하세요.`);
+        await emitCommandError(sessionId, `알 수 없는 /mcp 커맨드: "${action}". /mcp help 로 확인하세요.`);
         return;
       }
 
       const res = await mcpCommandApi.execute(params);
-      // res.data = { success: boolean, content: string }
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: res.data.content,
-      }]);
+      await appendSystemHistory(sessionId, res.data.content);
 
     } catch (err) {
-      setError('/mcp 커맨드 실패: ' + (err.message || '알 수 없는 오류'));
+      await emitCommandError(sessionId, '/mcp 커맨드 실패: ' + (err.message || '알 수 없는 오류'));
     } finally {
       setIsCommandLoading(false);
     }
-  }, [activeCategory, ragEnabled, setMessages, setError, setSuccessMessage, setIsCommandLoading]);
+  }, [activeCategory, ragEnabled, appendSystemHistory, emitCommandError]);
 
   // ===== Command Dispatcher =====
 
@@ -546,32 +504,43 @@ export const useCommands = ({
    * @param {string} text - "/" 로 시작하는 커맨드 문자열
    * @returns {{ handled: boolean }} - 커맨드가 처리되었는지 여부
    */
-  const executeCommand = useCallback(async (text) => {
+  const executeCommand = useCallback(async (text, options = {}) => {
+    const originalText = options.originalText || text;
     setSuccessMessage(null);
     setError(null);
 
+    const sessionId = currentSessionId || await ensureSession(originalText);
+    if (!sessionId) {
+      return { handled: true };
+    }
+
+    const commandEntry = originalText === text
+      ? `### Command\n\n\`${text}\``
+      : `### Command\n\n${originalText}\n\n↳ mapped to \`${text}\``;
+    await appendSystemHistory(sessionId, commandEntry);
+
     // /mcp 커맨드
     if (text.startsWith('/mcp')) {
-      await handleMcpCommand(text);
+      await handleMcpCommand(sessionId, text);
       return { handled: true };
     }
 
     // /memory 커맨드
     if (text.startsWith('/memory')) {
-      await handleMemoryCommand(text);
+      await handleMemoryCommand(sessionId, text);
       return { handled: true };
     }
 
     // /dashboard 커맨드
     if (text === '/dashboard' || text === '/dashboard list') {
-      await handleDashboardCommand();
+      await handleDashboardCommand(sessionId);
       return { handled: true };
     }
 
     // 알 수 없는 커맨드
-    setError(`알 수 없는 커맨드입니다: "${text.split(' ')[0]}"`);
+    await emitCommandError(sessionId, `알 수 없는 커맨드입니다: "${text.split(' ')[0]}"`);
     return { handled: true };
-  }, [handleMcpCommand, handleMemoryCommand, handleDashboardCommand, setError, setSuccessMessage]);
+  }, [appendSystemHistory, currentSessionId, emitCommandError, ensureSession, handleDashboardCommand, handleMcpCommand, handleMemoryCommand, setError, setSuccessMessage]);
 
   return {
     executeCommand,
@@ -579,5 +548,6 @@ export const useCommands = ({
     activeCategory,
     ragEnabled,
     ragCacheRef,
+    resetCommandState,
   };
 };

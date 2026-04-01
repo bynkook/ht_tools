@@ -56,14 +56,40 @@ const ChatPage = () => {
   const assistantSavedRef = useRef(false);
   const errorTimerRef = useRef(null); // 429 배너 자동 닫기 타이머 ID
   const currentStreamingMsgRef = useRef(""); // 현재 스트리밍 중인 메시지 추적용
+  const activeSessionIdRef = useRef(currentSessionId);
+  const pendingBootstrapSessionIdRef = useRef(null);
+
+  useEffect(() => {
+    activeSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
+
+  const ensureSession = useCallback(async (seedText) => {
+    if (activeSessionIdRef.current) {
+      return activeSessionIdRef.current;
+    }
+
+    if (!selectedModelId) {
+      setError("Please select a model first.");
+      return null;
+    }
+
+    const title = seedText ? seedText.slice(0, 30) : "New Conversation";
+    const newSession = await modelChatApi.createSession(selectedModelId, title);
+    activeSessionIdRef.current = String(newSession.id);
+    pendingBootstrapSessionIdRef.current = String(newSession.id);
+    navigate(`/chat?session_id=${newSession.id}`, { replace: true, state: { skipLoad: true } });
+    window.dispatchEvent(new Event('session-created'));
+    return String(newSession.id);
+  }, [navigate, selectedModelId]);
 
   // 커맨드 처리 훅
-  const { executeCommand, isCommandLoading, activeCategory, ragEnabled, ragCacheRef } = useCommands({
+  const { executeCommand, isCommandLoading, activeCategory, ragEnabled, ragCacheRef, resetCommandState } = useCommands({
     messages,
     setMessages,
     setError,
     setSuccessMessage,
-    currentSessionId
+    currentSessionId,
+    ensureSession,
   });
 
   // Model 선택 이벤트 핸들러 (최상위 레벨에서 선언)
@@ -89,12 +115,15 @@ const ChatPage = () => {
       setMessages([]);
       setError(null);
       setSuccessMessage(null);
+      resetCommandState();
       assistantSavedRef.current = false;
       currentStreamingMsgRef.current = '';
+      activeSessionIdRef.current = null;
+      pendingBootstrapSessionIdRef.current = null;
     };
     window.addEventListener('new-chat-requested', onNewChatRequested);
     return () => window.removeEventListener('new-chat-requested', onNewChatRequested);
-  }, []);
+  }, [resetCommandState]);
 
   // --- Session Load ---
   // 핵심: 사이드바에서 세션 클릭 시에만 loadHistory 실행
@@ -112,7 +141,13 @@ const ChatPage = () => {
         navigate(`/chat?session_id=${currentSessionId}`, { replace: true, state: {} });
         return;
       }
-      
+
+      if (pendingBootstrapSessionIdRef.current === currentSessionId) {
+        pendingBootstrapSessionIdRef.current = null;
+        return;
+      }
+
+      resetCommandState();
       const loadHistory = async () => {
         setIsLoading(true);
         try {
@@ -124,9 +159,12 @@ const ChatPage = () => {
       };
       loadHistory();
     } else {
+      activeSessionIdRef.current = null;
+      pendingBootstrapSessionIdRef.current = null;
+      resetCommandState();
       setMessages([]);
     }
-  }, [currentSessionId]);
+  }, [currentSessionId, resetCommandState]);
 
   // --- Scroll ---
   useEffect(() => {
@@ -139,14 +177,14 @@ const ChatPage = () => {
 
     // 커맨드 감지: / 로 시작하는 모든 입력은 커맨드로 인식
     if (text.startsWith('/')) {
-      const result = await executeCommand(text);
+      const result = await executeCommand(text, { originalText: text });
       if (result.handled) return;
     }
 
     // 자연어 커맨드 감지 ("태블로 대시보드 목록" 등)
     const detectedCommand = detectNaturalLanguageCommand(text);
     if (detectedCommand) {
-      const result = await executeCommand(detectedCommand);
+      const result = await executeCommand(detectedCommand, { originalText: text });
       if (result.handled) return;
     }
 
@@ -163,16 +201,11 @@ const ChatPage = () => {
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      let sessionId = currentSessionId;
+      const sessionId = await ensureSession(text);
       if (!sessionId) {
-        const title = text ? text.slice(0, 30) : "New Conversation";
-        const newSession = await modelChatApi.createSession(selectedModelId, title);
-        sessionId = newSession.id;
-        
-        // 새 세션 생성 시 location.state에 skipLoad 플래그 전달 (ref 해킹 대체)
-        navigate(`/chat?session_id=${sessionId}`, { replace: true, state: { skipLoad: true } });
-        // 사이드바 갱신 이벤트 트리거
-        window.dispatchEvent(new Event('session-created'));
+        setIsLoading(false);
+        setMessages(prev => prev.slice(0, -1));
+        return;
       }
 
       await modelChatApi.saveMessage(sessionId, 'user', userMsg.content);
@@ -432,14 +465,14 @@ const ChatPage = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       // messages 배열 대신 ref를 사용하여 클로저 문제 및 불필요한 리렌더링 방지
-      if (currentSessionId && currentStreamingMsgRef.current) {
-        persistAssistantMessageOnce(currentSessionId, currentStreamingMsgRef.current)
+      if (activeSessionIdRef.current && currentStreamingMsgRef.current) {
+        persistAssistantMessageOnce(activeSessionIdRef.current, currentStreamingMsgRef.current)
           .catch(() => setError("응답 저장 중 오류가 발생했습니다. 다시 시도해주세요."));
       }
       abortControllerRef.current = null;
       setIsLoading(false);
     }
-  }, [currentSessionId, persistAssistantMessageOnce]);
+  }, [persistAssistantMessageOnce]);
 
   return (
     <div className="flex flex-col h-full bg-[var(--bg-primary)]">
