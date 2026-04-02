@@ -431,6 +431,32 @@ export const presetApi = {
   },
 };
 
+// =============================================================================
+// Doc Uploader APIs (/api/doc-uploader/)
+// =============================================================================
+export const docUploaderApi = {
+  // 변환 작업 목록 조회
+  listJobs: async () => {
+    const response = await djangoClient.get('/api/doc-uploader/jobs/');
+    return response.data;
+  },
+  // 카테고리 목록 조회
+  listCategories: async () => {
+    const response = await djangoClient.get('/api/doc-uploader/categories/');
+    return response.data;
+  },
+  // 카테고리 생성
+  createCategory: async (name) => {
+    const response = await djangoClient.post('/api/doc-uploader/categories/', { name });
+    return response.data;
+  },
+  // 카테고리 이름 변경
+  renameCategory: async (oldName, newName) => {
+    const response = await djangoClient.patch(`/api/doc-uploader/categories/${encodeURIComponent(oldName)}/`, { new_name: newName });
+    return response.data;
+  },
+};
+
 export const settingsApi = {
   // 사용자 설정 조회
   getSettings: async () => {

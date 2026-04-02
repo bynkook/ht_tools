@@ -23,6 +23,7 @@ urlpatterns = [
     path('api/data-explorer/', include('apps.data_explorer.urls')),
     path('api/settings/', include('apps.user_settings.urls')),
     path('api/board/', include('apps.board.urls')),
+    path('api/doc-uploader/', include('apps.doc_uploader.urls')),  # Doc Uploader
 ]
 
 if settings.DEBUG:

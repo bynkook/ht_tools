@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, ImageIcon, Bot, ChevronRight, BarChart3, Settings, Sparkles, LogOut, UserCircle, HelpCircle, LayoutGrid } from 'lucide-react';
+import { MessageCircle, ImageIcon, Bot, ChevronRight, BarChart3, Settings, Sparkles, LogOut, UserCircle, HelpCircle, LayoutGrid, FolderUp } from 'lucide-react';
 
 const AppSelectorPage = () => {
   const navigate = useNavigate();
@@ -45,6 +45,14 @@ const AppSelectorPage = () => {
       icon: LayoutGrid,
       color: 'from-zinc-800 to-zinc-600',
       path: '/dashboard-list'
+    },
+    {
+      id: 'doc-uploader',
+      name: 'Doc Uploader',
+      description: 'PDF/Office 문서를 Markdown으로 변환하여 RAG 검색에 활용합니다',
+      icon: FolderUp,
+      color: 'from-violet-500 to-purple-600',
+      path: '/doc-uploader'
     }
   ];
 

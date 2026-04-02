@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .routers import health_router, agent_chat_router, chat_router, image_router, doc_search_router
+from .routers import health_router, agent_chat_router, chat_router, image_router, doc_search_router, doc_upload_router
 from .services.rate_limiter_v2 import rate_limiter
 
 # 환경 설정 및 Secrets 로드
@@ -201,6 +201,24 @@ async def lifespan(app: FastAPI):
     ]
     app.state.metrics_tasks = metrics_tasks
 
+    # Doc Uploader: 서버 재시작 시 중단된 working job 초기화
+    try:
+        _doc_cfg = SECRETS.get("doc_converter", {})
+        _internal_secret = _doc_cfg.get("internal_secret", "")
+        if _internal_secret:
+            reset_resp = await app.state.http_client.post(
+                "http://127.0.0.1:8000/api/doc-uploader/jobs/startup-reset/",
+                headers={"X-Internal-Secret": _internal_secret},
+                timeout=5.0,
+            )
+            if reset_resp.status_code == 200:
+                reset_count = reset_resp.json().get("reset_count", 0)
+                if reset_count > 0:
+                    logger.info("✅ Doc Uploader startup reset: %d interrupted job(s) marked failed", reset_count)
+    except Exception as startup_exc:
+        # Django가 아직 시작 안 됐을 수 있으므로 warning으로만 기록
+        logger.warning("Doc Uploader startup reset skipped (Django may not be ready): %s", startup_exc)
+
     yield
 
     for task in getattr(app.state, "metrics_tasks", []):
@@ -246,6 +264,7 @@ app.include_router(agent_chat_router, prefix="/agent-messages", tags=["FabriX Ag
 app.include_router(chat_router, prefix="/chat-messages", tags=["FabriX Chat"])
 app.include_router(image_router, prefix="/image-compare", tags=["Image"])
 app.include_router(doc_search_router, prefix="/mcp-command", tags=["MCP Command"])
+app.include_router(doc_upload_router, prefix="/doc-converter", tags=["Doc Uploader"])
 
 
 @app.exception_handler(Exception)

@@ -135,6 +135,23 @@ export const fastApi = {
  * fastmcp 서버(포트 8002)를 FastAPI Gateway(포트 8001)를 통해 간접 호출한다.
  * fastApi 객체가 아닌 fastApiClient axios 인스턴스를 직접 사용한다.
  */
+// =============================================================================
+// Doc Converter API (/doc-converter/)
+// =============================================================================
+export const docConverterApi = {
+  // 문서 파일 업로드 및 변환 요청
+  uploadFile: async (file, category) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('category', category);
+    const response = await fastApiClient.post('/doc-converter/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 30000,
+    });
+    return response.data;
+  },
+};
+
 export const mcpCommandApi = {
   /**
    * @param {{ action: string, query?: string, category?: string, filename?: string, max_results?: number }} params

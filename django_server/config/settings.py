@@ -84,6 +84,7 @@ INSTALLED_APPS = [
     'apps.image_inspector',      # 이미지 비교 앱
     'apps.data_explorer',        # 데이터 분석 앱 (Graphic Walker)
     'apps.board',                # 게시판 앱
+    'apps.doc_uploader',         # 문서 변환 업로더 앱
 ]
 
 MIDDLEWARE = [
@@ -198,6 +199,11 @@ ADMIN_SIGNUP_KEY = SECRETS['auth']['admin_signup_key']
 # FabriX Agent API 설정 (secrets.toml에서 로드된 값 사용)
 FABRIX_AGENT_API_CONFIG = SECRETS.get('fabrix_agent_api', {})
 FABRIX_CHAT_API_CONFIG = SECRETS.get('fabrix_chat_api', {})
+
+# 13. Doc Uploader 설정
+_DOC_CONVERTER_CONFIG = SECRETS.get('doc_converter', {})
+DOC_DATA_DIR = str(_DOC_CONVERTER_CONFIG.get('doc_data_dir', Path.home() / 'doc_data'))
+DOC_CONVERTER_INTERNAL_SECRET = str(_DOC_CONVERTER_CONFIG.get('internal_secret', ''))
 
 # print(f"[DEBUG] FABRIX_AGENT_API_CONFIG keys: {list(FABRIX_AGENT_API_CONFIG.keys())}")
 # print(f"[DEBUG] FABRIX_CHAT_API_CONFIG keys: {list(FABRIX_CHAT_API_CONFIG.keys())}")

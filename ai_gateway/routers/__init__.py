@@ -6,5 +6,13 @@ from .agent_chat import router as agent_chat_router
 from .chat import router as chat_router
 from .image import router as image_router
 from .doc_search import router as doc_search_router
+from .doc_upload import router as doc_upload_router
 
-__all__ = ["health_router", "agent_chat_router", "chat_router", "image_router", "doc_search_router"]
+__all__ = [
+    "health_router",
+    "agent_chat_router",
+    "chat_router",
+    "image_router",
+    "doc_search_router",
+    "doc_upload_router",
+]

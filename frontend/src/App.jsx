@@ -24,6 +24,7 @@ const DashboardTablePage = lazy(() => import('./features/dashboardTable/Dashboar
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
 const HelpPage = lazy(() => import('./features/help/HelpPage'));
+const DocUploaderPage = lazy(() => import('./features/docUploader/DocUploaderPage'));
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -144,6 +145,9 @@ const App = () => {
 
             {/* Data Explorer - Standalone Layout */}
             <Route path="/data-explorer" element={<PrivateRoute><DataExplorerPage /></PrivateRoute>} />
+
+            {/* Doc Uploader */}
+            <Route path="/doc-uploader" element={<PrivateRoute><DocUploaderPage /></PrivateRoute>} />
 
             {/* Board Pages - root-level slug policy */}
             <Route path="/:boardSlug/post/:postId" element={<PrivateRoute><RedditPostDetailPage /></PrivateRoute>} />
