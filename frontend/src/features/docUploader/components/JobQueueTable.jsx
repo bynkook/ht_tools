@@ -4,13 +4,13 @@ import { docUploaderApi } from '../../../api/djangoApi';
 
 const STATUS_CONFIG = {
   waiting: {
-    label: '대기 중',
+    label: '대기',
     icon: Clock,
     cls: 'bg-yellow-100 text-yellow-700',
     animate: false,
   },
   working: {
-    label: '변환 중',
+    label: '변환중',
     icon: Loader2,
     cls: 'bg-blue-100 text-blue-700',
     animate: true,
@@ -97,7 +97,7 @@ export default function JobQueueTable({ refreshTrigger }) {
           className="text-gray-400 hover:text-blue-500 transition-colors"
           title="새로고침"
         >
-          <RefreshCw size={15} />
+          <RefreshCw size={16} />
         </button>
       </div>
 
@@ -110,7 +110,7 @@ export default function JobQueueTable({ refreshTrigger }) {
       <div className="overflow-y-auto max-h-72">
         {loading && jobs.length === 0 ? (
           <div className="py-8 text-center text-gray-400 text-sm">
-            <Loader2 size={20} className="animate-spin mx-auto mb-2" />
+            <Loader2 size={14} className="animate-spin mx-auto mb-2" />
             불러오는 중...
           </div>
         ) : jobs.length === 0 ? (
@@ -123,9 +123,9 @@ export default function JobQueueTable({ refreshTrigger }) {
               <tr className="text-left text-gray-500 border-b border-gray-100">
                 <th className="px-3 py-2 w-10">#</th>
                 <th className="px-3 py-2">파일명</th>
-                <th className="px-3 py-2 w-28">카테고리</th>
-                <th className="px-3 py-2 w-32">추가된 시각</th>
-                <th className="px-3 py-2 w-20">상태</th>
+                <th className="px-3 py-2 w-100">카테고리</th>
+                <th className="px-3 py-2 w-40">추가된 시각</th>
+                <th className="px-3 py-2 w-32">상태</th>
               </tr>
             </thead>
             <tbody>
@@ -155,7 +155,7 @@ export default function JobQueueTable({ refreshTrigger }) {
                     </td>
                     <td className="px-3 py-2">
                       <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.cls}`}
+                        className={`inline-flex items-center gap-2 px-4 py-0.5 rounded-full text-xs font-medium ${cfg.cls}`}
                       >
                         <Icon
                           size={11}

@@ -33,7 +33,7 @@ export default function DocUploaderPage() {
         <div>
           <h1 className="text-base font-bold text-gray-900">Doc Uploader</h1>
           <p className="text-xs text-gray-500">
-            문서를 업로드하면 자동으로 Markdown으로 변환되어 RAG 검색에 활용됩니다.
+            문서를 업로드하면 자동으로 Markdown으로 변환되어 선택한 카테고리의 RAG 검색에 활용됩니다.
           </p>
         </div>
       </div>
