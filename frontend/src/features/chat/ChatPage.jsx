@@ -560,7 +560,7 @@ const ChatPage = () => {
 
       {/* Input Area */}
       <div className="flex-shrink-0 bg-[var(--bg-primary)] p-4 pb-6">
-        <div className="w-full">
+        <div className="max-w-3xl mx-auto">
           {/* RAG 모드 배지 */}
           {ragEnabled && (
             <div className="flex items-center gap-2 mb-2 px-1">
