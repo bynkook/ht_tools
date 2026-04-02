@@ -142,17 +142,25 @@ async def process_conversion_job(
                     f"변환 프로세스가 종료 코드 {rc}로 실패했습니다.\n{stderr[:400]}"
                 )
 
-            # 변환 결과 파일 존재 확인
-            md_file = output_dir / f"{stem}.md"
-            if not md_file.exists():
+            # 변환기는 temp_file stem을 출력 파일명으로 사용 (UUID 접두사 포함)
+            # 예: b1b543e6_원본파일명.md → 원본파일명.md 으로 rename
+            temp_md_file = output_dir / f"{temp_file.stem}.md"
+            if not temp_md_file.exists():
                 raise FileNotFoundError(
-                    f"변환 결과 파일을 찾을 수 없습니다: {md_file}"
+                    f"변환 결과 파일을 찾을 수 없습니다: {temp_md_file}"
                 )
+
+            # 원본 파일명 기반으로 rename (UUID 접두사 제거)
+            final_md_file = output_dir / f"{stem}.md"
+            if final_md_file.exists():
+                # 동일 이름 충돌 시 기존 파일 덮어쓰기 (재업로드 업데이트 허용)
+                final_md_file.unlink()
+            temp_md_file.rename(final_md_file)
 
             await _update_job_status(
                 http_client, callback_token, "completed", internal_secret=internal_secret
             )
-            logger.info("Conversion completed: %s → %s", original_filename, md_file)
+            logger.info("Conversion completed: %s → %s", original_filename, final_md_file)
 
         except Exception as exc:
             error_msg = str(exc)[:500]
