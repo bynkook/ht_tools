@@ -534,7 +534,7 @@ const ChatPage = () => {
 
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto px-4 py-8 custom-scrollbar scroll-smooth">
-        <div className="max-w-3xl mx-auto flex flex-col gap-6">
+        <div className="w-[90%] mx-auto flex flex-col gap-6">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[50vh] text-center animate-fade-in-up">
               <div className="w-16 h-16 bg-gradient-to-tr from-cyan-500 to-blue-500 rounded-2xl flex items-center justify-center shadow-lg mb-6 text-white">
@@ -560,7 +560,7 @@ const ChatPage = () => {
 
       {/* Input Area */}
       <div className="flex-shrink-0 bg-[var(--bg-primary)] p-4 pb-6">
-        <div className="max-w-3xl mx-auto">
+        <div className="w-full">
           {/* RAG 모드 배지 */}
           {ragEnabled && (
             <div className="flex items-center gap-2 mb-2 px-1">

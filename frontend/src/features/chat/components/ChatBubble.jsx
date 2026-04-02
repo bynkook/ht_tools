@@ -173,7 +173,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
   if (message.role === 'system') {
     return (
       <div className="flex justify-center animate-fade-in-up my-3">
-        <div className="max-w-[85%] rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/70 px-4 py-3 text-xs text-[var(--text-secondary)]">
+        <div className="max-w-[80%] rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/70 px-4 py-3 text-xs text-[var(--text-secondary)]">
           {renderMarkdown(message.content)}
         </div>
       </div>
@@ -183,7 +183,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
   if (isUser) {
     return (
       <div className="flex justify-end items-start gap-3 animate-fade-in-up">
-        <div className="max-w-[80%] bg-[var(--user-bubble-bg)] text-[var(--user-bubble-text)] px-4 py-2 rounded-2xl rounded-tr-sm shadow-sm">
+        <div className="max-w-[85%] bg-[var(--user-bubble-bg)] text-[var(--user-bubble-text)] px-4 py-2 rounded-2xl rounded-tr-sm shadow-sm">
           <div className="whitespace-pre-wrap break-words text-xs">{message.content}</div>
         </div>
         <div className="flex-shrink-0 w-9 h-9 rounded-full bg-[var(--user-bubble-bg)] flex items-center justify-center">
@@ -198,7 +198,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
       <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-500 flex items-center justify-center shadow-md">
         <Bot size={18} className="text-white" />
       </div>
-      <div className="max-w-[85%] flex-1">
+      <div className="max-w-[85%] flex-1 min-w-0">
         {/* RAG 출처 배지 */}
         {message.isRag && (
           <div className="flex items-center gap-1 mb-1 text-xs text-cyan-600 dark:text-cyan-400">

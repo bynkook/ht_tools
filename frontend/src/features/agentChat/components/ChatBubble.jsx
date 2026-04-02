@@ -84,7 +84,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
 
   return (
     <div className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-      <div className={`flex max-w-[90%] md:max-w-[85%] gap-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      <div className={`flex max-w-[85%] gap-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
         
         {/* Avatar */}
         <div className={`
