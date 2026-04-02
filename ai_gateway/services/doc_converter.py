@@ -130,7 +130,7 @@ async def process_conversion_job(
                     python_exe, script, temp_file, output_dir, extra_args
                 )
             elif file_ext in (".doc", ".docx", ".pptx", ".ppt", ".xlsx", ".xls"):
-                script = dev_marker_dir / "convert_word.py"
+                script = dev_marker_dir / "convert_office.py"
                 rc, stderr = await run_converter_subprocess(
                     python_exe, script, temp_file, output_dir
                 )
