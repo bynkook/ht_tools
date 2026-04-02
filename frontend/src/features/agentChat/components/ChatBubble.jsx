@@ -75,7 +75,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
   if (message.role === 'system') {
     return (
       <div className="flex justify-center animate-fade-in my-3">
-        <div className="text-gray-400 text-xs max-w-[80%] text-center whitespace-pre-wrap">
+        <div className="text-gray-400 text-xs max-w-[85%] text-center whitespace-pre-wrap">
           {message.content}
         </div>
       </div>

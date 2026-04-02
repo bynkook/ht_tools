@@ -535,11 +535,6 @@ export const useCommands = ({
       return { handled: true };
     }
 
-    const commandEntry = originalText === text
-      ? `### Command\n\n\`${text}\``
-      : `### Command\n\n${originalText}\n\n↳ mapped to \`${text}\``;
-    await appendSystemHistory(sessionId, commandEntry);
-
     // /mcp 커맨드
     if (text.startsWith('/mcp')) {
       await handleMcpCommand(sessionId, text);

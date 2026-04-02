@@ -173,7 +173,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
   if (message.role === 'system') {
     return (
       <div className="flex justify-center animate-fade-in-up my-3">
-        <div className="max-w-[80%] rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/70 px-4 py-3 text-xs text-[var(--text-secondary)]">
+        <div className="max-w-[85%] rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/70 px-4 py-3 text-xs text-[var(--text-secondary)]">
           {renderMarkdown(message.content)}
         </div>
       </div>
