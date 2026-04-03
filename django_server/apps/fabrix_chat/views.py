@@ -13,11 +13,10 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import ChatSession, ChatMessage, MemorySnapshot, DashboardLink
+from .models import ChatSession, ChatMessage, MemorySnapshot
 from .serializers import (
     ChatSessionSerializer, ChatSessionDetailSerializer, ChatMessageSerializer,
     MemorySnapshotSerializer, MemorySnapshotDetailSerializer,
-    DashboardLinkSerializer, DashboardLinkBulkUpdateSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -311,44 +310,3 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             })
         except MemorySnapshot.DoesNotExist:
             return Response({'error': '스냅샷을 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
-
-
-class DashboardLinkListView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
-        serializer = DashboardLinkSerializer(DashboardLink.objects.all(), many=True)
-        return Response(serializer.data)
-
-
-class DashboardLinkBulkUpdateView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    @transaction.atomic
-    def put(self, request):
-        serializer = DashboardLinkBulkUpdateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        rows = serializer.validated_data['rows']
-        now = timezone.now()
-
-        DashboardLink.objects.all().delete()
-        DashboardLink.objects.bulk_create([
-            DashboardLink(
-                display_order=index + 1,
-                dashboard_name=row['dashboard_name'],
-                url=row['url'],
-                linkname=row['linkname'],
-                desc=row['desc'],
-                updated_at=now,
-            )
-            for index, row in enumerate(rows)
-        ])
-
-        saved_rows = DashboardLink.objects.all()
-        return Response({
-            'saved_count': saved_rows.count(),
-            'rows': DashboardLinkSerializer(saved_rows, many=True).data,
-        }, status=status.HTTP_200_OK)
-
-    post = put

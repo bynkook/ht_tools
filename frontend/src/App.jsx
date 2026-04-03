@@ -20,7 +20,6 @@ const DataExplorerPage = lazy(() => import('./features/dataExplorer/DataExplorer
 const AppSelectorPage = lazy(() => import('./features/appSelector/AppSelectorPage'));
 const BoardPage = lazy(() => import('./features/board/BoardPage'));
 const RedditPostDetailPage = lazy(() => import('./features/board/RedditPostDetailPage'));
-const DashboardTablePage = lazy(() => import('./features/dashboardTable/DashboardTablePage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
 const HelpPage = lazy(() => import('./features/help/HelpPage'));
@@ -124,8 +123,6 @@ const App = () => {
             <Route path="/settings" element={<PrivateRoute><SettingsPage /></PrivateRoute>} />
             <Route path="/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
             <Route path="/help" element={<PrivateRoute><HelpPage /></PrivateRoute>} />
-            <Route path="/dashboard-table" element={<PrivateRoute><DashboardTablePage /></PrivateRoute>} />
-
             {/* Image Compare - 독립적인 레이아웃 */}
             <Route path="/image-compare" element={<PrivateRoute><ImageComparePage /></PrivateRoute>} />
 

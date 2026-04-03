@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import ChatSession, ChatMessage, MemorySnapshot, DashboardLink
+from .models import ChatSession, ChatMessage, MemorySnapshot
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -45,37 +45,3 @@ class MemorySnapshotDetailSerializer(serializers.ModelSerializer):
         model = MemorySnapshot
         fields = ['id', 'name', 'snapshot_data', 'created_at']
         read_only_fields = ['id', 'created_at']
-
-
-class DashboardLinkSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(source='display_order', read_only=True)
-
-    class Meta:
-        model = DashboardLink
-        fields = ['id', 'dashboard_name', 'url', 'linkname', 'desc', 'updated_at']
-        read_only_fields = ['id', 'updated_at']
-
-
-class DashboardLinkBulkRowSerializer(serializers.Serializer):
-    dashboard_name = serializers.CharField(max_length=255, trim_whitespace=True)
-    url = serializers.URLField(max_length=1000)
-    linkname = serializers.CharField(max_length=255, trim_whitespace=True)
-    desc = serializers.CharField(trim_whitespace=True)
-
-    def validate(self, attrs):
-        normalized = {
-            key: value.strip() if isinstance(value, str) else value
-            for key, value in attrs.items()
-        }
-
-        missing_fields = [key for key, value in normalized.items() if not value]
-        if missing_fields:
-            raise serializers.ValidationError(
-                f"모든 컬럼 값이 필요합니다: {', '.join(missing_fields)}"
-            )
-
-        return normalized
-
-
-class DashboardLinkBulkUpdateSerializer(serializers.Serializer):
-    rows = DashboardLinkBulkRowSerializer(many=True)

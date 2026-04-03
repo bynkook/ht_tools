@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { dashboardLinksApi, memoryApi } from '../api/djangoApi';
+import { memoryApi } from '../api/djangoApi';
 import { mcpCommandApi, mcpRagApi } from '../api/fastapiApi';
 
 // =============================================================================
@@ -77,24 +77,6 @@ export async function resolveAtMentions(mentions, cleanQuery, activeCategory) {
   return { resolved, errors };
 }
 
-/**
- * 자연어 → 커맨드 매핑 패턴
- * { patterns: RegExp[], command: string }
- */
-const NATURAL_LANGUAGE_PATTERNS = [
-  {
-    patterns: [
-      /태블로.*대시보드/i,
-      /tableau.*dashboard/i,
-      /대시보드.*목록/i,
-      /대시보드.*링크/i,
-      /대시보드.*보여/i,
-    ],
-    command: '/dashboard'
-  },
-  // 추후 다른 커맨드 패턴 추가 가능
-];
-
 const getApiErrorMessage = (err, fallback) => {
   return err?.response?.data?.detail
     || err?.response?.data?.content
@@ -103,27 +85,11 @@ const getApiErrorMessage = (err, fallback) => {
 };
 
 /**
- * 자연어 입력에서 커맨드 감지
- * @param {string} text - 사용자 입력
- * @returns {string|null} - 매칭된 커맨드 또는 null
- */
-export const detectNaturalLanguageCommand = (text) => {
-  const normalized = text.trim();
-  for (const { patterns, command } of NATURAL_LANGUAGE_PATTERNS) {
-    if (patterns.some(pattern => pattern.test(normalized))) {
-      return command;
-    }
-  }
-  return null;
-};
-
-/**
  * Chat 커맨드 처리를 위한 커스텀 훅
  * "/" 로 시작하는 커맨드들을 파싱하고 실행한다.
  * 
  * 지원 커맨드:
  * - /memory save|load|delete|list|clear "이름"
- * - /dashboard
  * - /mcp list|search|read|category|help
  * 
  * @param {Object} params
@@ -295,34 +261,6 @@ export const useCommands = ({
     }
     await emitCommandError(sessionId, '알 수 없는 /memory 커맨드입니다. 사용 가능한 커맨드: save, load, delete, list, clear');
   }, [handleMemorySave, handleMemoryLoad, handleMemoryDelete, handleMemoryList, handleMemoryClear, emitCommandError]);
-
-  // ===== Dashboard Command Handler =====
-
-  const handleDashboardCommand = useCallback(async (sessionId) => {
-    setIsCommandLoading(true);
-    try {
-      const dashboards = await dashboardLinksApi.list();
-
-      if (!dashboards || dashboards.length === 0) {
-        await emitCommandError(sessionId, '등록된 대시보드가 없습니다.');
-        return;
-      }
-
-      const tableHeader = '| No | 대시보드 | 링크 | 설명 |';
-      const tableDivider = '|:---:|:---|:---:|:---|';
-      const tableRows = dashboards.map((dashboard, index) =>
-        `| ${dashboard.id ?? index + 1} | ${dashboard.dashboard_name} | [${dashboard.linkname}](${dashboard.url}) | ${dashboard.desc} |`
-      ).join('\n');
-
-      const markdownTable = `📊 **Tableau 대시보드 목록**\n\n${tableHeader}\n${tableDivider}\n${tableRows}`;
-
-      await appendSystemHistory(sessionId, markdownTable);
-    } catch (err) {
-      await emitCommandError(sessionId, '대시보드 목록 조회에 실패했습니다: ' + (err.message || '알 수 없는 오류'));
-    } finally {
-      setIsCommandLoading(false);
-    }
-  }, [appendSystemHistory, emitCommandError]);
 
   // ===== MCP Command Handler =====
 
@@ -547,16 +485,10 @@ export const useCommands = ({
       return { handled: true };
     }
 
-    // /dashboard 커맨드
-    if (text === '/dashboard' || text === '/dashboard list') {
-      await handleDashboardCommand(sessionId);
-      return { handled: true };
-    }
-
     // 알 수 없는 커맨드
     await emitCommandError(sessionId, `알 수 없는 커맨드입니다: "${text.split(' ')[0]}"`);
     return { handled: true };
-  }, [appendSystemHistory, currentSessionId, emitCommandError, ensureSession, handleDashboardCommand, handleMcpCommand, handleMemoryCommand, setError, setSuccessMessage]);
+  }, [appendSystemHistory, currentSessionId, emitCommandError, ensureSession, handleMcpCommand, handleMemoryCommand, setError, setSuccessMessage]);
 
   return {
     executeCommand,

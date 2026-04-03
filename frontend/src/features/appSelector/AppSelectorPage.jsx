@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, ImageIcon, Bot, ChevronRight, BarChart3, Settings, Sparkles, LogOut, UserCircle, HelpCircle, LayoutGrid, FolderUp } from 'lucide-react';
+import { MessageCircle, ImageIcon, Bot, ChevronRight, BarChart3, Settings, Sparkles, LogOut, UserCircle, HelpCircle, FolderUp, LayoutGrid } from 'lucide-react';
 
 const AppSelectorPage = () => {
   const navigate = useNavigate();
@@ -73,65 +73,63 @@ const AppSelectorPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-indigo-100 flex flex-col">
       {/* Main Content */}
-      <div className="px-4 pt-8 pb-3 md:pt-10">
-        <div className="mx-auto max-w-7xl w-full">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 mb-4 shadow-lg">
-              <Bot className="text-white" size={28} />
-            </div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              HT Auto-Tools 2026
-            </h1>
-            <p className="text-gray-600 text-sm">
-              안녕하세요, <span className="font-semibold text-gray-800">{username}</span>님! 사용할 앱을 선택하세요.
-            </p>
+      <div className="pt-8 pb-3 md:pt-10">
+        {/* Header - centered */}
+        <div className="mx-auto max-w-7xl w-full px-4 text-center mb-8">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 mb-4 shadow-lg">
+            <Bot className="text-white" size={28} />
           </div>
-
-          {/* App Cards */}
-          <div className="flex justify-center">
-            <div className="flex w-full flex-wrap justify-center gap-4">
-              {apps.map((app) => {
-                const Icon = app.icon;
-                const borderClass = app.id === 'chat'
-                  ? 'border-orange-400 hover:border-orange-300'
-                  : 'border-transparent hover:border-blue-200';
-
-                return (
-                  <button
-                    key={app.id}
-                    onClick={() => handleSelectApp(app)}
-                    className={`group relative w-[220px] flex-none bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 p-4 text-left overflow-hidden border-2 ${borderClass}`}
-                  >
-                    {/* Background Gradient */}
-                    <div className={`absolute inset-0 bg-gradient-to-br ${app.color} opacity-0 group-hover:opacity-5 transition-opacity`} />
-
-                    {/* Content */}
-                    <div className="relative z-10">
-                      <div className={`inline-flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-br ${app.color} mb-2 shadow-sm group-hover:scale-110 transition-transform`}>
-                        <Icon className="text-white" size={18} />
-                      </div>
-
-                      <h3 className="text-lg font-bold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
-                        {app.name}
-                      </h3>
-
-                      <p className="text-gray-500 text-xs mb-2 leading-relaxed line-clamp-2">
-                        {app.description}
-                      </p>
-
-                      <div className="flex items-center text-xs text-blue-600 font-semibold group-hover:translate-x-1 transition-transform">
-                        <span>시작하기</span>
-                        <ChevronRight size={14} className="ml-0.5" />
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            HT Auto-Tools 2026
+          </h1>
+          <p className="text-gray-600 text-sm">
+            안녕하세요, <span className="font-semibold text-gray-800">{username}</span>님! 사용할 앱을 선택하세요.
+          </p>
         </div>
+
+        {/* App Cards - 전체 너비 사용 */}
+        <div className="px-4">
+          <div className="flex flex-wrap justify-center gap-4">
+            {apps.map((app) => {
+              const Icon = app.icon;
+              const borderClass = app.id === 'chat'
+                ? 'border-orange-400 hover:border-orange-300'
+                : 'border-transparent hover:border-blue-200';
+
+              return (
+                <button
+                  key={app.id}
+                  onClick={() => handleSelectApp(app)}
+                  className={`group relative w-[220px] flex-none bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 p-4 text-left overflow-hidden border-2 ${borderClass}`}
+                >
+                  {/* Background Gradient */}
+                  <div className={`absolute inset-0 bg-gradient-to-br ${app.color} opacity-0 group-hover:opacity-5 transition-opacity`} />
+
+                  {/* Content */}
+                  <div className="relative z-10">
+                    <div className={`inline-flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-br ${app.color} mb-2 shadow-sm group-hover:scale-110 transition-transform`}>
+                      <Icon className="text-white" size={18} />
+                    </div>
+
+                    <h3 className="text-lg font-bold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
+                      {app.name}
+                    </h3>
+
+                    <p className="text-gray-500 text-xs mb-2 leading-relaxed line-clamp-2">
+                      {app.description}
+                    </p>
+
+                    <div className="flex items-center text-xs text-blue-600 font-semibold group-hover:translate-x-1 transition-transform">
+                      <span>시작하기</span>
+                      <ChevronRight size={14} className="ml-0.5" />
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
       </div>
 
       {/* Footer Settings & Logout */}
@@ -149,10 +147,6 @@ const AppSelectorPage = () => {
               <a href="/data-explorer" className="hover:underline">/data-explorer</a>
               <span className="mx-1">,</span>
               <a href="/dashboard-list" className="hover:underline">/dashboard-list</a>
-            </div>
-            <div className="text-sm text-gray-500">
-              설정:
-              <a href="/dashboard-table" className="ml-2 hover:underline">/dashboard-table</a>
             </div>
           </div>
 

@@ -89,23 +89,3 @@ class MemorySnapshot(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.user.username})"
-
-
-class DashboardLink(models.Model):
-    """/dashboard 커맨드 응답에 사용되는 공용 대시보드 링크"""
-    display_order = models.PositiveIntegerField(unique=True, db_index=True)
-    dashboard_name = models.CharField(max_length=255)
-    url = models.URLField(max_length=1000)
-    linkname = models.CharField(max_length=255)
-    desc = models.TextField()
-    updated_at = models.DateTimeField(auto_now=True, db_index=True)
-
-    class Meta:
-        ordering = ['display_order']
-        indexes = [
-            models.Index(fields=['display_order']),
-            models.Index(fields=['-updated_at']),
-        ]
-
-    def __str__(self):
-        return f"{self.display_order}. {self.dashboard_name}"

@@ -8,7 +8,7 @@ import InputBox from './components/InputBox';
 import { modelChatApi } from '../../api/djangoApi';
 import { getFastApiUrl } from '../../api/axiosConfig';
 import { mcpRagApi } from '../../api/fastapiApi';
-import { useCommands, detectNaturalLanguageCommand, parseAtMentions, stripAtMentions, resolveAtMentions } from '../../hooks/useCommands';
+import { useCommands, parseAtMentions, stripAtMentions, resolveAtMentions } from '../../hooks/useCommands';
 
 // 대화 이력 제한: 최근 5턴 (10개 메시지)
 const MAX_HISTORY_TURNS = 5;
@@ -205,13 +205,6 @@ const ChatPage = () => {
     // 커맨드 감지: / 로 시작하는 모든 입력은 커맨드로 인식
     if (text.startsWith('/')) {
       const result = await executeCommand(text, { originalText: text });
-      if (result.handled) return;
-    }
-
-    // 자연어 커맨드 감지 ("태블로 대시보드 목록" 등)
-    const detectedCommand = detectNaturalLanguageCommand(text);
-    if (detectedCommand) {
-      const result = await executeCommand(detectedCommand, { originalText: text });
       if (result.handled) return;
     }
 
