@@ -85,6 +85,7 @@ INSTALLED_APPS = [
     'apps.data_explorer',        # 데이터 분석 앱 (Graphic Walker)
     'apps.board',                # 게시판 앱
     'apps.doc_uploader',         # 문서 변환 업로더 앱
+    'apps.esc_calculator',       # ESC 물가변동 비용 산출 앱
 ]
 
 MIDDLEWARE = [
@@ -204,6 +205,9 @@ FABRIX_CHAT_API_CONFIG = SECRETS.get('fabrix_chat_api', {})
 _DOC_CONVERTER_CONFIG = SECRETS.get('doc_converter', {})
 DOC_DATA_DIR = str(_DOC_CONVERTER_CONFIG.get('doc_data_dir', Path.home() / 'doc_data'))
 DOC_CONVERTER_INTERNAL_SECRET = str(_DOC_CONVERTER_CONFIG.get('internal_secret', ''))
+
+# 14. KOSIS API 설정 (ESC 물가변동 산출)
+KOSIS_API_KEY = SECRETS.get('kosis', {}).get('api_key', '')
 
 # print(f"[DEBUG] FABRIX_AGENT_API_CONFIG keys: {list(FABRIX_AGENT_API_CONFIG.keys())}")
 # print(f"[DEBUG] FABRIX_CHAT_API_CONFIG keys: {list(FABRIX_CHAT_API_CONFIG.keys())}")

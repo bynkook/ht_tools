@@ -459,3 +459,33 @@ export const settingsApi = {
     return response.data;
   },
 };
+
+// =============================================================================
+// ESC 물가변동 산출 APIs (/api/esc/)
+// =============================================================================
+export const escApi = {
+  getProjects: async () => {
+    const response = await djangoClient.get('/api/esc/projects/');
+    return Array.isArray(response.data) ? response.data : (response.data?.results || []);
+  },
+  createProject: async (data) => {
+    const response = await djangoClient.post('/api/esc/projects/', data);
+    return response.data;
+  },
+  updateProject: async (id, data) => {
+    const response = await djangoClient.put(`/api/esc/projects/${id}/`, data);
+    return response.data;
+  },
+  deleteProject: async (id) => {
+    const response = await djangoClient.delete(`/api/esc/projects/${id}/`);
+    return response.data;
+  },
+  getKosisPpi: async (start, end) => {
+    const response = await djangoClient.get('/api/esc/kosis/ppi/', { params: { start, end } });
+    return response.data;
+  },
+  getKosisWage: async (start, end) => {
+    const response = await djangoClient.get('/api/esc/kosis/wage/', { params: { start, end } });
+    return response.data;
+  },
+};

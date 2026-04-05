@@ -11,6 +11,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fortune-sheet/core": "^1.0.4",
+    "@fortune-sheet/react": "^1.0.4",
     "@kanaries/graphic-walker": "^0.5.0",
     "@microsoft/fetch-event-source": "^2.0.1",
     "@uiw/react-md-editor": "^4.0.11",

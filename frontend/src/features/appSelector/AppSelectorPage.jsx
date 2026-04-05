@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, ImageIcon, Bot, ChevronRight, BarChart3, Settings, Sparkles, LogOut, UserCircle, HelpCircle, FolderUp, LayoutGrid } from 'lucide-react';
+import { MessageCircle, ImageIcon, Bot, ChevronRight, BarChart3, Settings, Sparkles, LogOut, UserCircle, HelpCircle, FolderUp, LayoutGrid, Calculator } from 'lucide-react';
 
 const AppSelectorPage = () => {
   const navigate = useNavigate();
@@ -53,6 +53,14 @@ const AppSelectorPage = () => {
       icon: FolderUp,
       color: 'from-violet-500 to-purple-600',
       path: '/doc-uploader'
+    },
+    {
+      id: 'esc-calculator',
+      name: 'ESC 물가변동 산출',
+      description: '건설공사 물가변동(ESC) 보정금액을 자동 산출합니다',
+      icon: Calculator,
+      color: 'from-orange-500 to-amber-600',
+      path: '/esc-calculator'
     }
   ];
 

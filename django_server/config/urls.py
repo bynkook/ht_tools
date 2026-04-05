@@ -24,6 +24,7 @@ urlpatterns = [
     path('api/settings/', include('apps.user_settings.urls')),
     path('api/board/', include('apps.board.urls')),
     path('api/doc-uploader/', include('apps.doc_uploader.urls')),  # Doc Uploader
+    path('api/esc/', include('apps.esc_calculator.urls')),         # ESC 물가변동 산출
 ]
 
 if settings.DEBUG:
