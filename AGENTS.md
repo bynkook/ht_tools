@@ -305,18 +305,11 @@ The `contents` array format for FabriX APIs:
   - `GET /agent-messages/rate-limit-status`
 - Operating assumption (Windows): single-process / single-worker baseline
 
-## Mock Mode
+## Chat Runtime
 
-Controlled by `secrets.toml`:
-```toml
-[server]
-mock_mode = true   # Returns mock SSE responses
-mock_mode = false  # Real FabriX API calls
-```
-
-Note:
-- Current implementation applies mock streaming behavior to chat streaming paths.
-- Non-streaming APIs (for example image preview/process and dataset APIs) follow their normal backend flow.
+- FabriX Chat / FabriX Agent Chat streaming paths now use the real FabriX upstream only.
+- Legacy test-only runtime branching has been removed from the chat routers.
+- Offline chat testing should be introduced as a separate test-mode design rather than by re-adding runtime branches to production chat routes.
 
 ## Data Explorer Specifics
 

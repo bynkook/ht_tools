@@ -1,75 +1,13 @@
 """
-Django Management Command: FabriX Agent Chat 오프라인 로드 테스트 데이터 생성
+Django Management Command: FabriX Agent Chat 샘플 대화 이력 생성
 
-이 명령어는 FabriX Agent Chat 앱 전용입니다. (FabriX Chat 앱과는 별개)
-Mock 모드에서 대화 이력 컨텍스트 기능을 테스트하기 위한 샘플 대화 데이터를 생성합니다.
+이 명령어는 FabriX Agent Chat 세션/히스토리 UI와 대화 이력 적재 상태를 확인하기 위한
+샘플 대화 데이터를 생성합니다.
 
 【주요 기능】
-- 지정된 사용자의 FabriX Agent Chat 세션에 테스트 대화 이력 자동 생성
+- 지정된 사용자의 FabriX Agent Chat 세션에 샘플 대화 이력 자동 생성
 - 최대 12턴의 다양한 주제 대화 (파일 분석, 지식 베이스, RAG 기능 등)
-- Mock 모드와 함께 사용하여 FabriX API 없이 오프라인 테스트 가능
-
-【사용 방법】
-1. 기본 사용 (admin 계정에 5턴 생성):
-   python manage.py load_test_agent_chat
-
-2. 특정 사용자 및 턴 수 지정:
-   python manage.py load_test_agent_chat --username=bynkook --turns=10
-
-3. 기존 테스트 세션 삭제 후 생성:
-   python manage.py load_test_agent_chat --username=bynkook --turns=5 --clear
-
-【오프라인 테스트 워크플로우】
-Step 1: Mock 모드 활성화
-  - secrets.toml 파일 수정: [server] mock_mode = true
-
-Step 2: 서버 시작
-  - run_project.bat 실행 (3개 서비스 시작)
-
-Step 3: 테스트 데이터 생성 (이 명령어 실행)
-  - python manage.py load_test_agent_chat --username=사용자명 --turns=5
-
-Step 4: 브라우저 테스트
-  - http://localhost:5173/agent-chat 접속
-  - 생성된 세션 선택
-  - 새 질문 입력 시 Mock 응답 확인: "[Mock 응답] 받은 대화 이력: 11개"
-    (5턴 × 2 메시지 + 새 질문 1개 = 11개)
-
-Step 5: 대화 이력 컨텍스트 검증
-  - "방금 분석한 파일 요약해줘" 같은 컨텍스트 의존 질문 입력
-  - Mock 응답에서 "첫 번째 메시지"와 "마지막 질문" 확인
-  - contents 배열이 올바르게 전달되었는지 확인
-
-【콘솔 출력 예시】
-Command 실행 출력:
-  세션 생성됨: ID=42
-    턴 1: "data.csv 파일을 분석해줘..."
-    턴 2: "Missing 값 처리는 어떻게 하나요?..."
-    ...
-  ✅ 테스트 대화 생성 완료!
-     세션 ID: 42
-     사용자: bynkook
-     대화 턴: 5턴 (총 10개 메시지)
-
-브라우저 Console (6번째 질문 입력 시):
-  [AgentChatPage] buildContentsArray: {
-    totalMessages: 10,
-    finalContentsLength: 11,
-    firstContent: 'data.csv 파일을 분석해줘',
-    lastContent: '이전 대화 내용 요약해줘'
-  }
-
-Backend Console (FastAPI):
-  INFO: [AGENT] Payload: {'contents': [...11개 항목...], 'isStream': True}
-  INFO: [MOCK] Generating mock response for 11 contents
-
-Mock SSE 응답:
-  data: {"event_status":"CHUNK","content":"[Mock 응답] 받은 대화 이력: 11개"}
-
-【참고 사항】
-- FabriX Chat 앱은 별도 테스트 도구(load_test_chat.py)를 사용합니다
-- MAX_HISTORY_TURNS=10 제한으로 실제 API 전송은 최근 20개 메시지까지만 포함
-- 온라인 배포 시에는 secrets.toml의 mock_mode를 false로 변경
+- 세션 목록, 히스토리 렌더링, 이전 대화 맥락 재진입 점검에 활용 가능
 """
 from django.core.management.base import BaseCommand, CommandError
 from django.contrib.auth.models import User
@@ -78,7 +16,7 @@ from apps.fabrix_agent_chat.models import ChatSession, ChatMessage
 
 class Command(BaseCommand):
     help = (
-        'FabriX Agent Chat 오프라인 테스트용 대화 이력 생성 (Mock 모드 전용)\n'
+        'FabriX Agent Chat 샘플 대화 이력 생성\n'
         '사용 예: python manage.py load_test_agent_chat --username=사용자명 --turns=5'
     )
 
@@ -100,6 +38,12 @@ class Command(BaseCommand):
             action='store_true',
             help='기존 테스트 세션 삭제 후 생성'
         )
+        parser.add_argument(
+            '--agent-id',
+            type=str,
+            default='sample-agent-history',
+            help='세션에 저장할 agent_id (기본값: sample-agent-history)'
+        )
 
     def handle(self, *args, **options):
         """
@@ -108,13 +52,14 @@ class Command(BaseCommand):
         실행 순서:
         1. 사용자 계정 확인
         2. [optional] 기존 테스트 세션 삭제
-        3. 새 ChatSession 생성 (agent_id='mock-agent-001')
+        3. 새 ChatSession 생성
         4. 샘플 대화 12턴 중 지정된 수만큼 ChatMessage 생성
         5. 웹 UI 접속 URL 출력
         """
         username = options['username']
         turns = options['turns']
         clear = options['clear']
+        agent_id = options['agent_id']
 
         # 사용자 확인
         try:
@@ -133,13 +78,13 @@ class Command(BaseCommand):
         # 테스트 세션 생성
         session = ChatSession.objects.create(
             user=user,
-            agent_id='mock-agent-001',
+            agent_id=agent_id,
             title=f'[Test] Agent 대화 이력 테스트 ({turns}턴)'
         )
         self.stdout.write(f'세션 생성됨: ID={session.id}')
 
         # 샘플 대화 데이터 (12턴)
-        # 주제: 파일 분석 → 데이터 전처리 → RAG 검색 → 지식 베이스 → Agent 기능 → Mock 테스트
+        # 주제: 파일 분석 → 데이터 전처리 → RAG 검색 → 지식 베이스 → Agent 기능 → 히스토리 재확인
         # 대화 이력 컨텍스트 기능 검증을 위해 Agent Chat 특성에 맞는 주제와 참조 질문 포함
         sample_conversations = [
             ("data.csv 파일을 분석해줘", 
@@ -164,8 +109,8 @@ class Command(BaseCommand):
              "오늘 대화 요약: 1) CSV 파일 분석(1,000행) 2) Missing 값 처리 방법 3) salary 통계(평균 5,500만원) 4) RAG/지식 베이스 검색 5) Agent 도구 소개. 데이터 분석 전체 워크플로우를 다뤘습니다."),
             ("고마워요!", 
              "천만에요! Agent 기능을 계속 탐색해보세요. 파일 분석이나 지식 검색이 필요하면 언제든 도움 드리겠습니다! 🤖"),
-            ("마지막으로, Mock 모드 테스트는 어떻게 확인하나요?", 
-             "Mock 모드 확인: 1) secrets.toml에서 mock_mode=true 설정 2) 서버 재시작 3) 새 질문 입력 시 '[Mock 응답]'으로 시작하는 답변 확인 4) Backend 로그에서 contents 배열 개수 확인하면 됩니다."),
+            ("마지막으로, 오늘 분석 흐름을 한 번만 더 요약해줘.", 
+             "오늘 분석 흐름 요약: 1) CSV 구조 확인 2) Missing 값 처리 3) salary 통계 검토 4) 지식 베이스/RAG 설명 5) Agent 도구 활용 방식 확인입니다."),
         ]
 
         # 지정된 턴 수만큼 대화 생성 (최대 12턴)
@@ -187,15 +132,15 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             f'\n✅ 테스트 대화 생성 완료!\n'
-            f'   세션 ID: {session.id}\n'
-            f'   사용자: {username}\n'
-            f'   대화 턴: {min(turns, len(sample_conversations))}턴 '
-            f'(총 {min(turns, len(sample_conversations)) * 2}개 메시지)\n'
-            f'\n'
-            f'【다음 단계】\n'
-            f'1. Mock 모드 확인: secrets.toml에서 mock_mode = true 설정\n'
-            f'2. 서버 시작: run_project.bat 실행\n'
-            f'3. 브라우저 접속: http://localhost:5173/agent-chat?session_id={session.id}\n'
-            f'4. 새 질문 입력 후 Mock 응답 확인\n'
-            f'   → "[Mock 응답] 받은 대화 이력: {min(turns, len(sample_conversations)) * 2 + 1}개"'
+             f'   세션 ID: {session.id}\n'
+             f'   사용자: {username}\n'
+             f'   agent_id: {agent_id}\n'
+             f'   대화 턴: {min(turns, len(sample_conversations))}턴 '
+             f'(총 {min(turns, len(sample_conversations)) * 2}개 메시지)\n'
+             f'\n'
+             f'【다음 단계】\n'
+             f'1. 서버 시작: run_project.bat 실행\n'
+             f'2. 브라우저 접속: http://localhost:5173/agent-chat?session_id={session.id}\n'
+             f'3. 필요 시 사이드바에서 실제 Agent를 다시 선택\n'
+             f'4. 후속 질문을 보내고 이전 대화 맥락이 자연스럽게 이어지는지 확인'
         ))

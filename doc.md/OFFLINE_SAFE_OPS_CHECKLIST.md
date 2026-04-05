@@ -1,6 +1,6 @@
 # Offline Safe Ops Checklist (Chat/Agent)
 
-본 문서는 Windows 단일 워커 + 오프라인(mock) 개발 환경에서
+본 문서는 Windows 단일 워커 + 로컬 개발 환경에서
 안전하게 운영 개선(1,2,3,4)을 적용하기 위한 체크리스트입니다.
 
 ## 최종 권고 반영 상태
@@ -39,9 +39,9 @@
 
 ### 1-2. 오프라인 실행 명령
 
-1. `secrets.toml` 에서 `mock_mode = true` 확인
-2. `run_project.bat` 실행
-3. 브라우저에서 `/chat`, `/agent-chat` 각각 3회 송신 + 1회 Stop
+1. `run_project.bat` 실행
+2. FabriX upstream 연결이 가능한 개발환경에서 브라우저 `/chat`, `/agent-chat` 각각 3회 송신 + 1회 Stop
+3. upstream 연결이 불가한 개발환경이라면 송신 검증은 건너뛰고 페이지 로드/네비게이션/히스토리 진입까지만 확인
 
 
 ### 1-3. 통과 기준
@@ -79,7 +79,7 @@
 ### 2-2. 오프라인 실행 명령
 
 1. `run_project.bat`
-2. `/chat`, `/agent-chat` 탭 2~3개에서 연속 송신
+2. FabriX upstream 연결이 가능한 개발환경에서 `/chat`, `/agent-chat` 탭 2~3개에서 연속 송신
 3. `http://127.0.0.1:8001/chat-messages/rate-limit-status`
 4. `http://127.0.0.1:8001/agent-messages/rate-limit-status`
 
@@ -156,7 +156,7 @@
 
 ### 4-3. 오프라인 실행
 
-- mock 부하를 주며 `rate-limit-status` 응답 값 관찰
+- 개발 환경에서 `rate-limit-status` 응답 값 관찰
 - 임계치 초과 시 운영 액션 수행 여부 점검
 
 

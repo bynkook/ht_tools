@@ -20,21 +20,6 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def is_mock_mode_enabled() -> bool:
-    """Mock 모드 활성화 여부 확인"""
-    from pathlib import Path
-    import toml
-    BASE_DIR = Path(__file__).resolve().parent.parent.parent
-    SECRETS_PATH = BASE_DIR / "secrets.toml"
-    
-    try:
-        with open(SECRETS_PATH, "r", encoding="utf-8") as f:
-            secrets = toml.load(f)
-        return secrets.get('server', {}).get('mock_mode', False)
-    except Exception:
-        return False
-
-
 # Pydantic Models
 class ChatRequest(BaseModel):
     agentId: str
@@ -73,72 +58,12 @@ def get_fabrix_headers():
     }
 
 
-async def mock_event_generator(contents: List[str]):
-    """
-    Mock 모드용 SSE 이벤트 생성기
-    FabriX API 응답 형식과 동일하게 스트리밍 응답 생성
-    """
-    history_count = len(contents)
-    last_question = contents[-1] if contents else ""
-    first_question = contents[0] if contents else ""
-    
-    # Mock 응답 메시지 구성
-    mock_response = f"""[Mock 응답 - Agent Chat]
-- 받은 대화 이력: {history_count}개
-- 첫 번째 메시지: "{first_question[:50]}{'...' if len(first_question) > 50 else ''}"
-- 마지막 질문: "{last_question[:50]}{'...' if len(last_question) > 50 else ''}"
-
-※ 이 응답은 테스트용 Mock입니다. 실제 AI 응답이 아닙니다.
-※ contents 배열이 올바르게 전달되었는지 확인하세요."""
-
-    logger.info(f"[MOCK] Generating mock response for {history_count} contents (Agent Chat)")
-    
-    # 청크 단위로 스트리밍 (실제 LLM 응답처럼 보이도록)
-    chunk_size = 5  # 5글자씩 전송
-    for i in range(0, len(mock_response), chunk_size):
-        chunk_text = mock_response[i:i+chunk_size]
-        chunk = {
-            "event_status": "CHUNK",
-            "content": chunk_text,
-            "finish_reason": None
-        }
-        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-        await asyncio.sleep(0.03)  # 30ms 간격
-    
-    # 종료 신호
-    final = {
-        "event_status": "CHUNK",
-        "content": "",
-        "finish_reason": "stop"
-    }
-    yield f"data: {json.dumps(final, ensure_ascii=False)}\n\n"
-    logger.info("[MOCK] Mock response completed (Agent Chat)")
-
-
 @router.get("/agents")
 async def get_agents(request: Request, page: int = 1, limit: int = 50):
     """
     [GET] /agent-messages/agents
     FabriX에서 사용 가능한 Agent 목록을 조회합니다.
     """
-    # Mock 모드: 가짜 에이전트 목록 반환
-    if is_mock_mode_enabled():
-        logger.info("[MOCK] Returning mock agents list")
-        return {
-            "items": [
-                {
-                    "agentId": "mock-agent-001",
-                    "name": "Mock 테스트 에이전트",
-                    "description": "오프라인 테스트용 Mock 에이전트입니다."
-                },
-                {
-                    "agentId": "mock-agent-002",
-                    "name": "Mock 문서 분석기",
-                    "description": "Mock 문서 분석 에이전트 (테스트용)"
-                }
-            ]
-        }
-    
     _, fabrix_agent_url = get_fabrix_config()
     url = f"{fabrix_agent_url}/agents"
     params = {"page": page, "limit": limit}
@@ -326,15 +251,8 @@ async def chat_stream(req: ChatRequest, request: Request):
             logger.error(f"Unexpected streaming error: {e}")
             yield f'data: {json.dumps({"error": "unexpected_error", "detail": str(e)})}\n\n'
 
-    # Mock 모드 확인 및 적절한 generator 선택
-    if is_mock_mode_enabled():
-        logger.info("[CHAT] Mock mode enabled - using mock response generator")
-        generator = mock_event_generator(req.contents)
-    else:
-        generator = event_generator()
-
     return StreamingResponse(
-        generator,
+        event_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
