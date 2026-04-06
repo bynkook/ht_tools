@@ -51,7 +51,17 @@ export default function EscCalculatorPage() {
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [banner, setBanner] = useState(null); // { type: 'success'|'error', msg }
 
-  const { projects, kosisData, loading, error, loadProjects, saveProject, fetchKosisData, clearError } = useEscData();
+  const {
+    projects,
+    loading,
+    error,
+    loadProjects,
+    saveProject,
+    deleteProject,
+    resetKosisCache,
+    fetchKosisData,
+    clearError,
+  } = useEscData();
 
   // 프로젝트 목록 초기 로드
   useEffect(() => { loadProjects(); }, []);
@@ -96,14 +106,9 @@ export default function EscCalculatorPage() {
         return;
       }
 
-      // KOSIS 데이터 패칭 (없으면 새로 요청)
-      let { ppi, wage } = kosisData;
-      const needFetch = !ppi.length || !wage.length;
-      if (needFetch) {
-        const fetched = await fetchKosisData(baseMonth, endMonth);
-        ppi = fetched.ppi;
-        wage = fetched.wage;
-      }
+      // 서버의 영구 캐시를 기준으로 항상 최신 범위를 조회한다.
+      const fetched = await fetchKosisData(baseMonth, endMonth);
+      const { ppi, wage } = fetched;
 
       const result = calculateEsc(inputs, ppi, wage);
       setEscResult(result);
@@ -117,7 +122,7 @@ export default function EscCalculatorPage() {
     } catch (e) {
       showBanner('error', '계산 오류: ' + e.message);
     }
-  }, [inputs, kosisData, fetchKosisData]);
+  }, [inputs, fetchKosisData]);
 
   // ── 저장 ─────────────────────────────────────────────────────
   const handleSave = useCallback(async (name, existingId) => {
@@ -147,6 +152,36 @@ export default function EscCalculatorPage() {
     setSelectedProjectId(null);
   }, []);
 
+  const handleDelete = useCallback(async (projectId) => {
+    if (!projectId) {
+      showBanner('error', '삭제할 프로젝트를 먼저 선택하세요.');
+      return;
+    }
+    if (!window.confirm('선택한 프로젝트를 삭제하시겠습니까?')) return;
+
+    try {
+      await deleteProject(projectId);
+      setSelectedProjectId(null);
+      showBanner('success', '프로젝트를 삭제했습니다.');
+    } catch (_) {
+      // useEscData 에서 에러 상태와 배너를 처리한다.
+    }
+  }, [deleteProject]);
+
+  const handleResetCache = useCallback(async () => {
+    if (!window.confirm('노임단가 데이터 캐시를 초기화하시겠습니까? 다음 계산 시 새 데이터를 다시 불러옵니다.')) {
+      return;
+    }
+
+    try {
+      const result = await resetKosisCache('wage');
+      setEscResult(null);
+      showBanner('success', `노임단가 캐시 초기화 완료 (${result.deleted}건 삭제)`);
+    } catch (_) {
+      // useEscData 에서 에러 상태와 배너를 처리한다.
+    }
+  }, [resetKosisCache]);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* TopBar */}
@@ -155,8 +190,10 @@ export default function EscCalculatorPage() {
         selectedId={selectedProjectId}
         onLoad={handleLoad}
         onSave={handleSave}
+        onDelete={handleDelete}
         onRecalc={handleRecalc}
         onNew={handleNew}
+        onResetCache={handleResetCache}
         loading={loading}
       />
 

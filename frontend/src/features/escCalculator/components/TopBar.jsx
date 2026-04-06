@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { RefreshCw, Save, FolderOpen, PlusCircle, Trash2 } from 'lucide-react';
+import { RefreshCw, Save, PlusCircle, Trash2 } from 'lucide-react';
 
-export default function TopBar({ projects, selectedId, onLoad, onSave, onRecalc, onNew, loading }) {
+export default function TopBar({
+  projects, selectedId, onLoad, onSave, onDelete, onRecalc, onNew, onResetCache, loading,
+}) {
   const [saveName, setSaveName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
 
@@ -69,6 +71,14 @@ export default function TopBar({ projects, selectedId, onLoad, onSave, onRecalc,
         </button>
 
         <button
+          onClick={() => onDelete?.(selectedId)}
+          disabled={loading || !selectedId}
+          className="flex items-center gap-1 text-sm bg-red-500 text-white rounded px-3 py-1.5 hover:bg-red-600 disabled:opacity-50"
+        >
+          <Trash2 size={14} /> 삭제
+        </button>
+
+        <button
           onClick={onRecalc}
           disabled={loading}
           className="flex items-center gap-1 text-sm bg-green-500 text-white rounded px-3 py-1.5 hover:bg-green-600 disabled:opacity-50"
@@ -81,6 +91,14 @@ export default function TopBar({ projects, selectedId, onLoad, onSave, onRecalc,
           className="flex items-center gap-1 text-sm bg-gray-500 text-white rounded px-3 py-1.5 hover:bg-gray-600"
         >
           <PlusCircle size={14} /> 새로만들기
+        </button>
+
+        <button
+          onClick={() => onResetCache?.()}
+          disabled={loading}
+          className="flex items-center gap-1 text-sm bg-amber-600 text-white rounded px-3 py-1.5 hover:bg-amber-700 disabled:opacity-50"
+        >
+          <RefreshCw size={14} /> 데이터캐시초기화
         </button>
       </div>
     </div>

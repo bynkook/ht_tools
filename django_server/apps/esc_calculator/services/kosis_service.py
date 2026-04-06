@@ -3,12 +3,79 @@ KOSIS API 데이터 수집 및 DB 캐싱 서비스.
 fetch_kosis_data.py 로직을 Django 서비스 클래스로 이식.
 """
 import requests
-from datetime import datetime
 
 from ..models import KosisCache
 
 
 KOSIS_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
+
+
+def month_to_half(yyyymm: str) -> str:
+    """YYYYMM -> YYYYHH (표준 반기: 1~6월=01, 7~12월=02)."""
+    month = int(yyyymm[4:6])
+    return f"{yyyymm[:4]}{'01' if month <= 6 else '02'}"
+
+
+def iter_months(start: str, end: str) -> list[str]:
+    """YYYYMM 범위의 모든 월 반환."""
+    result = []
+    year = int(start[:4])
+    month = int(start[4:6])
+    end_year = int(end[:4])
+    end_month = int(end[4:6])
+
+    while year < end_year or (year == end_year and month <= end_month):
+        result.append(f"{year}{month:02d}")
+        month += 1
+        if month > 12:
+            year += 1
+            month = 1
+    return result
+
+
+def iter_half_periods(start_half: str, end_half: str) -> list[str]:
+    """YYYYHH 범위의 모든 반기 반환."""
+    result = []
+    year = int(start_half[:4])
+    half = int(start_half[4:6])
+    end_year = int(end_half[:4])
+    end_half_num = int(end_half[4:6])
+
+    while year < end_year or (year == end_year and half <= end_half_num):
+        result.append(f"{year}{half:02d}")
+        if half == 1:
+            half = 2
+        else:
+            year += 1
+            half = 1
+    return result
+
+
+def half_to_month_start(half_key: str) -> str:
+    return f"{half_key[:4]}{'01' if half_key[4:6] == '01' else '07'}"
+
+
+def half_to_month_end(half_key: str) -> str:
+    return f"{half_key[:4]}{'06' if half_key[4:6] == '01' else '12'}"
+
+
+def find_missing_segments(requested_periods: list[str], cached_by_period: dict) -> list[tuple[str, str]]:
+    """요청 순서를 기준으로 누락 구간을 연속 세그먼트로 묶는다."""
+    segments = []
+    segment_start = None
+
+    for period in requested_periods:
+        if period not in cached_by_period:
+            if segment_start is None:
+                segment_start = period
+        elif segment_start is not None:
+            segments.append((segment_start, prev_period))
+            segment_start = None
+        prev_period = period
+
+    if segment_start is not None:
+        segments.append((segment_start, requested_periods[-1]))
+    return segments
 
 
 class KosisService:
@@ -22,47 +89,66 @@ class KosisService:
     def get_ppi(self, start: str, end: str) -> list[dict]:
         """
         생산자물가지수(공산품) 월별 데이터 반환.
-        캐시 hit: DB 반환, miss: KOSIS API 호출 후 DB 저장.
+        DB 영구 캐시를 우선 사용하고, 누락 월만 추가 호출하여 병합 반환한다.
         Returns: [{'시점': 'YYYYMM', '공산품': float}, ...]
         """
-        cached = self._get_cache(KosisCache.DATA_TYPE_PPI, start, end)
-        if cached is not None:
-            return cached
+        requested_periods = iter_months(start, end)
+        cached_by_period = self._collect_cached_points(KosisCache.DATA_TYPE_PPI, requested_periods)
 
-        raw = self._fetch_ppi(start, end)
-        normalized = self._normalize_ppi(raw)
-        self._save_cache(KosisCache.DATA_TYPE_PPI, start, end, normalized)
-        return normalized
+        for missing_start, missing_end in find_missing_segments(requested_periods, cached_by_period):
+            raw = self._fetch_ppi(missing_start, missing_end)
+            normalized = self._normalize_ppi(raw)
+            self._save_cache(KosisCache.DATA_TYPE_PPI, missing_start, missing_end, normalized)
+            for item in normalized:
+                period = item.get('시점')
+                if period in requested_periods:
+                    cached_by_period[period] = item
+
+        return [cached_by_period[period] for period in requested_periods if period in cached_by_period]
 
     def get_wage(self, start: str, end: str) -> list[dict]:
         """
         시중노임단가(일반공사직종) 반기 데이터 반환.
+        DB 영구 캐시를 우선 사용하고, 누락 반기만 추가 호출하여 병합 반환한다.
         Returns: [{'시점': 'YYYYHH'(예: '202101'), '값': int}, ...]
         시점은 반기 단위: 202101=2021년 상반기, 202102=2021년 하반기
         """
-        cached = self._get_cache(KosisCache.DATA_TYPE_WAGE, start, end)
-        if cached is not None:
-            return cached
+        start_half = month_to_half(start)
+        end_half = month_to_half(end)
+        requested_periods = iter_half_periods(start_half, end_half)
+        cached_by_period = self._collect_cached_points(KosisCache.DATA_TYPE_WAGE, requested_periods)
 
-        raw = self._fetch_wage(start, end)
-        normalized = self._normalize_wage(raw)
-        self._save_cache(KosisCache.DATA_TYPE_WAGE, start, end, normalized)
-        return normalized
+        for missing_start, missing_end in find_missing_segments(requested_periods, cached_by_period):
+            raw = self._fetch_wage_halves(missing_start, missing_end)
+            normalized = self._normalize_wage(raw)
+            self._save_cache(
+                KosisCache.DATA_TYPE_WAGE,
+                half_to_month_start(missing_start),
+                half_to_month_end(missing_end),
+                normalized,
+            )
+            for item in normalized:
+                period = item.get('시점')
+                if period in requested_periods:
+                    cached_by_period[period] = item
+
+        return [cached_by_period[period] for period in requested_periods if period in cached_by_period]
 
     # ------------------------------------------------------------------
     # Cache helpers
     # ------------------------------------------------------------------
 
-    def _get_cache(self, data_type: str, start: str, end: str):
-        try:
-            cache = KosisCache.objects.get(
-                data_type=data_type,
-                period_start=start,
-                period_end=end,
-            )
-            return cache.payload
-        except KosisCache.DoesNotExist:
-            return None
+    def _collect_cached_points(self, data_type: str, requested_periods: list[str]) -> dict[str, dict]:
+        requested_set = set(requested_periods)
+        merged: dict[str, dict] = {}
+        caches = KosisCache.objects.filter(data_type=data_type).order_by('fetched_at', 'id')
+
+        for cache in caches:
+            for item in cache.payload or []:
+                period = item.get('시점')
+                if period in requested_set:
+                    merged[period] = item
+        return merged
 
     def _save_cache(self, data_type: str, start: str, end: str, payload: list):
         KosisCache.objects.update_or_create(
@@ -107,15 +193,11 @@ class KosisService:
         return self._fetch_raw(params, f"PPI {start}~{end}")
 
     def _fetch_wage(self, start: str, end: str) -> list:
-        # YYYYMM → YYYYHH 변환 (시중노임단가 공시 기준):
-        #   1~8월  → YYYY01 (상반기 공시 적용)
-        #   9~12월 → YYYY02 (하반기 공시 적용)
-        # 검증: 202107(7월) → 202101, 202109(9월) → 202102, 202201(1월) → 202201
-        def to_half(yyyymm: str) -> str:
-            return f"{yyyymm[:4]}{'02' if int(yyyymm[4:6]) >= 9 else '01'}"
+        start_half = month_to_half(start)
+        end_half = month_to_half(end)
+        return self._fetch_wage_halves(start_half, end_half)
 
-        start_half = to_half(start)   # e.g. 202107 → 202102
-        end_half   = to_half(end)     # e.g. 202204 → 202201
+    def _fetch_wage_halves(self, start_half: str, end_half: str) -> list:
         params = {
             "method": "getList",
             "itmId": "16365AAC8 ",

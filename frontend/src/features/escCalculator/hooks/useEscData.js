@@ -48,12 +48,34 @@ export function useEscData() {
   // ------------------------------------------------------------------
   const deleteProject = useCallback(async (id) => {
     try {
+      setLoading(true);
       await escApi.deleteProject(id);
       await loadProjects();
+      return true;
     } catch (e) {
       setError('삭제 실패: ' + (e.response?.data?.error || e.message));
+      throw e;
+    } finally {
+      setLoading(false);
     }
   }, [loadProjects]);
+
+  // ------------------------------------------------------------------
+  // KOSIS 캐시 초기화
+  // ------------------------------------------------------------------
+  const resetKosisCache = useCallback(async (dataType = 'wage') => {
+    try {
+      setLoading(true);
+      const result = await escApi.resetKosisCache(dataType);
+      setKosisData({ ppi: [], wage: [] });
+      return result;
+    } catch (e) {
+      setError('캐시 초기화 실패: ' + (e.response?.data?.error || e.message));
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // ------------------------------------------------------------------
   // KOSIS 데이터 패칭
@@ -88,6 +110,7 @@ export function useEscData() {
     loadProjects,
     saveProject,
     deleteProject,
+    resetKosisCache,
     fetchKosisData,
     clearError,
   };

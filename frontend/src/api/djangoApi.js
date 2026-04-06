@@ -480,6 +480,10 @@ export const escApi = {
     const response = await djangoClient.delete(`/api/esc/projects/${id}/`);
     return response.data;
   },
+  resetKosisCache: async (dataType = 'wage') => {
+    const response = await djangoClient.post('/api/esc/kosis/cache/reset/', { data_type: dataType });
+    return response.data;
+  },
   getKosisPpi: async (start, end) => {
     const response = await djangoClient.get('/api/esc/kosis/ppi/', { params: { start, end } });
     return response.data;

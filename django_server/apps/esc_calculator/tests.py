@@ -81,15 +81,18 @@ class TestKosisServiceCache(TestCase):
         self.svc = KosisService(api_key='test_key')
 
     def test_cache_hit_returns_without_api_call(self):
-        payload = [{'시점': '202107', '공산품': 111.81}]
+        payload = [
+            {'시점': '202107', '공산품': 111.81},
+            {'시점': '202108', '공산품': 112.50},
+        ]
         KosisCache.objects.create(
             data_type=KosisCache.DATA_TYPE_PPI,
             period_start='202107',
-            period_end='202203',
+            period_end='202108',
             payload=payload,
         )
         with patch.object(self.svc, '_fetch_ppi') as mock_fetch:
-            result = self.svc.get_ppi('202107', '202203')
+            result = self.svc.get_ppi('202107', '202108')
         mock_fetch.assert_not_called()
         self.assertEqual(result, payload)
 
@@ -100,7 +103,7 @@ class TestKosisServiceCache(TestCase):
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
 
-        self.svc.get_ppi('202107', '202203')
+        self.svc.get_ppi('202107', '202108')
 
         mock_get.assert_called_once()
         self.assertEqual(KosisCache.objects.filter(data_type=KosisCache.DATA_TYPE_PPI).count(), 1)
@@ -110,37 +113,90 @@ class TestKosisServiceCache(TestCase):
         import requests as req_lib
         mock_get.side_effect = req_lib.ConnectionError("timeout")
         with self.assertRaises(ConnectionError):
-            self.svc.get_ppi('202107', '202203')
+            self.svc.get_ppi('202107', '202108')
 
     @patch('apps.esc_calculator.services.kosis_service.requests.get')
     def test_wage_fetch_uses_semiannual_period_codes(self, mock_get):
-        """YYYYMM → YYYYHH 변환: 1~8월=상반기(01), 9~12월=하반기(02)"""
+        """YYYYMM → YYYYHH 변환: 1~6월=상반기(01), 7~12월=하반기(02)"""
         mock_response = MagicMock()
         mock_response.json.return_value = RAW_WAGE_SAMPLE
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
 
-        # start=202107(7월, <9 → 상반기→202101), end=202204(4월, <9 → 상반기→202201)
-        self.svc.get_wage('202107', '202204')
+        # start=202106(6월 → 202101), end=202107(7월 → 202102)
+        self.svc.get_wage('202106', '202107')
 
         call_params = mock_get.call_args[1]['params']
         self.assertEqual(call_params['startPrdDe'], '202101')   # 상반기 2021
-        self.assertEqual(call_params['endPrdDe'],   '202201')   # 상반기 2022
+        self.assertEqual(call_params['endPrdDe'],   '202102')   # 하반기 2021
 
     @patch('apps.esc_calculator.services.kosis_service.requests.get')
     def test_wage_fetch_second_half_end(self, mock_get):
-        """종료월이 9월 이상이면 endPrdDe 는 하반기 코드(XX02)."""
+        """종료월이 7월 이상이면 endPrdDe 는 하반기 코드(XX02)."""
         mock_response = MagicMock()
         mock_response.json.return_value = RAW_WAGE_SAMPLE
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
 
-        # start=202101(1월, <9 → 202101), end=202209(9월, ≥9 → 202202)
-        self.svc.get_wage('202101', '202209')
+        # start=202101(1월 → 202101), end=202208(8월 → 202202)
+        self.svc.get_wage('202101', '202208')
 
         call_params = mock_get.call_args[1]['params']
         self.assertEqual(call_params['startPrdDe'], '202101')   # 상반기 2021
         self.assertEqual(call_params['endPrdDe'],   '202202')   # 하반기 2022
+
+    @patch('apps.esc_calculator.services.kosis_service.requests.get')
+    def test_ppi_fetches_only_missing_months_from_persistent_cache(self, mock_get):
+        KosisCache.objects.create(
+            data_type=KosisCache.DATA_TYPE_PPI,
+            period_start='202107',
+            period_end='202108',
+            payload=[
+                {'시점': '202107', '공산품': 111.81},
+                {'시점': '202108', '공산품': 112.50},
+            ],
+        )
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {'PRD_DE': '202109', 'C1_NM': '공산품', 'DT': '113.00'},
+            {'PRD_DE': '202110', 'C1_NM': '공산품', 'DT': '114.00'},
+        ]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = self.svc.get_ppi('202107', '202110')
+
+        call_params = mock_get.call_args[1]['params']
+        self.assertEqual(call_params['startPrdDe'], '202109')
+        self.assertEqual(call_params['endPrdDe'], '202110')
+        self.assertEqual([r['시점'] for r in result], ['202107', '202108', '202109', '202110'])
+
+    @patch('apps.esc_calculator.services.kosis_service.requests.get')
+    def test_wage_fetches_only_missing_half_from_persistent_cache(self, mock_get):
+        KosisCache.objects.create(
+            data_type=KosisCache.DATA_TYPE_WAGE,
+            period_start='202107',
+            period_end='202206',
+            payload=[
+                {'시점': '202102', '값': 183500},
+                {'시점': '202201', '값': 190000},
+            ],
+        )
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {'PRD_DE': '202202', 'C1_NM': '일반공사', 'DT': '195000'},
+        ]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = self.svc.get_wage('202107', '202208')
+
+        call_params = mock_get.call_args[1]['params']
+        self.assertEqual(call_params['startPrdDe'], '202202')
+        self.assertEqual(call_params['endPrdDe'], '202202')
+        self.assertEqual([r['시점'] for r in result], ['202102', '202201', '202202'])
 # ---------------------------------------------------------------------------
 # EscProject CRUD API 테스트
 # ---------------------------------------------------------------------------
@@ -222,24 +278,51 @@ class TestKosisProxyAPI(TestCase):
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_ppi_cache_hit_returns_200(self):
-        payload = [{'시점': '202107', '공산품': 111.81}]
+        payload = [
+            {'시점': '202107', '공산품': 111.81},
+            {'시점': '202108', '공산품': 112.50},
+        ]
         KosisCache.objects.create(
             data_type=KosisCache.DATA_TYPE_PPI,
-            period_start='202107', period_end='202203',
+            period_start='202107', period_end='202108',
             payload=payload,
         )
-        resp = self.client.get('/api/esc/kosis/ppi/?start=202107&end=202203')
+        resp = self.client.get('/api/esc/kosis/ppi/?start=202107&end=202108')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data, payload)
 
     def test_wage_cache_hit_returns_200(self):
-        payload = [{'시점': '202101', '값': 178321}]
+        payload = [{'시점': '202102', '값': 178321}]
         KosisCache.objects.create(
             data_type=KosisCache.DATA_TYPE_WAGE,
-            period_start='202107', period_end='202203',
+            period_start='202107', period_end='202112',
             payload=payload,
         )
-        resp = self.client.get('/api/esc/kosis/wage/?start=202107&end=202203')
+        resp = self.client.get('/api/esc/kosis/wage/?start=202107&end=202112')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data, payload)
+
+    def test_cache_reset_defaults_to_wage_only(self):
+        KosisCache.objects.create(
+            data_type=KosisCache.DATA_TYPE_PPI,
+            period_start='202107',
+            period_end='202108',
+            payload=[{'시점': '202107', '공산품': 111.81}],
+        )
+        KosisCache.objects.create(
+            data_type=KosisCache.DATA_TYPE_WAGE,
+            period_start='202107',
+            period_end='202112',
+            payload=[{'시점': '202102', '값': 178321}],
+        )
+
+        resp = self.client.post('/api/esc/kosis/cache/reset/', {}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['data_type'], 'wage')
+        self.assertEqual(KosisCache.objects.filter(data_type=KosisCache.DATA_TYPE_WAGE).count(), 0)
+        self.assertEqual(KosisCache.objects.filter(data_type=KosisCache.DATA_TYPE_PPI).count(), 1)
+
+    def test_cache_reset_rejects_invalid_data_type(self):
+        resp = self.client.post('/api/esc/kosis/cache/reset/', {'data_type': 'bad'}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 

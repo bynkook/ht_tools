@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
-from .models import EscProject
+from .models import EscProject, KosisCache
 from .serializers import EscProjectSerializer
 from .services.kosis_service import KosisService
 
@@ -71,3 +71,22 @@ class KosisWageView(APIView):
             return Response(data)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class KosisCacheResetView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        data_type = request.data.get('data_type', KosisCache.DATA_TYPE_WAGE)
+        if data_type not in {KosisCache.DATA_TYPE_PPI, KosisCache.DATA_TYPE_WAGE, 'all'}:
+            return Response(
+                {'error': 'data_type 은 ppi, wage, all 중 하나여야 합니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queryset = KosisCache.objects.all()
+        if data_type != 'all':
+            queryset = queryset.filter(data_type=data_type)
+
+        deleted_count, _ = queryset.delete()
+        return Response({'deleted': deleted_count, 'data_type': data_type})

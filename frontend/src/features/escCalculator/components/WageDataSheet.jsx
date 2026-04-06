@@ -1,7 +1,7 @@
 import React from 'react';
 import { Workbook } from '@fortune-sheet/react';
 import '@fortune-sheet/react/dist/index.css';
-import { formatYM } from '../utils/escCalculations';
+import { monthToHalfKey } from '../utils/escCalculations';
 
 const CELL_STYLE = {
   header: { bg: '#E8E8E8', bold: true, ht: 0, vt: 0 },
@@ -35,7 +35,7 @@ function buildWageSheetData(result) {
   wageSeries.forEach(({ month, period, wage, D2, C2 }) => {
     if (seen.has(period)) return;
     seen.add(period);
-    const isAdj = month === adjustmentMonth || adjustmentMonth?.slice(0, 4) + (parseInt(adjustmentMonth?.slice(4, 6)) <= 6 ? '01' : '02') === period;
+    const isAdj = month === adjustmentMonth || (adjustmentMonth ? monthToHalfKey(adjustmentMonth) === period : false);
     const style = isAdj ? CELL_STYLE.blue : CELL_STYLE.normal;
     cellData.push(
       cell(row, 0, period.slice(0, 4) + '년 ' + (period.slice(4) === '01' ? '상반기' : '하반기'), style),

@@ -4,6 +4,7 @@ from .views import (
     EscProjectDetailView,
     KosisPpiView,
     KosisWageView,
+    KosisCacheResetView,
 )
 
 urlpatterns = [
@@ -11,4 +12,5 @@ urlpatterns = [
     path('projects/<int:pk>/', EscProjectDetailView.as_view(), name='esc-project-detail'),
     path('kosis/ppi/', KosisPpiView.as_view(), name='esc-kosis-ppi'),
     path('kosis/wage/', KosisWageView.as_view(), name='esc-kosis-wage'),
+    path('kosis/cache/reset/', KosisCacheResetView.as_view(), name='esc-kosis-cache-reset'),
 ]

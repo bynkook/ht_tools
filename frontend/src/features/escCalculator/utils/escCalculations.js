@@ -270,19 +270,14 @@ export function calculateEsc(inputs, ppiData, wageData) {
 
 /**
  * YYYYMM → 반기 키 변환
- * 시중노임단가 공시 기준:
- *   1~8월 → YYYY01 (상반기 공시 — 해당 연도 1/2분기 적용)
- *   9~12월 → YYYY02 (하반기 공시 — 해당 연도 2/2분기 적용)
- *
- * 참고 이미지 검증 (기준시점 202107):
- *   202107~202108 → 202101 (wage 219,213)
- *   202109~202112 → 202102 (wage 223,499)
- *   202201~202204 → 202201 (wage 231,044)
+ * 표준 반기 기준:
+ *   1~6월  → YYYY01
+ *   7~12월 → YYYY02
  */
 export function monthToHalfKey(yyyymm) {
   const year = yyyymm.slice(0, 4);
   const month = parseInt(yyyymm.slice(4, 6));
-  const half = month <= 8 ? '01' : '02';
+  const half = month <= 6 ? '01' : '02';
   return `${year}${half}`;
 }
 
