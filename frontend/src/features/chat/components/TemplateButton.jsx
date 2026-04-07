@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronUp, X } from 'lucide-react';
-import templates from '../data/chat_templates.json';
+import templates from '../template/chat_templates.json';
 
 /**
  * Template button for FabriX Chat input box.
