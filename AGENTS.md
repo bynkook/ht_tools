@@ -84,6 +84,94 @@ React (5173) ----+--> Django (8000)   : Auth, History, DB, Data Explorer API
   - `routers/`: API endpoints
   - `services/`: Business logic (rate limiter, image processor)
 
+## Phase 1 MCP Host Worktree Rules
+
+This worktree is the dedicated branch/worktree for **FabriX Chat -> generic MCP host conversion**.
+
+### Standards Precedence
+
+When implementation guidance conflicts, use this order:
+
+1. **MCP Specification + official architecture docs**
+2. **Official MCP SDKs + official MCP dev tools**
+3. **Reference host projects**
+4. **Agent skills**
+5. **FabriX-specific legacy behavior and local conventions**
+
+### Official MCP References
+
+- **MCP architecture/specification**
+  - Treat FabriX as the **Host**
+  - Treat each provider connection as an MCP **Client**
+  - Treat `fastmcp` doc search as the first MCP **Server**
+- **Official SDKs**
+  - Prefer **`modelcontextprotocol/python-sdk`** as the primary backend/client reference
+  - Use **`modelcontextprotocol/typescript-sdk`** for transport/middleware semantics
+  - For TypeScript SDK, prefer **stable v1.x semantics for production behavior** over `main` branch pre-alpha guidance
+- **Official dev tool**
+  - Use **`modelcontextprotocol/inspector`** as the first-line capability/transport validation tool
+
+### Reference Host Projects
+
+- **`mark3labs/mcphost`**
+  - Reference for config-driven registry design
+  - Reference for local/remote/builtin server classification
+  - Reference for allowlist/denylist tool controls
+  - Reference for hooks and non-interactive execution concepts
+- **`OpenAgentPlatform/Dive`**
+  - Reference for host UX vs host core separation
+  - Reference for multi-provider host thinking
+  - Reference for operator-facing control surfaces, slash commands, and `@` interactions
+
+Never copy a reference project blindly. Reuse the pattern, not the product-specific surface area.
+
+### Phase 1 MCP Design Rules
+
+- Keep **generic host core** separate from **FabriX UX adapters**
+- `/mcp` and `@filename` remain **manual override UX**, not host-core architecture
+- Design registry/config so later providers can be added without restructuring the chat core
+- Keep provider-specific logic inside provider adapters
+- Normalize tool/resource/prompt output before merging into chat context
+- Remove legacy hardcoded MCP paths after the new path is stable; do not keep permanent duplicate routes
+
+### Phase 1 Skills Strategy
+
+Use skills deliberately to improve quality and speed, but only after checking official references first.
+
+- **Always useful**
+  - `find-skills`
+  - `python-code-style`
+  - `python-design-patterns`
+  - `python-project-structure`
+  - `vercel-react-best-practices`
+- **High-value MCP-related candidates**
+  - `jlowin/fastmcp@fastmcp-client-cli`
+  - `coleam00/second-brain-skills@mcp-client`
+  - `frankxai/claude-skills-library@mcp-architecture-expert`
+  - `supercent-io/skills-template@agentic-workflow`
+  - `github/awesome-copilot@documentation-writer`
+
+Recommended workflow:
+
+1. Read official MCP docs/SDK guidance
+2. Compare with `mcphost` / `Dive`
+3. Invoke the relevant skill
+4. Implement
+5. Validate provider behavior with Inspector or an equivalent MCP client
+
+### External MCP Provider Reference
+
+Current first provider for Phase 1:
+
+- Local doc-search MCP server: `C:\Users\BgKing\mycode\fastmcp`
+- Default endpoint: `http://127.0.0.1:8002/mcp`
+- Typical start command:
+
+```bash
+cd ..\fastmcp
+run_server.bat
+```
+
 ## Code Style Guidelines
 
 ### dos batch file(.bat)
@@ -278,6 +366,60 @@ const finishReason = parsed.finish_reason ?? parsed.finishReason;
 - Sidebar header format: `[Icon][Title][Home][Shrink]`
 - Error display: top red banner with `AlertCircle`
 
+## Tool Usage Reliability Rules
+
+These rules are mandatory because repeated shell/filesystem mistakes slow down work and create false errors.
+
+### General
+
+- Prefer repo-native tools first: **`view` / `rg` / `glob` / `apply_patch`**
+- Use shell only when file tools cannot do the job or when execution is required
+- Prefer absolute **Windows-style** paths with backslashes for every external file/tool operation
+- Resolve ambiguous relative paths before reading or executing anything
+
+### Shell / PowerShell
+
+- Always confirm the intended working tree and branch before destructive or branch-changing Git commands
+- Chain related commands in a single call when they share the same context
+- Always disable pagers for Git: use `git --no-pager`
+- Prefer PowerShell/native commands over CMD/DOS aliases
+- Reuse a named shell session for multi-step work instead of spawning ad hoc shells
+- For long-running commands, use a stable `shellId`, then continue with `read_powershell`
+- If a prior shell command was interrupted, inspect current state before retrying blindly
+- Avoid interactive prompts when a non-interactive flag exists
+- When a command depends on another repo/worktree, state or set the target path explicitly before execution
+
+### Filesystem / File Reading
+
+- For files inside this repository/worktree, prefer **`view`** over external filesystem tools
+- For multiple known files, batch reads instead of reading one-by-one
+- Before using filesystem tools on non-repo paths, verify the path is accessible and use the correct absolute path
+- Do not mix slash styles in paths; normalize to `C:\...`
+- If a file is tagged or already known, read that exact file directly rather than re-searching
+- If a read fails, verify:
+  1. the path is absolute
+  2. the path is inside an allowed directory
+  3. the file actually exists
+  4. the tool choice is appropriate (`view` vs filesystem tool vs shell)
+
+### MCP/Provider Validation
+
+- When provider behavior is unclear, validate the provider directly before debugging FabriX integration
+- Use Inspector or an equivalent direct MCP client to confirm:
+  - transport connectivity
+  - advertised tools/resources/prompts
+  - input/output shape
+- Do not assume FabriX-side bugs until provider-side behavior is confirmed
+
+### Worktree Safety
+
+- Distinguish clearly between:
+  - `C:\Users\BgKing\mycode\ht_tools` -> main/local baseline
+  - `C:\Users\BgKing\mycode\ht_tools_mcphost` -> MCP host worktree
+- Assume ports, DB files, caches, and logs may conflict across worktrees unless checked
+- Before running app servers from both trees, confirm port ownership and runtime separation
+- When editing branch-specific planning/docs, ensure the command is run from the MCP host worktree
+
 ## Conversation Context Format (Chat APIs)
 
 The `contents` array format for FabriX APIs:
@@ -344,5 +486,10 @@ For detailed implementation:
 - `README.md` - General overview
 - `GEMINI.md` - Extended documentation
 - `doc.md/` - Feature-specific docs
+- `doc.md/phase1_fabrix_generic_mcp_host_plan.md` - Canonical Phase 1 MCP host migration plan
+- MCP architecture docs - Official host/client/server model and protocol layering
+- Official MCP SDK docs - Python SDK first for backend/client implementation guidance
+- `mark3labs/mcphost` - Host registry/configuration reference
+- `OpenAgentPlatform/Dive` - Host UX/reference product comparison
 
-Last updated: 2026-03-08 (Gateway/API 규칙 동기화, Data Explorer/Image Inspector current limitation 명시)
+Last updated: 2026-04-07 (Phase 1 MCP host standards, reference hosts, skill strategy, and tool reliability rules added)

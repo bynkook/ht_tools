@@ -278,7 +278,177 @@ Phase 1은 다음처럼 해석해야 한다.
 
 ---
 
-## 9. 목표 아키텍처
+## 9. 개발 표준, 레퍼런스 프로젝트, 스킬 활용 원칙
+
+Phase 1은 임의 설계가 아니라, **공식 MCP 표준과 검증된 host reference를 우선 사용하고 부족한 부분만 자체 설계**하는 방식으로 진행해야 한다.
+
+이 항목은 개발 품질 확보와 개발시간 단축을 위해 반드시 포함한다.
+
+### 9.1 참조 우선순위
+
+구현 중 기준이 충돌하면 아래 우선순위를 따른다.
+
+1. **MCP Specification + 공식 아키텍처 문서**
+2. **Official SDKs + Official Dev Tools**
+3. **검증된 host reference project**
+4. **agent skill / coding workflow skill**
+5. **FabriX 고유 요구사항과 현재 사용자 계약**
+
+즉, `mcphost` 나 `Dive` 는 매우 유용한 레퍼런스지만,  
+**공식 specification / architecture / SDK semantics 보다 우선할 수는 없다.**
+
+### 9.2 반드시 참조할 공식 표준
+
+#### A. MCP Specification / Architecture 문서
+- MCP는 **Host / Client / Server** 역할을 분리하는 구조다.
+- Host는 여러 MCP client를 관리하고, 각 client는 각 MCP server와 1:1 연결을 유지한다.
+- 프로토콜은 **data layer(JSON-RPC 기반)** 와 **transport layer** 로 나뉜다.
+
+따라서 FabriX Phase 1에서도:
+- **FabriX Chat = MCP Host**
+- **FabriX 내부 client adapter = MCP Client**
+- **fastmcp 문서검색 서버 = MCP Server**
+로 역할을 명확히 나눠야 한다.
+
+#### B. Official SDKs
+공식 SDK 페이지 기준으로 MCP는 다수의 공식 SDK를 제공하며, 현재 최소한 아래 계열을 표준 참조로 인식해야 한다.
+
+- **Tier 1**: TypeScript, Python, C#, Go
+- **Tier 2**: Java, Rust
+- **Tier 3/TBD**: Swift, Ruby, PHP, Kotlin
+
+Phase 1 구현에서 직접적인 1차 참조는 아래 두 개다.
+
+1. **`modelcontextprotocol/python-sdk`**
+   - Django/FastAPI/Python 계층에서 MCP client/transport/lifecycle/auth/error handling 패턴을 참조하는 핵심 레퍼런스
+   - 특히 **client 작성 방식, streamable HTTP transport, server lifecycle, typed context, tool/resource/prompt semantics** 를 우선 참고한다.
+
+2. **`modelcontextprotocol/typescript-sdk`**
+   - Node/TypeScript 측 transport semantics, thin middleware 개념, streamable HTTP wiring 방식을 참조하는 레퍼런스
+   - 다만 현재 `main` 브랜치는 **v2 pre-alpha** 안내를 포함하므로, **production 동작 기준은 안정판 v1.x 문서/API를 우선 참조** 해야 한다.
+
+#### C. Official Dev Tool
+**`modelcontextprotocol/inspector`** 는 Phase 1에서 필수에 가까운 검증 도구로 본다.
+
+용도:
+- MCP server capability discovery 확인
+- tool/resource/prompt 노출 상태 확인
+- transport 연결 문제 디버깅
+- streamable HTTP / stdio / SSE 동작 확인
+
+즉, FabriX에서 provider 연결이 안 되거나 capability가 다르게 보이면 먼저 Inspector 기준으로 서버 자체 상태를 확인하는 절차를 둔다.
+
+### 9.3 반드시 참조할 host reference project
+
+#### A. `mark3labs/mcphost`
+`mcphost` 는 범용 MCP host 관점에서 매우 중요한 reference project 다.
+
+특히 아래 항목을 적극 참조한다.
+
+- **config-driven server registry**
+- **local / remote / builtin server 구분**
+- **environment variable substitution**
+- **tool allowlist / denylist filtering**
+- **hooks system**
+- **non-interactive / scripting mode**
+
+FabriX Phase 1에서 차용할 핵심 아이디어:
+
+1. **server registry 를 설정 중심으로 설계할 것**
+2. **provider 유형(local/remote 등) 구분을 초기에 넣을 것**
+3. **tool exposure 제어(허용/제외) 정책 지점을 남길 것**
+4. **보안/운영 훅을 나중에 넣을 수 있도록 host core를 닫지 말 것**
+
+단, `mcphost` 의 CLI UX나 모델 provider 결합 방식을 그대로 복사하는 것이 목표는 아니다.  
+**우리는 FabriX Chat에 맞는 host core 구조와 API surface만 취한다.**
+
+#### B. `OpenAgentPlatform/Dive`
+`Dive` 는 데스크톱 MCP host 제품 관점의 reference project 로 본다.
+
+특히 아래를 참고 가치가 있는 요소로 본다.
+
+- multi-LLM / multi-MCP host 운영 모델
+- tool enable/disable 제어
+- MCP server auth 고려
+- slash command 와 skill 기능의 공존
+- `@` 기반 파일 경로 탐색 UX
+
+FabriX Phase 1에서 차용할 핵심은:
+
+1. **host UX와 host core 를 분리하는 사고방식**
+2. **operator-friendly control surface 를 유지하면서도 내부 core는 generic 하게 두는 구조**
+3. **향후 mini Cursor/Claude 방향 UX를 염두에 둔 확장성**
+
+단, Dive는 데스크톱 앱 특성이 강하므로:
+- Electron/Tauri 구조
+- 설치기/자동업데이트
+- 데스크톱 앱 전용 운영 기능
+은 Phase 1 직접 범위에 넣지 않는다.
+
+### 9.4 이번 개발에 사용할 skill 전략
+
+이번 작업은 **표준 레퍼런스를 잘 읽고, 에이전트가 적절한 skill을 단계별로 호출하도록 설계하는 것 자체가 품질 전략**이다.
+
+#### A. 현재 바로 활용 가능한 핵심 skill
+- **`find-skills`**
+  - 필요한 추가 skill을 탐색하고 설치 후보를 찾는 기본 도구
+- **`python-code-style`**
+  - Django / Python MCP host 계층의 코드 스타일, typing, 문서화 기준 유지
+- **`python-design-patterns`**
+  - host core / registry / adapter / router 책임 분리에 사용
+- **`python-project-structure`**
+  - `ai_gateway/services/mcp/*` 구조 설계와 public API 정리에 사용
+- **`vercel-react-best-practices`**
+  - Frontend 명령/채팅 입력 UX 수정 시 React 쪽 성능/구조 기준 확인
+
+#### B. `find-skills`로 찾은 우선 검토 대상 skill
+
+1. **`jlowin/fastmcp@fastmcp-client-cli`**
+   - 현재 `fastmcp` provider를 직접 검증하거나 MCP client 관점에서 빠르게 실험할 때 유용
+   - 설치: `npx skills add jlowin/fastmcp@fastmcp-client-cli`
+
+2. **`coleam00/second-brain-skills@mcp-client`**
+   - generic MCP client 작성/연결 관점의 참조 skill 후보
+   - 설치: `npx skills add coleam00/second-brain-skills@mcp-client`
+
+3. **`frankxai/claude-skills-library@mcp-architecture-expert`**
+   - host/client/server 경계와 전체 아키텍처 리뷰에 유용한 후보
+   - 설치: `npx skills add frankxai/claude-skills-library@mcp-architecture-expert`
+
+4. **`supercent-io/skills-template@agentic-workflow`**
+   - 구현 단계를 agent-friendly 한 workflow 로 쪼개고 병렬 탐색/검증을 조직할 때 유용
+   - 설치: `npx skills add supercent-io/skills-template@agentic-workflow`
+
+5. **`github/awesome-copilot@documentation-writer`**
+   - 계획 문서, 계약 문서, 운영 문서 업데이트 품질을 일정하게 유지하는 후보
+   - 설치: `npx skills add github/awesome-copilot@documentation-writer`
+
+#### C. skill 사용 원칙
+
+1. **표준 문서와 SDK를 먼저 본다.**
+2. 그 다음 reference project 구조를 비교한다.
+3. 그 다음 skill을 사용해 구현/리뷰/문서화 효율을 높인다.
+4. skill 결과가 공식 spec/SDK 와 충돌하면 공식 기준을 따른다.
+
+### 9.5 Phase 1 권장 운용 방식
+
+실제 구현 시에는 아래 순서를 습관화한다.
+
+1. **공식 문서 확인**
+   - MCP architecture / spec / official SDK docs
+2. **reference host 비교**
+   - `mcphost`, `Dive`
+3. **skill 호출**
+   - Python 구조/패턴/React/문서화 관련 skill
+4. **구현**
+5. **Inspector 또는 동등한 client 도구로 capability 검증**
+6. **FabriX 회귀 체크리스트로 최종 확인**
+
+이 흐름을 계획서에 명시해 두어야, 이후 agent가 임의 추측보다 **검증된 레퍼런스 기반 개발**을 우선하게 된다.
+
+---
+
+## 10. 목표 아키텍처
 
 예상 backend 구조:
 
@@ -306,24 +476,24 @@ ai_gateway/
 
 ---
 
-## 10. legacy code 처리 원칙
+## 11. legacy code 처리 원칙
 
 이 항목이 이번 정의에서 가장 중요하다.
 
-### 9.1 버릴 것
+### 11.1 버릴 것
 - doc-search 전용 하드코딩 흐름
 - 특정 MCP 서버를 전제로 한 직접 호출 코드
 - generic host 도입 후에도 남는 중복/임시 경로
 - 영구 compatibility shim
 
-### 9.2 남길 것
+### 11.2 남길 것
 - 사용자-facing 동작 계약
 - 필요한 API path 자체
 - 현재 정상 동작의 기능적 결과
 
 즉, **버리는 것은 legacy implementation 이고, 유지하는 것은 사용자 계약과 기능 결과**다.
 
-### 9.3 legacy 제거/치환 세부 스탭
+### 11.3 legacy 제거/치환 세부 스탭
 
 #### Step 1. legacy surface audit
 - 현재 hardcoded MCP 경로를 파일/책임 단위로 식별
@@ -361,11 +531,11 @@ ai_gateway/
 
 ---
 
-## 11. 권장 개발 순서
+## 12. 권장 개발 순서
 
 현재 문서의 개발 순서는 큰 방향은 맞지만, **위험성과 난이도를 더 낮추려면 자동 경로보다 수동 경로를 먼저 옮기고, 회귀 기준을 더 앞당기는 순서**가 더 안전하다.
 
-### 11.1 왜 순서를 바꾸는가
+### 12.1 왜 순서를 바꾸는가
 
 1. **회귀 기준은 구현 전에 고정하는 편이 안전하다.**
    - 나중에 확인하면 “원래 동작” 기준이 흔들릴 수 있다.
@@ -376,6 +546,13 @@ ai_gateway/
 
 3. **legacy 제거는 항상 마지막이어야 한다.**
    - 새 core + provider + manual path + 자연어 path 가 모두 안정화된 뒤 제거해야 rollback 위험이 낮다.
+
+### Step 0. 공식 표준 + reference + skill baseline 고정
+- MCP architecture / spec / official SDK docs 우선 확인
+- Python SDK / TypeScript SDK 중 이번 단계에 직접 영향을 주는 항목 정리
+- `mcphost`, `Dive` 에서 차용할 패턴과 차용하지 않을 패턴을 먼저 구분
+- 사용할 skill 후보를 정리하고, 구현 단계별로 어떤 skill을 호출할지 적어둠
+- Inspector 또는 동등한 MCP client 검증 도구를 baseline tool 로 채택
 
 ### Step 1. 현재 계약 동결
 - `/mcp-command*` 요청/응답 형식 정리
@@ -437,7 +614,7 @@ ai_gateway/
 
 ---
 
-## 12. non-regression 체크리스트
+## 13. non-regression 체크리스트
 
 ### 문서검색 기능
 - `/mcp list`
@@ -449,6 +626,8 @@ ai_gateway/
 - `/mcp rag on|off|status|refresh`
 - `@파일명`
 - `@카테고리/파일명`
+- capability discovery 결과 일관성
+- tool/resource 노출 결과 일관성
 - RAG no-result
 - provider down 상황
 
@@ -460,7 +639,7 @@ ai_gateway/
 
 ---
 
-## 13. 예상 영향 파일
+## 14. 예상 영향 파일
 
 ### Backend
 - `ai_gateway/main.py`
@@ -475,10 +654,11 @@ ai_gateway/
 
 ### 문서
 - `doc.md/phase1_fabrix_generic_mcp_host_plan.md`
+- 필요 시 session `plan.md`
 
 ---
 
-## 14. Phase 1 완료 기준
+## 15. Phase 1 완료 기준
 
 다음이 충족되면 Phase 1 완료다.
 
@@ -489,10 +669,11 @@ ai_gateway/
 5. legacy hardcoded MCP integration code 가 핵심 경로에서 제거된다.
 6. `/mcp` 와 `@파일명` 은 유지되더라도 host core가 아니라 **분리된 UX adapter 계층** 으로 정리된다.
 7. 후속 provider를 위한 clean extension point 가 준비된다.
+8. 구현 기준과 검증 절차가 **공식 MCP 문서 / Official SDKs / reference host / skill 운영 규칙** 에 맞게 정리된다.
 
 ---
 
-## 15. 최종 판단
+## 16. 최종 판단
 
 Phase 1의 본질은 **“작동 중인 legacy integration을 감싸는 것”이 아니라,  
 FabriX Chat을 표준적인 generic MCP host 로 깔끔하게 전환하고, 그 결과로 기존 doc-search와 chat이 정상 작동하게 만드는 것**이다.
@@ -510,7 +691,7 @@ FabriX Chat을 표준적인 generic MCP host 로 깔끔하게 전환하고, 그 
 
 ---
 
-## 16. 현재 문서 상태
+## 17. 현재 문서 상태
 
 이 문서는 **Phase 1 계획 문서 작성 완료본**이다.
 
