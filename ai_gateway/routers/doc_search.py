@@ -4,9 +4,7 @@ FastAPI Router: MCP Command
 """
 import logging
 
-from typing import Any
-
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
 from ..dependencies import verify_token
@@ -14,7 +12,6 @@ from ..services.mcp import GenericMcpHost
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-host = GenericMcpHost()
 
 
 class McpCommandRequest(BaseModel):
@@ -27,20 +24,17 @@ class McpCommandRequest(BaseModel):
 
 class ValidateCategoryRequest(BaseModel):
     category: str
-async def _require_existing_category(requested: str) -> dict[str, Any]:
-    """
-    `/mcp set`와 `/mcp list`가 동일한 backend catalog를 참조하도록 강제한다.
 
-    invalid category는 RAG 무검색 결과와 다른 오류이므로, 선택 단계에서 즉시 차단한다.
-    """
-    return await host.validate_category(requested)
+
+def _configured_host(request: Request) -> GenericMcpHost:
+    return GenericMcpHost(request.app.state.mcp_settings)
 
 
 @router.post("/validate-category", dependencies=[Depends(verify_token)])
-async def validate_category(body: ValidateCategoryRequest):
+async def validate_category(body: ValidateCategoryRequest, request: Request):
     """`/mcp set` 전용 category validation 엔드포인트."""
     try:
-        matched = await _require_existing_category(body.category)
+        matched = await _configured_host(request).validate_category(body.category)
         return {
             "success": True,
             "category": matched.get("name"),
@@ -54,7 +48,7 @@ async def validate_category(body: ValidateCategoryRequest):
 
 
 @router.post("", dependencies=[Depends(verify_token)])
-async def mcp_command(body: McpCommandRequest):
+async def mcp_command(body: McpCommandRequest, request: Request):
     """
     [POST] /mcp-command
 
@@ -72,7 +66,7 @@ async def mcp_command(body: McpCommandRequest):
         {"success": False, "content": "오류 메시지"} on Doc Server connection error
     """
     try:
-        return await host.execute_manual_command(
+        return await _configured_host(request).execute_manual_command(
             action=body.action,
             query=body.query,
             category=body.category,
@@ -102,7 +96,7 @@ class RagSearchRequest(BaseModel):
 
 
 @router.post("/rag-search", dependencies=[Depends(verify_token)])
-async def rag_search(body: RagSearchRequest):
+async def rag_search(body: RagSearchRequest, request: Request):
     """
     [POST] /mcp-command/rag-search
 
@@ -121,7 +115,7 @@ async def rag_search(body: RagSearchRequest):
         }
     """
     try:
-        data = await host.run_rag_search(
+        data = await _configured_host(request).run_rag_search(
             query=body.query,
             category=body.category,
             filename_filter=body.filename_filter,

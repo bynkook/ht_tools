@@ -1,0 +1,46 @@
+{
+  "scenarios": [
+    {
+      "id": "list-categories",
+      "description": "Show the available documentation categories.",
+      "match": {
+        "contains_any": [
+          "카테고리 보여줘",
+          "카테고리 목록",
+          "문서 카테고리"
+        ]
+      },
+      "plans": [
+        {
+          "provider": "internal_docs",
+          "action": "list_categories_detail",
+          "params": {}
+        }
+      ]
+    },
+    {
+      "id": "docs-search",
+      "description": "Search documentation for common inspection questions.",
+      "match": {
+        "contains_any": [
+          "안전밸브",
+          "점검 기준",
+          "검사 기준",
+          "문서 검색"
+        ]
+      },
+      "plans": [
+        {
+          "provider": "internal_docs",
+          "action": "search_docs_rag",
+          "params": {
+            "query": "안전밸브 점검 기준",
+            "max_docs": 5,
+            "snippet_chars": 1500
+          },
+          "use_active_category": true
+        }
+      ]
+    }
+  ]
+}

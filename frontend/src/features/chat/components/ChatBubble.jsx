@@ -7,6 +7,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { User, Bot, Copy, Check } from 'lucide-react';
 
+import SystemMessageBand from './SystemMessageBand';
+
 // 코드 블록을 별도 컴포넌트로 분리하여 스트리밍 중 Copy 버튼 상태 초기화 방지
 // react-markdown v9: pre 컴포넌트의 renderer로 사용 (블록 코드 전용)
 const CodeBlock = memo(({ children, theme }) => {
@@ -171,13 +173,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
 
   // System 메시지 (커맨드 히스토리 / 메모리 결과 표시용)
   if (message.role === 'system') {
-    return (
-      <div className="flex justify-center animate-fade-in-up my-3">
-        <div className="max-w-[85%] rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/70 px-4 py-3 text-xs text-[var(--text-secondary)]">
-          {renderMarkdown(message.content)}
-        </div>
-      </div>
-    );
+    return <SystemMessageBand message={message} />;
   }
 
   if (isUser) {

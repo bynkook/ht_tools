@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+
+from .message_metadata import validate_chat_message_metadata
 from .models import ChatSession, ChatMessage, MemorySnapshot
+from .runtime_config import get_chat_runtime_config
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -10,13 +13,33 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):
+    metadata = serializers.DictField(required=False, default=dict)
+
     class Meta:
         model = ChatMessage
-        fields = ['id', 'role', 'content', 'created_at']
+        fields = ['id', 'role', 'content', 'metadata', 'created_at']
         read_only_fields = ['id', 'created_at']
+
+    def validate(self, attrs):
+        attrs['metadata'] = validate_chat_message_metadata(
+            attrs.get('role'),
+            attrs.get('metadata', {}),
+        )
+        return attrs
+
+
+class ChatMessageBulkSerializer(serializers.Serializer):
+    messages = ChatMessageSerializer(many=True)
 
 
 class ChatSessionSerializer(serializers.ModelSerializer):
+    def validate(self, attrs):
+        runtime_config = get_chat_runtime_config(request=self.context.get('request'))
+        model_id = attrs.get('model_id', getattr(self.instance, 'model_id', None))
+        if runtime_config['requires_model_selection'] and not model_id:
+            raise serializers.ValidationError({'model_id': 'model_id is required in normal mode'})
+        return attrs
+
     class Meta:
         model = ChatSession
         fields = ['id', 'model_id', 'title', 'created_at', 'updated_at']

@@ -144,7 +144,6 @@ FabriX 현재 관례를 고려하면 **루트 `secrets.toml` 을 기본** 으로
 권장 이유:
 
 - 이 저장소는 이미 민감정보/런타임 설정을 `secrets.toml` 중심으로 사용한다.
-- `.env` 는 외부 provider server 쪽에서는 유용할 수 있지만, FabriX 앱 본체의 핵심 토글은 `secrets.toml` 이 더 일관적이다.
 - 환경변수 override는 오프라인 테스트, CI, 임시 실행에 유리하다.
 
 ### 2.3 권장 설정 스키마
@@ -157,6 +156,7 @@ test_mode_scenario_path = "ai_gateway/services/mcp/test_mode/scenarios/default.j
 test_mode_discovery_on_startup = true
 test_mode_store_system_logs = true
 test_mode_max_payload_chars = 4000
+test_mode_visible_band_limit = 20
 test_mode_redact_headers = true
 test_mode_allow_remote_mcp = true
 ```
@@ -178,6 +178,7 @@ $env:MCP_TEST_MODE_SCENARIO_PATH = "C:\Users\BgKing\mycode\ht_tools_mcphost\ai_g
 | `test_mode_discovery_on_startup` | bool | `true` | 앱 시작 시 provider capability discovery 수행 |
 | `test_mode_store_system_logs` | bool | `true` | system log persistence 여부 |
 | `test_mode_max_payload_chars` | int | `4000` | UI/DB에 저장할 raw payload 길이 상한 |
+| `test_mode_visible_band_limit` | int | `20` | request당 화면에 표시할 visible system band 상한 |
 | `test_mode_redact_headers` | bool | `true` | auth/token 헤더 마스킹 |
 | `test_mode_allow_remote_mcp` | bool | `true` | remote MCP 연결 허용 여부 |
 
@@ -269,6 +270,7 @@ Phase 2에서는 **프로세스 단위 토글** 이 더 안전하다.
 8. MCP host core를 통해 실제 tool/resource/prompt 호출을 수행한다.
 9. 각 JSON-RPC request/response를 system log로 기록한다.
 10. context merge 결과를 system log로 기록한다.
+    - 이때 `Context aggregated` raw에는 **건수 요약만이 아니라, 실제 upstream LLM 호출에 사용되었을 최종 assembled context(system prompt)** 가 디버그용으로 보여져야 한다.
 11. 실제 LLM 호출 없이 종료한다.
 12. 필요 시 `assistant` 자리에 “LLM bypassed in MCP_TEST_MODE” 요약 메시지를 남긴다.
 
@@ -883,6 +885,9 @@ class TestModeChatRuntime:
         return f"data: {json.dumps({'event_type': event_type, **payload}, ensure_ascii=False)}\n\n"
 ```
 
+여기서 `aggregated` 는 단순한 file/snippet 개수 요약이 아니라,  
+**Normal Mode에서 upstream으로 전달되었을 최종 조립 context와 그 provenance를 확인할 수 있는 payload** 여야 한다.
+
 ---
 
 ## 7. Best Practices & Edge Cases (MCP spec 준수 + 보안 + maintainability)
@@ -1341,7 +1346,7 @@ system band로 통합하더라도, 같은 warning/error/log가 반복 생성되�
    - `Provider timeout detected`
    - `Repeated 12 times in 5s`
 4. raw payload는 첫 번째 또는 최근 1건만 유지하고, 반복본 전체를 계속 붙이지 않는다.
-5. request당 visible system band 수에 상한을 둔다.
+5. request당 visible system band 수에 상한을 둔다. 기본값은 **20**으로 두고, 이 상한은 평상시 로그를 자주 자르기 위한 값이 아니라 **비정상적인 flooding으로 브라우저가 마비되는 상황을 막는 차단장치** 로 사용한다.
 6. request당 raw payload 누적 bytes에도 상한을 둔다.
 7. 임계치 초과 시에는 `Additional 37 repeated warning logs were collapsed.` 같은 **summary band** 를 남긴다.
 8. 같은 source가 runaway 상태가 되면 raw payload 수집은 중단하고 summary만 계속 업데이트한다.

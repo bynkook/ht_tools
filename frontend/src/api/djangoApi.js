@@ -102,6 +102,11 @@ export const chatApi = agentChatApi;
 
 // Model 목록 조회 API
 export const modelApi = {
+  getRuntimeConfig: async () => {
+    const response = await djangoClient.get('/api/chat/runtime-config/');
+    return response.data;
+  },
+
   getModels: async () => {
     const response = await djangoClient.get('/api/chat/models/');
     return response.data;
@@ -118,10 +123,13 @@ export const modelChatApi = {
 
   // 새 대화방 생성
   createSession: async (modelId, title) => {
-    const response = await djangoClient.post('/api/chat/sessions/', {
-      model_id: modelId,
+    const payload = {
       title: title || "New Chat",
-    });
+    };
+    if (modelId) {
+      payload.model_id = modelId;
+    }
+    const response = await djangoClient.post('/api/chat/sessions/', payload);
     return response.data;
   },
 
@@ -138,10 +146,18 @@ export const modelChatApi = {
   },
 
   // 메시지 저장 (User 질문 또는 AI 답변)
-  saveMessage: async (sessionId, role, content) => {
+  saveMessage: async (sessionId, role, content, metadata = null) => {
     const response = await djangoClient.post(`/api/chat/sessions/${sessionId}/messages/`, {
       role,
       content,
+      ...(metadata ? { metadata } : {}),
+    });
+    return response.data;
+  },
+
+  saveMessages: async (sessionId, messages) => {
+    const response = await djangoClient.post(`/api/chat/sessions/${sessionId}/messages/bulk/`, {
+      messages,
     });
     return response.data;
   },

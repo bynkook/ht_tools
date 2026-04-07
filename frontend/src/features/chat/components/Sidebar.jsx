@@ -5,6 +5,7 @@ import {
   Home, Sparkles, Cpu, LogOut, ChevronDown, Check // 수정함 (모델선택창 수정)
 } from 'lucide-react';
 import { modelApi, modelChatApi, authApi } from '../../../api/djangoApi';
+import useChatRuntimeConfig from '../hooks/useChatRuntimeConfig';
 
 /**
  * Sidebar component for Model Chat (FabriX Chat)
@@ -23,6 +24,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [error, setError] = useState(null);
+  const { runtimeConfig, hasLoadedRuntimeConfig } = useChatRuntimeConfig();
 
   // 모델목록 출력오류 방지
   const normalizeSessions = (data) => {
@@ -49,6 +51,13 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
 
   // Load models on mount
   useEffect(() => {
+    if (!hasLoadedRuntimeConfig || !runtimeConfig.requiresModelSelection) {
+      setModels([]);
+      setSelectedModelId('');
+      setSelectedModel(null);
+      return undefined;
+    }
+
     const loadModels = async () => {
       setIsLoadingModels(true);
       try {
@@ -95,7 +104,8 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
       }
     };
     loadModels();
-  }, []);
+    return undefined;
+  }, [hasLoadedRuntimeConfig, runtimeConfig.requiresModelSelection, selectedModelId]);
 
   // Load sessions on mount and when session-created event fires
   const loadSessions = useCallback(async () => {
@@ -231,73 +241,74 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
         </div>
       </div>
 
-      {/* Model Selection (%%% 여긴 전체 수정함%%%)*/}
-      <div className="px-2 py-2 relative z-50">
-        <div className="px-4 text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mb-2 opacity-60">          
-          Select Model
-        </div>
-        <div className="relative">
-          <button
-            onClick={() => !isLoadingModels && models.length > 0 && setIsModelMenuOpen(!isModelMenuOpen)}
-            disabled={isLoadingModels || models.length === 0}
-            className="flex items-center justify-between gap-2.5 w-full px-3 py-2 bg-white border border-[var(--border-color)] rounded-xl hover:border-blue-300 hover:shadow-md transition-all text-left group disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="p-1.5 bg-cyan-50 text-cyan-600 rounded-lg group-hover:bg-cyan-100 shrink-0">
-                <Cpu size={12} />
+      {hasLoadedRuntimeConfig && runtimeConfig.requiresModelSelection && (
+        <div className="px-2 py-2 relative z-50">
+          <div className="px-4 text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mb-2 opacity-60">          
+            Select Model
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => !isLoadingModels && models.length > 0 && setIsModelMenuOpen(!isModelMenuOpen)}
+              disabled={isLoadingModels || models.length === 0}
+              className="flex items-center justify-between gap-2.5 w-full px-3 py-2 bg-white border border-[var(--border-color)] rounded-xl hover:border-blue-300 hover:shadow-md transition-all text-left group disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <div className="flex items-center gap-2.5 overflow-hidden">
+                <div className="p-1.5 bg-cyan-50 text-cyan-600 rounded-lg group-hover:bg-cyan-100 shrink-0">
+                  <Cpu size={12} />
+                </div>
+                <div className="overflow-hidden">
+                  <p className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-wider">Model</p>
+                  <p className="font-semibold text-[12px] text-[var(--text-primary)] text-gray-700 truncate">
+                    {isLoadingModels
+                      ? 'Loading...'
+                      : selectedModel
+                      ? getModelDisplayName(selectedModel)
+                      : models.length === 0
+                      ? 'No models available'
+                      : 'Choose a model'}
+                  </p>
+                </div>
               </div>
-              <div className="overflow-hidden">
-                <p className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-wider">Model</p>
-                <p className="font-semibold text-[12px] text-[var(--text-primary)] text-gray-700 truncate">
-                  {isLoadingModels
-                    ? 'Loading...'
-                    : selectedModel
-                    ? getModelDisplayName(selectedModel)
-                    : models.length === 0
-                    ? 'No models available'
-                    : 'Choose a model'}
-                </p>
-              </div>
-            </div>
-            <ChevronDown size={16} className={`text-gray-400 transition-transform ${isModelMenuOpen ? 'rotate-180' : ''}`} />
-          </button>
+              <ChevronDown size={16} className={`text-gray-400 transition-transform ${isModelMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-          {isModelMenuOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setIsModelMenuOpen(false)} />
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-xl z-50 max-h-64 overflow-y-auto custom-scrollbar overflow-x-hidden py-2">
-                {models.length > 0 ? (
-                  models.map((model) => {
-                    const isSelected = selectedModelId === model.id;
-                    return (
-                      <button
-                        key={model.id}
-                        onClick={() => handleModelSelect(model.id)}
-                        className={`flex items-center gap-2.5 w-full px-3 py-2 hover:bg-cyan-50 transition-colors text-left ${isSelected ? 'bg-cyan-50' : ''}`}
-                      >
-                        <div className="flex-1 overflow-hidden">
-                          <p className={`font-semibold text-[12px] truncate ${isSelected ? 'text-cyan-700' : 'text-gray-700'}`}>
-                            {getModelDisplayName(model)}
-                          </p>
-                          <p className="text-[10px] text-gray-400 truncate tracking-tight">{model.id}</p>
-                        </div>
-                        {isSelected && <Check size={16} className="text-cyan-600 shrink-0" />}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="px-4 py-6 text-center text-gray-400">
-                    <p className="text-sm">No models available</p>
-                  </div>
-                )}
-              </div>
-            </>
+            {isModelMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsModelMenuOpen(false)} />
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-xl z-50 max-h-64 overflow-y-auto custom-scrollbar overflow-x-hidden py-2">
+                  {models.length > 0 ? (
+                    models.map((model) => {
+                      const isSelected = selectedModelId === model.id;
+                      return (
+                        <button
+                          key={model.id}
+                          onClick={() => handleModelSelect(model.id)}
+                          className={`flex items-center gap-2.5 w-full px-3 py-2 hover:bg-cyan-50 transition-colors text-left ${isSelected ? 'bg-cyan-50' : ''}`}
+                        >
+                          <div className="flex-1 overflow-hidden">
+                            <p className={`font-semibold text-[12px] truncate ${isSelected ? 'text-cyan-700' : 'text-gray-700'}`}>
+                              {getModelDisplayName(model)}
+                            </p>
+                            <p className="text-[10px] text-gray-400 truncate tracking-tight">{model.id}</p>
+                          </div>
+                          {isSelected && <Check size={16} className="text-cyan-600 shrink-0" />}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="px-4 py-6 text-center text-gray-400">
+                      <p className="text-sm">No models available</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          {error && (
+            <p className="text-xs text-red-500 mt-1">{error}</p>
           )}
         </div>
-        {error && (
-          <p className="text-xs text-red-500 mt-1">{error}</p>
-        )}
-      </div>
+      )}
 
       {/* New Chat Button */}
       <div className="px-3 py-3">

@@ -7,7 +7,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from .context_merge import build_multi_file_system_prompt
+from .config import McpSettings
+from .context_merge import build_multi_file_system_prompt, merge_system_prompts
 from .intent_router import route_chat_query, split_mention_target
 from .rag_context import build_rag_response
 from .registry import connect_provider
@@ -21,9 +22,119 @@ class McpChatResolution:
     missing_mentions: list[str]
 
 
+def normalize_context_result(
+    *,
+    action: str,
+    arguments: dict[str, Any] | None = None,
+    raw_result: dict[str, Any],
+) -> dict[str, Any]:
+    tool_args = arguments or {}
+    if action == "search_docs_rag":
+        return build_rag_response(
+            query=tool_args.get("query", ""),
+            category=tool_args.get("category"),
+            filename_filter=tool_args.get("filename_filter"),
+            data=raw_result,
+        )
+    return raw_result
+
+
+def build_context_debug_payload(
+    *,
+    base_system_prompt: str | None,
+    context_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    fragments: list[dict[str, Any]] = []
+    mcp_system_prompt = None
+
+    for result in context_results:
+        if result.get("system_prompt"):
+            mcp_system_prompt = merge_system_prompts(mcp_system_prompt, result.get("system_prompt"))
+            fragments.append(
+                {
+                    "type": "rag_context",
+                    "query": result.get("query"),
+                    "category": result.get("category"),
+                    "file_count": len(result.get("files") or []),
+                    "files": [file_item.get("filename") for file_item in (result.get("files") or [])],
+                    "snippet_count": len(result.get("snippets") or []),
+                }
+            )
+            continue
+
+        if result.get("content"):
+            fragments.append(
+                {
+                    "type": "content",
+                    "content_length": len(result["content"]),
+                    "content_preview": result["content"],
+                }
+            )
+            continue
+
+        if result.get("categories") is not None:
+            fragments.append(
+                {
+                    "type": "category_listing",
+                    "category_count": len(result.get("categories") or []),
+                    "categories": result.get("categories") or [],
+                }
+            )
+            continue
+
+        if result.get("files") is not None:
+            fragments.append(
+                {
+                    "type": "file_listing",
+                    "file_count": len(result.get("files") or []),
+                    "files": result.get("files") or [],
+                }
+            )
+
+    final_system_prompt = merge_system_prompts(base_system_prompt, mcp_system_prompt)
+    return {
+        "base_system_prompt": base_system_prompt,
+        "mcp_system_prompt": mcp_system_prompt,
+        "final_system_prompt": final_system_prompt,
+        "final_system_prompt_chars": len(final_system_prompt or ""),
+        "fragment_count": len(fragments),
+        "fragments": fragments,
+    }
+
+
 class GenericMcpHost:
+    def __init__(self, settings: McpSettings):
+        self._settings = settings
+
+    @property
+    def settings(self) -> McpSettings:
+        return self._settings
+
+    async def discover_provider_capabilities(self) -> dict[str, list[str]]:
+        async with connect_provider(settings=self._settings) as provider:
+            return await provider.list_capabilities()
+
+    async def execute_tool_action(
+        self,
+        *,
+        action: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        tool_args = arguments or {}
+        async with connect_provider(settings=self._settings) as provider:
+            if action in {"list_categories_detail", "list_docs_detail", "search_docs_rag"}:
+                return await provider.call_tool_dict(action, tool_args)
+
+            if action in {"search_docs", "read_doc"}:
+                result = await provider.call_tool(action, tool_args)
+                return {
+                    "content": tool_result_to_text(result),
+                }
+
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 MCP action입니다: {action}")
+
     async def list_category_catalog(self) -> list[dict[str, Any]]:
-        async with connect_provider() as provider:
+        async with connect_provider(settings=self._settings) as provider:
             return await provider.list_category_catalog()
 
     async def validate_category(self, requested: str) -> dict[str, Any]:
@@ -46,7 +157,7 @@ class GenericMcpHost:
         filename: str | None = None,
         max_results: int = 5,
     ) -> dict[str, Any]:
-        async with connect_provider() as provider:
+        async with connect_provider(settings=self._settings) as provider:
             if action == "search":
                 if not query:
                     raise HTTPException(status_code=400, detail="검색어(query)가 필요합니다.")
@@ -115,7 +226,7 @@ class GenericMcpHost:
         max_docs: int = 10,
         snippet_chars: int = 1500,
     ) -> dict[str, Any]:
-        async with connect_provider() as provider:
+        async with connect_provider(settings=self._settings) as provider:
             if category:
                 await self.validate_category(category)
             raw_data = await provider.search_docs_rag(
@@ -198,4 +309,9 @@ class GenericMcpHost:
         )
 
 
-__all__ = ["GenericMcpHost", "McpChatResolution"]
+__all__ = [
+    "GenericMcpHost",
+    "McpChatResolution",
+    "build_context_debug_payload",
+    "normalize_context_result",
+]

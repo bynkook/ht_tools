@@ -27,6 +27,12 @@ class InternalDocsProvider:
     @asynccontextmanager
     async def connect_from_settings(cls) -> AsyncIterator["InternalDocsProvider"]:
         config = load_doc_search_server_config()
+        async with cls.connect_from_config(config) as provider:
+            yield provider
+
+    @classmethod
+    @asynccontextmanager
+    async def connect_from_config(cls, config: McpServerConfig) -> AsyncIterator["InternalDocsProvider"]:
         async with Client(config.base_url) as client:
             yield cls(config=config, client=client)
 
@@ -36,6 +42,16 @@ class InternalDocsProvider:
     async def call_tool_dict(self, tool_name: str, tool_args: dict[str, Any]) -> dict[str, Any]:
         result = await self.call_tool(tool_name, tool_args)
         return tool_result_to_dict(result)
+
+    async def list_capabilities(self) -> dict[str, list[str]]:
+        tools = await self.client.list_tools()
+        resources = await self.client.list_resources()
+        prompts = await self.client.list_prompts()
+        return {
+            "tools": [tool.name for tool in tools],
+            "resources": [str(resource.uri) for resource in resources],
+            "prompts": [prompt.name for prompt in prompts],
+        }
 
     async def list_categories_detail(self) -> dict[str, Any]:
         return await self.call_tool_dict(LIST_CATEGORIES_DETAIL_TOOL, {})

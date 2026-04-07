@@ -8,7 +8,13 @@ class ChatSession(models.Model):
     LLM 모델과의 대화방을 의미합니다.
     """
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='model_chat_sessions')
-    model_id = models.CharField(max_length=100, help_text="FabriX Model UUID", db_index=True)
+    model_id = models.CharField(
+        max_length=100,
+        help_text="FabriX Model UUID",
+        db_index=True,
+        blank=True,
+        null=True,
+    )
     title = models.CharField(max_length=200, blank=True, default="New Chat")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
@@ -37,6 +43,7 @@ class ChatMessage(models.Model):
     session = models.ForeignKey(ChatSession, on_delete=models.CASCADE, related_name='messages')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, db_index=True)
     content = models.TextField()
+    metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

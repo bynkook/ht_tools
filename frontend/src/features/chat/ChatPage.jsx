@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { Sparkles, AlertCircle, CheckCircle } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 import ChatBubble from './components/ChatBubble';
 import InputBox from './components/InputBox';
 import { modelChatApi } from '../../api/djangoApi';
 import { getFastApiUrl } from '../../api/axiosConfig';
 import { useCommands } from '../../hooks/useCommands';
+import useChatRuntimeConfig from './hooks/useChatRuntimeConfig';
+import { interpretChatStreamEvent, removeEmptyAssistantPlaceholder } from './utils/chatStreamEvents';
+import {
+  appendMessageBeforeAssistantPlaceholder,
+  buildSystemMessage,
+  getPendingTurnSystemMessages,
+} from './utils/systemMessageState';
 
 // 대화 이력 제한: 최근 5턴 (10개 메시지)
 const MAX_HISTORY_TURNS = 5;
@@ -48,14 +55,13 @@ const ChatPage = () => {
   const [messages, setMessages] = useState([]);
   const [selectedModelId, setSelectedModelId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [successMessage, setSuccessMessage] = useState(null);
- 
+  const { runtimeConfig, ensureRuntimeConfig } = useChatRuntimeConfig();
+  
   const abortControllerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const assistantSavedRef = useRef(false);
-  const errorTimerRef = useRef(null); // 429 배너 자동 닫기 타이머 ID
   const currentStreamingMsgRef = useRef(""); // 현재 스트리밍 중인 메시지 추적용
+  const messagesRef = useRef([]);
   const activeSessionIdRef = useRef(currentSessionId);
   const pendingBootstrapSessionIdRef = useRef(null);
   const currentSessionTitleRef = useRef(DEFAULT_SESSION_TITLE);
@@ -64,26 +70,42 @@ const ChatPage = () => {
     activeSessionIdRef.current = currentSessionId;
   }, [currentSessionId]);
 
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   const ensureSession = useCallback(async ({ titleSeed } = {}) => {
     if (activeSessionIdRef.current) {
       return activeSessionIdRef.current;
     }
 
-    if (!selectedModelId) {
-      setError("Please select a model first.");
+    const currentRuntimeConfig = await ensureRuntimeConfig();
+    if (currentRuntimeConfig.requiresModelSelection && !selectedModelId) {
+      setMessages(prev => [
+        ...prev,
+        buildSystemMessage('⚠️ Please select a model first.', {
+          level: 'error',
+          title: 'Model selection required',
+          phase: 'command_error',
+          persist: false,
+        }),
+      ]);
       return null;
     }
 
     const normalizedTitleSeed = titleSeed?.trim();
     const title = normalizedTitleSeed ? normalizedTitleSeed.slice(0, 30) : DEFAULT_SESSION_TITLE;
-    const newSession = await modelChatApi.createSession(selectedModelId, title);
+    const newSession = await modelChatApi.createSession(
+      currentRuntimeConfig.requiresModelSelection ? selectedModelId : null,
+      title,
+    );
     activeSessionIdRef.current = String(newSession.id);
     pendingBootstrapSessionIdRef.current = String(newSession.id);
     currentSessionTitleRef.current = newSession.title || title;
     navigate(`/chat?session_id=${newSession.id}`, { replace: true, state: { skipLoad: true } });
     window.dispatchEvent(new Event('session-created'));
     return String(newSession.id);
-  }, [navigate, selectedModelId]);
+  }, [ensureRuntimeConfig, navigate, selectedModelId]);
 
   const syncSessionTitleIfNeeded = useCallback(async (sessionId, userText) => {
     const normalizedText = (userText || '').trim();
@@ -109,8 +131,6 @@ const ChatPage = () => {
   const { executeCommand, isCommandLoading, activeCategory, ragEnabled, ragCacheRef, resetCommandState } = useCommands({
     messages,
     setMessages,
-    setError,
-    setSuccessMessage,
     currentSessionId,
     ensureSession,
   });
@@ -136,8 +156,6 @@ const ChatPage = () => {
       }
       setIsLoading(false);
       setMessages([]);
-      setError(null);
-      setSuccessMessage(null);
       resetCommandState();
       assistantSavedRef.current = false;
       currentStreamingMsgRef.current = '';
@@ -197,6 +215,31 @@ const ChatPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const appendUiSystemMessage = useCallback((message) => {
+    setMessages((prev) => appendMessageBeforeAssistantPlaceholder(prev, message));
+  }, []);
+
+  const emitConversationSystemMessage = useCallback(async ({
+    content,
+    metadata = {},
+    sessionId = null,
+    persist = false,
+  }) => {
+    const message = buildSystemMessage(content, {
+      ...metadata,
+      persist,
+    });
+    appendUiSystemMessage(message);
+    if (persist && sessionId) {
+      await modelChatApi.saveMessage(sessionId, 'system', content, message.metadata);
+    }
+  }, [appendUiSystemMessage]);
+
+  const appendSystemMessage = useCallback((message) => {
+    const normalizedMessage = buildSystemMessage(message.content, message.metadata || {});
+    setMessages((prevMessages) => appendMessageBeforeAssistantPlaceholder(prevMessages, normalizedMessage));
+  }, []);
+
   // --- Handlers (Send & Stop) ---
   const handleSend = async (text) => {
     if (isLoading || isCommandLoading) return;
@@ -207,13 +250,19 @@ const ChatPage = () => {
       if (result.handled) return;
     }
 
-    if (!selectedModelId) {
-      setError("Please select a model first.");
+    const currentRuntimeConfig = await ensureRuntimeConfig();
+    if (currentRuntimeConfig.requiresModelSelection && !selectedModelId) {
+      await emitConversationSystemMessage({
+        content: '⚠️ Please select a model first.',
+        metadata: {
+          level: 'error',
+          title: 'Model selection required',
+          phase: 'command_error',
+        },
+        persist: false,
+      });
       return;
     }
-    
-    setError(null);
-    setSuccessMessage(null);
     setIsLoading(true);
 
     const userMsg = { role: 'user', content: text };
@@ -232,7 +281,7 @@ const ChatPage = () => {
       setMessages(prev => [...prev, { role: 'assistant', content: '', isRag: ragEnabled && !!activeCategory, ragCategory: activeCategory }]);
       assistantSavedRef.current = false;
       currentStreamingMsgRef.current = "";
-     
+      
       abortControllerRef.current = new AbortController();
       let accumulatedAnswer = "";
       const shouldTrackRagMetadata = ragEnabled;
@@ -252,7 +301,7 @@ const ChatPage = () => {
           'Authorization': `Token ${token}`
         },
         body: JSON.stringify({ 
-          modelIds: [selectedModelId],
+          modelIds: currentRuntimeConfig.requiresModelSelection && selectedModelId ? [selectedModelId] : [],
           contents: contentsArray,
           isStream: true,
           mcpContext: {
@@ -306,51 +355,24 @@ const ChatPage = () => {
             
             try {
               const parsed = JSON.parse(trimmedData);
-              // 방어적 코딩: 스네이크케이스 / 카멜케이스 모두 처리
-              const eventStatus = parsed.event_status ?? parsed.eventStatus;
-              const filterBlockReason = parsed.filter_block_reason ?? parsed.filterBlockReason;
-              
-              if (parsed.error) {
-                setError(`API Error: ${parsed.error}`);
+              const streamEvent = interpretChatStreamEvent(parsed);
+
+              if (streamEvent.kind === 'system_log') {
+                appendSystemMessage(streamEvent.message);
                 return;
               }
-              
-              // 필터 차단 확인 (FabriX Chat API 응답 구조 기반)
-              // - filter_block_reason: null → 정상 (필터 정보 없음)
-              // - filter_block_reason.result_code: "FR-200" → 정상 (Filter Result 200 = 통과)
-              // - filter_block_reason.message: "The content was passed" → 정상 (통과)
-              // - 실제 차단 시에만 다른 result_code와 차단 메시지가 반환됨
-              if (filterBlockReason && filterBlockReason !== null) {
-                const resultCode = filterBlockReason.result_code || filterBlockReason.resultCode || '';
-                const message = filterBlockReason.message || '';
-                
-                // FR-200 = 필터 통과, "passed"/"allowed" = 통과됨
-                const isFilterPassed = resultCode === 'FR-200' 
-                  || message.toLowerCase().includes('passed')
-                  || message.toLowerCase().includes('allowed');
-                
-                // 통과가 아니고, 실제 차단 메시지가 있는 경우만 에러 표시
-                if (!isFilterPassed) {
-                  // 차단 메시지 추출 (ko, en, message 순서로 확인)
-                  const blockReason = filterBlockReason.ko || filterBlockReason.en || message;
-                  if (blockReason) {
-                    setError(`응답이 필터링되었습니다: ${blockReason}`);
-                    return;
-                  }
-                }
+
+              if (streamEvent.kind === 'assistant_delta') {
+                accumulatedAnswer += streamEvent.content;
+                currentStreamingMsgRef.current = accumulatedAnswer;
+                updateLastAssistantMessage(accumulatedAnswer);
+                return;
               }
-              
-              // CHUNK 이벤트의 content만 사용자 응답으로 누적
-              if (eventStatus === 'CHUNK') {
-                const content = parsed.content;
-                if (content !== null && content !== undefined) {
-                  const contentStr = String(content);
-                  if (contentStr) {
-                    accumulatedAnswer += contentStr;
-                    currentStreamingMsgRef.current = accumulatedAnswer;
-                    updateLastMessage(accumulatedAnswer);
-                  }
-                }
+
+              if (streamEvent.kind === 'assistant_final') {
+                accumulatedAnswer = streamEvent.content || accumulatedAnswer;
+                currentStreamingMsgRef.current = accumulatedAnswer;
+                updateLastAssistantMessage(accumulatedAnswer);
               }
             } catch (jsonErr) {
               // JSON 파싱 실패 - 무시 (잘못된 데이터)
@@ -363,7 +385,6 @@ const ChatPage = () => {
           if (err.message?.startsWith('RATE_LIMIT:')) {
             throw err;
           }
-          setError("연결 오류가 발생했습니다. 다시 시도해주세요.");
           setIsLoading(false);
           throw err;
         },
@@ -374,11 +395,20 @@ const ChatPage = () => {
                 query: text,
                 category: activeCategory ?? null,
                 cachedAt: Date.now(),
-              };
+  };
             }
-            await persistAssistantMessageOnce(sessionId, accumulatedAnswer);
+            await persistTurnMessagesOnce(sessionId, accumulatedAnswer);
           } catch (saveErr) {
-            setError("응답 저장 중 오류가 발생했습니다. 다시 시도해주세요.");
+            await emitConversationSystemMessage({
+              content: '⚠️ 응답 저장 중 오류가 발생했습니다. 다시 시도해주세요.',
+              metadata: {
+                level: 'error',
+                title: 'Persistence error',
+                phase: 'persistence',
+              },
+              sessionId,
+              persist: true,
+            });
           }
           abortControllerRef.current = null;
           setIsLoading(false);
@@ -389,48 +419,81 @@ const ChatPage = () => {
           const parts = err.message.split(':');
           const retryAfter = parseInt(parts[1], 10) || 30;
           const message = parts.slice(2).join(':') || "요청이 너무 많습니다.";
-          setError(`${message} (약 ${retryAfter}초 후 다시 시도해주세요)`);
-          // 429 전용: Retry-After 시간 후 배너 자동 닫기
-          if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-          errorTimerRef.current = setTimeout(() => setError(null), retryAfter * 1000);
+          await emitConversationSystemMessage({
+            content: `⚠️ ${message} (약 ${retryAfter}초 후 다시 시도해주세요)`,
+            metadata: {
+              level: 'warn',
+              title: 'Rate limit',
+            },
+            sessionId: activeSessionIdRef.current,
+            persist: Boolean(activeSessionIdRef.current),
+          });
         } else if (err.message?.startsWith('HTTP_ERROR:')) {
           const parts = err.message.split(':');
           const message = parts.slice(2).join(':') || "메시지 전송 중 오류가 발생했습니다.";
-          setError(message);
+          await emitConversationSystemMessage({
+            content: `⚠️ ${message}`,
+            metadata: {
+              level: 'error',
+              title: 'HTTP error',
+            },
+            sessionId: activeSessionIdRef.current,
+            persist: Boolean(activeSessionIdRef.current),
+          });
         } else {
-          setError("메시지 전송 중 오류가 발생했습니다.");
+          await emitConversationSystemMessage({
+            content: '⚠️ 메시지 전송 중 오류가 발생했습니다.',
+            metadata: {
+              level: 'error',
+              title: 'Runtime error',
+            },
+            sessionId: activeSessionIdRef.current,
+            persist: Boolean(activeSessionIdRef.current),
+          });
         }
-        setMessages(prev => {
-          if (prev.length === 0) return prev;
-          const last = prev[prev.length - 1];
-          if (last.role === 'assistant' && !last.content) {
-            return prev.slice(0, -1);
-          }
-          return prev;
-        });
-        setIsLoading(false);
-    }
-  };
+          setMessages(removeEmptyAssistantPlaceholder);
+          setIsLoading(false);
+       }
+    };
 
-  const updateLastMessage = useCallback((content) => {
+  const updateLastAssistantMessage = useCallback((content) => {
     setMessages(prev => {
       if (prev.length === 0) return prev;
       const newHistory = [...prev];
-      const last = newHistory[newHistory.length - 1];
-      newHistory[newHistory.length - 1] = { ...last, content };
+      const lastAssistantIndex = [...newHistory].map(message => message.role).lastIndexOf('assistant');
+      if (lastAssistantIndex === -1) {
+        newHistory.push({ role: 'assistant', content });
+        return newHistory;
+      }
+      const last = newHistory[lastAssistantIndex];
+      newHistory[lastAssistantIndex] = { ...last, content };
       return newHistory;
     });
   }, []);
 
-  const persistAssistantMessageOnce = useCallback(async (sessionId, content) => {
-    const normalizedContent = (content || '').trim();
-    if (!sessionId || !normalizedContent || assistantSavedRef.current) {
+  const persistTurnMessagesOnce = useCallback(async (sessionId, assistantContent) => {
+    if (!sessionId || assistantSavedRef.current) {
+      return;
+    }
+
+      const normalizedAssistantContent = (assistantContent || '').trim();
+      const persistedSystemMessages = getPendingTurnSystemMessages(messagesRef.current).filter(
+        (message) => message.metadata?.persist !== false,
+      );
+    const payload = [
+      ...persistedSystemMessages,
+      ...(normalizedAssistantContent ? [{
+        role: 'assistant',
+        content: normalizedAssistantContent,
+      }] : []),
+    ];
+    if (payload.length === 0) {
       return;
     }
 
     assistantSavedRef.current = true;
     try {
-      await modelChatApi.saveMessage(sessionId, 'assistant', normalizedContent);
+      await modelChatApi.saveMessages(sessionId, payload);
     } catch (saveError) {
       assistantSavedRef.current = false;
       throw saveError;
@@ -438,48 +501,31 @@ const ChatPage = () => {
   }, []);
 
   const handleStop = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      // messages 배열 대신 ref를 사용하여 클로저 문제 및 불필요한 리렌더링 방지
-      if (activeSessionIdRef.current && currentStreamingMsgRef.current) {
-        persistAssistantMessageOnce(activeSessionIdRef.current, currentStreamingMsgRef.current)
-          .catch(() => setError("응답 저장 중 오류가 발생했습니다. 다시 시도해주세요."));
-      }
-      abortControllerRef.current = null;
-      setIsLoading(false);
-    }
-  }, [persistAssistantMessageOnce]);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        // messages 배열 대신 ref를 사용하여 클로저 문제 및 불필요한 리렌더링 방지
+       if (activeSessionIdRef.current && (currentStreamingMsgRef.current || getPendingTurnSystemMessages(messagesRef.current).length > 0)) {
+         persistTurnMessagesOnce(activeSessionIdRef.current, currentStreamingMsgRef.current)
+            .catch(() => emitConversationSystemMessage({
+              content: '⚠️ 응답 저장 중 오류가 발생했습니다. 다시 시도해주세요.',
+             metadata: {
+               level: 'error',
+               title: 'Persistence error',
+               phase: 'persistence',
+             },
+             sessionId: activeSessionIdRef.current,
+             persist: true,
+           }));
+       }
+       abortControllerRef.current = null;
+       setIsLoading(false);
+     }
+   }, [persistTurnMessagesOnce]);
+
+  const lastAssistantIndex = messages.map(message => message.role).lastIndexOf('assistant');
 
   return (
     <div className="flex flex-col h-full bg-[var(--bg-primary)]">
-      {/* Success Display - Top of Page */}
-      {successMessage && (
-        <div className="flex-shrink-0 bg-green-50 text-green-600 px-4 py-3 text-sm flex items-center gap-2 border-b border-green-100 z-50">
-          <CheckCircle size={16} />
-          {successMessage}
-          <button
-            onClick={() => setSuccessMessage(null)}
-            className="ml-auto text-xs hover:underline"
-          >
-            닫기
-          </button>
-        </div>
-      )}
-
-      {/* Error Display - Top of Page */}
-      {error && (
-        <div className="flex-shrink-0 bg-red-50 text-red-600 px-4 py-3 text-sm flex items-center gap-2 border-b border-red-100 z-50">
-          <AlertCircle size={16} />
-          {error}
-          <button 
-            onClick={() => setError(null)} 
-            className="ml-auto text-xs hover:underline"
-          >
-            닫기
-          </button>
-        </div>
-      )}
-
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto px-4 py-8 custom-scrollbar scroll-smooth">
         <div className="w-[90%] mx-auto flex flex-col gap-6">
@@ -498,7 +544,7 @@ const ChatPage = () => {
               <ChatBubble
                 key={idx}
                 message={msg}
-                isStreaming={isLoading && idx === messages.length - 1 && msg.role === 'assistant'}
+                isStreaming={isLoading && idx === lastAssistantIndex && msg.role === 'assistant'}
               />
             ))
           )}
@@ -509,18 +555,6 @@ const ChatPage = () => {
       {/* Input Area */}
       <div className="flex-shrink-0 bg-[var(--bg-primary)] p-4 pb-6">
         <div className="max-w-3xl mx-auto">
-          {/* RAG 모드 배지 */}
-          {ragEnabled && (
-            <div className="flex items-center gap-2 mb-2 px-1">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 text-xs font-medium dark:bg-cyan-900/40 dark:text-cyan-300">
-                📚 RAG
-                {activeCategory && <span className="opacity-70">· {activeCategory}</span>}
-              </span>
-              <span className="text-xs text-[var(--text-secondary)]">
-                질문 시 문서를 자동 검색합니다
-              </span>
-            </div>
-          )}
           <InputBox key={currentSessionId ?? 'new'} onSend={handleSend} isLoading={isLoading} onStop={handleStop} />
         </div>
       </div>

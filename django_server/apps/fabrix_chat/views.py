@@ -1,21 +1,19 @@
-"""
-FabriX Chat Views
-LLM 모델 기반 채팅 API
-"""
-import time
-import httpx
 import logging
+import time
+
+import httpx
 from django.conf import settings
 from django.db import transaction
 from django.http import JsonResponse
-from django.utils import timezone
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
 from .models import ChatSession, ChatMessage, MemorySnapshot
+from .runtime_config import get_chat_runtime_config
 from .serializers import (
-    ChatSessionSerializer, ChatSessionDetailSerializer, ChatMessageSerializer,
+    ChatSessionSerializer, ChatSessionDetailSerializer, ChatMessageSerializer, ChatMessageBulkSerializer,
     MemorySnapshotSerializer, MemorySnapshotDetailSerializer,
 )
 
@@ -167,6 +165,13 @@ class ModelListView(APIView):
                 )
 
 
+class ChatRuntimeConfigView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(get_chat_runtime_config(request=request), status=status.HTTP_200_OK)
+
+
 class ChatSessionViewSet(viewsets.ModelViewSet):
     """
     FabriX Chat 세션 ViewSet
@@ -200,31 +205,82 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             return ChatSessionDetailSerializer
         return ChatSessionSerializer
 
+    @staticmethod
+    def _normalize_message_payload(raw_message):
+        return {
+            'role': raw_message.get('role', ''),
+            'content': raw_message.get('content', ''),
+            'metadata': raw_message.get('metadata', {}),
+        }
+
+    @staticmethod
+    def _is_empty_assistant_message(payload):
+        return payload.get('role') == 'assistant' and not payload.get('content', '').strip()
+
     @action(detail=True, methods=['post'])
     @transaction.atomic
     def messages(self, request, pk=None):
         """세션에 메시지 추가"""
         safe_log_info(f"[ChatMessage CREATE] Session ID: {pk}, Request data: {request.data}")
         
-        role = request.data.get('role', '')
-        content = request.data.get('content', '')
-        
+        payload = self._normalize_message_payload(request.data)
+
         # assistant 메시지의 경우 빈 내용은 저장하지 않음
-        if role == 'assistant' and not content.strip():
+        if self._is_empty_assistant_message(payload):
             logger.warning(f"[ChatMessage CREATE] Skipping empty assistant message for session {pk}")
             return Response({'id': None, 'role': 'assistant', 'content': '', 'skipped': True}, status=status.HTTP_200_OK)
-        
-        data = request.data.copy()
-        data['content'] = content
-        
+
         session = self.get_object()
-        serializer = ChatMessageSerializer(data=data)
+        serializer = ChatMessageSerializer(data=payload)
         if serializer.is_valid():
             serializer.save(session=session)
-            session.save()  # Update session's updated_at timestamp
+            session.save(update_fields=['updated_at'])
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         logger.warning(f"[ChatMessage CREATE] Validation errors: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='messages/bulk')
+    @transaction.atomic
+    def messages_bulk(self, request, pk=None):
+        """세션에 여러 메시지를 순서대로 저장"""
+        safe_log_info(f"[ChatMessage BULK CREATE] Session ID: {pk}, Request data: {request.data}")
+
+        raw_messages = request.data.get('messages', [])
+        if not isinstance(raw_messages, list):
+            return Response({'error': 'messages must be a list'}, status=status.HTTP_400_BAD_REQUEST)
+
+        session = self.get_object()
+        normalized_messages = []
+
+        for index, item in enumerate(raw_messages):
+            if not isinstance(item, dict):
+                return Response(
+                    {'error': f'messages[{index}] must be an object'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            payload = self._normalize_message_payload(item)
+            if self._is_empty_assistant_message(payload):
+                logger.warning(f"[ChatMessage BULK CREATE] Skipping empty assistant message at index {index} for session {pk}")
+                continue
+            normalized_messages.append(payload)
+
+        serializer = ChatMessageBulkSerializer(data={'messages': normalized_messages})
+        if not serializer.is_valid():
+            logger.warning(f"[ChatMessage BULK CREATE] Validation errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        created_messages = ChatMessage.objects.bulk_create(
+            [ChatMessage(session=session, **message) for message in serializer.validated_data['messages']]
+        )
+
+        if created_messages:
+            session.save(update_fields=['updated_at'])
+
+        return Response(
+            {'items': ChatMessageSerializer(created_messages, many=True).data},
+            status=status.HTTP_201_CREATED,
+        )
 
     # ===== Memory Snapshot Actions =====
 
