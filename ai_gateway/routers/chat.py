@@ -5,7 +5,7 @@ FabriX LLM 모델과의 채팅 엔드포인트
 
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional
 import json
 import httpx
@@ -15,19 +15,31 @@ import time
 
 from ..services.rate_limiter_v2 import rate_limiter
 from ..dependencies import verify_token
+from ..services.mcp import GenericMcpHost, merge_system_prompts
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+mcp_host = GenericMcpHost()
 
 
 # Pydantic Models
+class McpChatContext(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    active_category: Optional[str] = Field(default=None, alias="activeCategory")
+    rag_enabled: bool = Field(default=False, alias="ragEnabled")
+
+
 class ChatMessageRequest(BaseModel):
     """FabriX Chat API 메시지 요청 모델"""
+    model_config = ConfigDict(populate_by_name=True)
+
     modelIds: List[str]                    # 모델 ID 배열 (단일 선택도 배열로 전달)
     contents: List[str]                    # 대화 내용
     isStream: bool = True                  # 스트리밍 여부 (기본값: True)
     systemPrompt: Optional[str] = None     # 시스템 프롬프트 (선택)
     llmConfig: Optional[dict] = None       # LLM 설정 (temperature, max_new_tokens 등)
+    mcp_context: Optional[McpChatContext] = Field(default=None, alias="mcpContext")
     # Note: llmName 생략 시 기본값 "FabriX" 사용
 
 
@@ -113,7 +125,16 @@ async def chat_message_stream(req: ChatMessageRequest, request: Request):
     if not req.contents or not req.contents[-1].strip():
         logger.error("[CHAT] contents is empty or last element is whitespace")
         raise HTTPException(status_code=400, detail="contents required and last element cannot be empty/whitespace")
-    
+
+    system_prompt = req.systemPrompt
+    if req.mcp_context is not None:
+        resolution = await mcp_host.build_chat_resolution(
+            user_text=req.contents[-1],
+            active_category=req.mcp_context.active_category,
+            rag_enabled=req.mcp_context.rag_enabled,
+        )
+        system_prompt = merge_system_prompts(system_prompt, resolution.system_prompt)
+     
     _, fabrix_chat_url = get_fabrix_chat_config()
     
     # Rate Limiter 체크
@@ -176,8 +197,8 @@ async def chat_message_stream(req: ChatMessageRequest, request: Request):
     }
     
     # Optional fields
-    if req.systemPrompt:
-        payload["systemPrompt"] = req.systemPrompt
+    if system_prompt:
+        payload["systemPrompt"] = system_prompt
     
     if req.llmConfig:
         payload["llmConfig"] = req.llmConfig

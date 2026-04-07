@@ -7,8 +7,7 @@ import ChatBubble from './components/ChatBubble';
 import InputBox from './components/InputBox';
 import { modelChatApi } from '../../api/djangoApi';
 import { getFastApiUrl } from '../../api/axiosConfig';
-import { mcpRagApi } from '../../api/fastapiApi';
-import { useCommands, parseAtMentions, stripAtMentions, resolveAtMentions } from '../../hooks/useCommands';
+import { useCommands } from '../../hooks/useCommands';
 
 // 대화 이력 제한: 최근 5턴 (10개 메시지)
 const MAX_HISTORY_TURNS = 5;
@@ -236,80 +235,9 @@ const ChatPage = () => {
      
       abortControllerRef.current = new AbortController();
       let accumulatedAnswer = "";
+      const shouldTrackRagMetadata = ragEnabled;
 
       const token = sessionStorage.getItem('authToken');
-
-      // ===== @<파일명> mention 전처리 =====
-      const mentions = parseAtMentions(text);
-      let atMentionSystemPrompt = null;
-      if (mentions.length > 0) {
-        const cleanQuery = stripAtMentions(text);
-        try {
-          const { resolved, errors } = await resolveAtMentions(mentions, cleanQuery, activeCategory);
-          if (errors.length > 0) {
-            setError(`파일을 찾을 수 없습니다: ${errors.map(e => `@"${e}"`).join(', ')}`);
-            if (resolved.length === 0) {
-              setIsLoading(false);
-              setMessages(prev => prev.slice(0, -1)); // 추가한 userMsg 되돌리기
-              return;
-            }
-          }
-          if (resolved.length === 1 && resolved[0].system_prompt) {
-            atMentionSystemPrompt = resolved[0].system_prompt;
-          } else if (resolved.length > 1) {
-            const allBlocks = resolved
-              .flatMap(({ filename, snippets }) =>
-                snippets.map(s => `📄 **파일: ${filename}**\n\n${s.snippet}`)
-              )
-              .join('\n\n---\n\n');
-            if (allBlocks) {
-              atMentionSystemPrompt =
-                `당신은 사내 문서 기반 질문 답변 어시스턴트입니다.\n` +
-                `아래 참고 문서를 바탕으로 사용자의 질문에 답하세요.\n` +
-                `참고 문서에 없는 내용은 '제공된 문서에서 찾을 수 없습니다'라고 솔직하게 답하세요.\n\n` +
-                `=== 참고 문서 ===\n\n${allBlocks}\n\n==================`;
-            }
-          }
-        } catch (e) {
-          console.warn('@mention 해석 실패 — 일반 채팅으로 진행:', e);
-        }
-      }
-      // =====================================
-
-      // ===== RAG 전처리 (세션 캐시 포함) — @mention 있으면 건너뜀 =====
-      let ragSystemPrompt = null;
-      if (!atMentionSystemPrompt && ragEnabled) {
-        try {
-          const now = Date.now();
-          const cache = ragCacheRef.current;
-          const RAG_CACHE_TTL_MS = 5 * 60 * 1000; // 5분
-          const cacheHit = cache &&
-            cache.query === text &&
-            cache.category === (activeCategory ?? null) &&
-            (now - cache.cachedAt) < RAG_CACHE_TTL_MS;
-
-          if (cacheHit) {
-            ragSystemPrompt = cache.systemPrompt;
-          } else {
-            const ragRes = await mcpRagApi.search({
-              query: text,
-              category: activeCategory ?? undefined,
-            });
-            if (ragRes.data?.success && ragRes.data?.system_prompt) {
-              ragSystemPrompt = ragRes.data.system_prompt;
-              ragCacheRef.current = {
-                query: text,
-                category: activeCategory ?? null,
-                systemPrompt: ragSystemPrompt,
-                cachedAt: now,
-              };
-            }
-          }
-        } catch (e) {
-          console.warn('RAG 검색 실패 — 일반 채팅으로 진행:', e);
-        }
-      }
-      // ========================================
 
       // 대화 이력 기반 contents 배열 구성
       const contentsArray = buildContentsArray(
@@ -327,9 +255,10 @@ const ChatPage = () => {
           modelIds: [selectedModelId],
           contents: contentsArray,
           isStream: true,
-          ...(atMentionSystemPrompt
-            ? { systemPrompt: atMentionSystemPrompt }
-            : ragSystemPrompt ? { systemPrompt: ragSystemPrompt } : {}),
+          mcpContext: {
+            activeCategory,
+            ragEnabled,
+          },
         }),
         signal: abortControllerRef.current.signal,
         async onopen(response) {
@@ -354,7 +283,14 @@ const ChatPage = () => {
           if (response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
             return; // success
           } else {
-            throw new Error(`Invalid response: ${response.status}`);
+            let errorDetail = `요청 실패 (${response.status})`;
+            try {
+              const errorBody = await response.json();
+              errorDetail = errorBody.detail?.message || errorBody.detail || errorBody.error || errorDetail;
+            } catch (e) {
+              // ignore parse error
+            }
+            throw new Error(`HTTP_ERROR:${response.status}:${errorDetail}`);
           }
         },
         onmessage(ev) {
@@ -433,6 +369,13 @@ const ChatPage = () => {
         },
         async onclose() {
           try {
+            if (shouldTrackRagMetadata) {
+              ragCacheRef.current = {
+                query: text,
+                category: activeCategory ?? null,
+                cachedAt: Date.now(),
+              };
+            }
             await persistAssistantMessageOnce(sessionId, accumulatedAnswer);
           } catch (saveErr) {
             setError("응답 저장 중 오류가 발생했습니다. 다시 시도해주세요.");
@@ -441,19 +384,31 @@ const ChatPage = () => {
           setIsLoading(false);
         }
       });
-    } catch (err) {
-      if (err.message?.startsWith('RATE_LIMIT:')) {
-        const parts = err.message.split(':');
-        const retryAfter = parseInt(parts[1], 10) || 30;
-        const message = parts.slice(2).join(':') || "요청이 너무 많습니다.";
-        setError(`${message} (약 ${retryAfter}초 후 다시 시도해주세요)`);
-        // 429 전용: Retry-After 시간 후 배너 자동 닫기
-        if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-        errorTimerRef.current = setTimeout(() => setError(null), retryAfter * 1000);
-      } else {
-        setError("메시지 전송 중 오류가 발생했습니다.");
-      }
-      setIsLoading(false);
+      } catch (err) {
+        if (err.message?.startsWith('RATE_LIMIT:')) {
+          const parts = err.message.split(':');
+          const retryAfter = parseInt(parts[1], 10) || 30;
+          const message = parts.slice(2).join(':') || "요청이 너무 많습니다.";
+          setError(`${message} (약 ${retryAfter}초 후 다시 시도해주세요)`);
+          // 429 전용: Retry-After 시간 후 배너 자동 닫기
+          if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+          errorTimerRef.current = setTimeout(() => setError(null), retryAfter * 1000);
+        } else if (err.message?.startsWith('HTTP_ERROR:')) {
+          const parts = err.message.split(':');
+          const message = parts.slice(2).join(':') || "메시지 전송 중 오류가 발생했습니다.";
+          setError(message);
+        } else {
+          setError("메시지 전송 중 오류가 발생했습니다.");
+        }
+        setMessages(prev => {
+          if (prev.length === 0) return prev;
+          const last = prev[prev.length - 1];
+          if (last.role === 'assistant' && !last.content) {
+            return prev.slice(0, -1);
+          }
+          return prev;
+        });
+        setIsLoading(false);
     }
   };
 
