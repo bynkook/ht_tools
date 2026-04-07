@@ -148,7 +148,6 @@ Use skills deliberately to improve quality and speed, but only after checking of
   - `jlowin/fastmcp@fastmcp-client-cli`
   - `coleam00/second-brain-skills@mcp-client`
   - `frankxai/claude-skills-library@mcp-architecture-expert`
-  - `supercent-io/skills-template@agentic-workflow`
   - `github/awesome-copilot@documentation-writer`
 
 Recommended workflow:

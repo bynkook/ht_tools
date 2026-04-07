@@ -1,5 +1,11 @@
 # Phase 1 — FabriX Generic MCP Host 전환 계획 (정의 확정본)
 
+**적용 범위 명시**
+
+- 이 Phase 1 계획은 **FabriX Chat 앱** 수정 계획이다.
+- **FabriX Agent Chat 앱은 범위 밖** 이다.
+- FabriX Agent Chat은 이미 FabriX 서버에 구현되어 있는 문서검색 MCP를 호출하는 채팅으로 간주하며, 이번 Phase 1에서 **별도의 MCP 기능 구현 또는 추가 계획이 없다.**
+
 ## 1. Phase 1의 한 줄 정의
 
 Phase 1은 **FabriX Chat을 표준적인 범용 generic MCP host 구조로 깔끔하게 전환**하는 단계다.
@@ -415,11 +421,7 @@ FabriX Phase 1에서 차용할 핵심은:
    - host/client/server 경계와 전체 아키텍처 리뷰에 유용한 후보
    - 설치: `npx skills add frankxai/claude-skills-library@mcp-architecture-expert`
 
-4. **`supercent-io/skills-template@agentic-workflow`**
-   - 구현 단계를 agent-friendly 한 workflow 로 쪼개고 병렬 탐색/검증을 조직할 때 유용
-   - 설치: `npx skills add supercent-io/skills-template@agentic-workflow`
-
-5. **`github/awesome-copilot@documentation-writer`**
+4. **`github/awesome-copilot@documentation-writer`**
    - 계획 문서, 계약 문서, 운영 문서 업데이트 품질을 일정하게 유지하는 후보
    - 설치: `npx skills add github/awesome-copilot@documentation-writer`
 
