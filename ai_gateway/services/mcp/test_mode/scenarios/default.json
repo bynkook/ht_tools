@@ -34,9 +34,7 @@
           "provider": "internal_docs",
           "action": "search_docs_rag",
           "params": {
-            "query": "안전밸브 점검 기준",
-            "max_docs": 5,
-            "snippet_chars": 1500
+            "query": "안전밸브 점검 기준"
           },
           "use_active_category": true
         }

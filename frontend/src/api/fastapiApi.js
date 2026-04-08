@@ -138,7 +138,7 @@ export const mcpCommandApi = {
 
 export const mcpRagApi = {
   /**
-   * @param {{ query: string, category?: string, max_docs?: number, snippet_chars?: number, provider_id?: string }} params
+   * @param {{ query: string, category?: string, max_docs?: number|null, snippet_chars?: number|null, provider_id?: string }} params
    * @returns {Promise<AxiosResponse<{ success: boolean, files: Array, query: string, category: string|null, system_prompt: string|null }>>}
    */
   search: (params) => fastApiClient.post('/mcp-command/rag-search', params),

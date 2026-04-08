@@ -78,6 +78,7 @@ class FakePlanner:
         *,
         rag_enabled: bool = False,
         provider_id: str | None = None,
+        provider_categories: dict[str, tuple[str, ...]] | None = None,
     ):
         self.calls.append(
             {
@@ -85,6 +86,7 @@ class FakePlanner:
                 "active_category": active_category,
                 "rag_enabled": rag_enabled,
                 "provider_id": provider_id,
+                "provider_categories": provider_categories,
             }
         )
         return self._decision
@@ -95,6 +97,7 @@ class FakeHost:
         self.default_provider_id = "internal_docs"
         self.discover_calls = []
         self.execute_calls = []
+        self.validated_decisions = []
         display_names = {
             "internal_docs": "Internal Docs",
             "legal_cases": "Legal Cases",
@@ -109,6 +112,12 @@ class FakeHost:
     async def discover_provider_capabilities(self, *, provider_id: str | None = None):
         self.discover_calls.append(provider_id)
         return {"tools": ["search_docs_rag"]}
+
+    async def validate_planner_decision(self, decision):
+        self.validated_decisions.append(decision)
+
+    async def build_planner_provider_categories(self):
+        return {"internal_docs": ("회의록",)}
 
     async def execute_tool_action(self, *, action: str, arguments: dict | None = None, provider_id: str | None = None):
         self.execute_calls.append(
@@ -146,6 +155,8 @@ def test_test_runtime_passes_selected_provider_to_discovery_and_tool_calls():
 
     assert planner.calls[0]["active_category"] == "test문서"
     assert planner.calls[0]["provider_id"] == "internal_docs"
+    assert planner.calls[0]["provider_categories"] == {"internal_docs": ("회의록",)}
+    assert host.validated_decisions[0].route == "catalog_match"
     assert host.discover_calls == ["internal_docs"]
     assert host.execute_calls == [
         {
@@ -190,6 +201,7 @@ def test_test_runtime_discovers_each_provider_once_for_multi_provider_plan():
     )
 
     assert host.discover_calls == ["internal_docs", "legal_cases"]
+    assert host.validated_decisions[0].route == "scenario"
     assert host.execute_calls == [
         {
             "action": "search_docs_rag",
@@ -232,6 +244,7 @@ def test_test_runtime_uses_selected_provider_when_no_tool_is_planned():
 
     assert planner.calls[0]["rag_enabled"] is True
     assert planner.calls[0]["provider_id"] == "legal_cases"
+    assert host.validated_decisions[0].route == "chat_only"
     assert host.discover_calls == ["legal_cases"]
     assert host.execute_calls == []
     assistant_final = next(payload for payload in payloads if payload.get("event_type") == "assistant_final")

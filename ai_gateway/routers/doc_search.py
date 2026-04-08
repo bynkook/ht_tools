@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from ..dependencies import verify_token
 from ..services.mcp import GenericMcpHost
+from ..services.mcp.doc_search_policy import DOC_SEARCH_FILE_FALLBACK_MAX_FILES
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -32,8 +33,8 @@ class RagSearchRequest(BaseModel):
     query: str
     category: str | None = None
     filename_filter: str | None = None  # @<파일명> 문법용: 특정 파일로 검색 제한
-    max_docs: int = 10
-    snippet_chars: int = 1500
+    max_docs: int | None = None
+    snippet_chars: int | None = None
     provider_id: str | None = None
 
 
@@ -118,7 +119,9 @@ async def rag_search(body: RagSearchRequest, request: Request):
             body.query,
             body.provider_id or "default",
             body.category or "all",
-            len(data.get("snippets") or []) if data.get("snippets") else len((data.get("files") or [])[:4]),
+            len(data.get("snippets") or [])
+            if data.get("snippets")
+            else len((data.get("files") or [])[:DOC_SEARCH_FILE_FALLBACK_MAX_FILES]),
             prompt_chars,
             prompt_tokens_est,
         )

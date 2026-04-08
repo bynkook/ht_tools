@@ -2,10 +2,12 @@
 Shared planner core for normalization and provider/tool decision building.
 """
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 from ..config import DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF, DOC_SEARCH_PROVIDER_ID
-from .catalog import CompiledActivationCatalog, require_activation_catalog
+from ..doc_search_policy import DEFAULT_DOC_SEARCH_SETTINGS, McpDocSearchSettings, normalize_doc_search_rag_params
+from .catalog import CombinedActivationCatalog, CompiledActivationCatalog, build_combined_activation_catalog, require_activation_catalog
 from .models import PlannerDecision, PlannerDecisionProvenance, PlannerToolPlan
 from .normalization import parse_at_mentions, split_mention_target, strip_at_mentions
 
@@ -19,11 +21,17 @@ class SharedPlannerCore:
         *,
         default_provider_id: str = DOC_SEARCH_PROVIDER_ID,
         activation_rule_ref: str = DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF,
-        activation_catalog: CompiledActivationCatalog | None = None,
+        activation_rule_refs: Iterable[str] | None = None,
+        activation_catalog: CompiledActivationCatalog | CombinedActivationCatalog | None = None,
+        doc_search_settings: McpDocSearchSettings | None = None,
     ):
         self._default_provider_id = default_provider_id
         self._activation_rule_ref = activation_rule_ref
-        self._activation_catalog = activation_catalog or require_activation_catalog(activation_rule_ref)
+        self._doc_search_settings = doc_search_settings or DEFAULT_DOC_SEARCH_SETTINGS
+        self._activation_catalog = activation_catalog or self._resolve_activation_catalog(
+            activation_rule_ref=activation_rule_ref,
+            activation_rule_refs=activation_rule_refs,
+        )
 
     def plan(
         self,
@@ -33,6 +41,8 @@ class SharedPlannerCore:
         rag_enabled: bool = False,
         scenario_loader: "ScenarioLoader | None" = None,
         enable_scenarios: bool = False,
+        provider_hint: str | None = None,
+        provider_categories: dict[str, tuple[str, ...]] | None = None,
     ) -> PlannerDecision:
         stripped_text = user_text.strip()
         if not stripped_text or stripped_text.startswith("/mcp"):
@@ -40,28 +50,34 @@ class SharedPlannerCore:
 
         mentions = parse_at_mentions(user_text)
         if mentions:
-            return self._build_manual_mentions_decision(user_text, mentions, active_category)
+            return self._build_manual_mentions_decision(user_text, mentions, active_category, provider_hint)
 
         if enable_scenarios and scenario_loader is not None:
             scenario = scenario_loader.match(user_text)
             if scenario is not None:
                 return self._build_scenario_decision(stripped_text, active_category, scenario)
 
-        matches = self._activation_catalog.match(user_text, active_category=active_category)
+        matches = self._activation_catalog.match(
+            user_text,
+            active_category=active_category,
+            provider_hint=provider_hint,
+            provider_categories=provider_categories,
+        )
         if matches:
             return self._build_catalog_decision(stripped_text, active_category, matches)
 
         if rag_enabled:
+            selected_provider = provider_hint or self._default_provider_id
             return PlannerDecision(
                 route="rag_search",
                 clean_query=stripped_text,
                 plans=(
                     PlannerToolPlan(
-                        provider=self._default_provider_id,
+                        provider=selected_provider,
                         action="search_docs_rag",
-                        params=self._build_rag_params(stripped_text, active_category, max_docs=10),
+                        params=self._build_rag_params(stripped_text, active_category),
                         provenance=self._build_provenance(
-                            provider=self._default_provider_id,
+                            provider=selected_provider,
                             action="search_docs_rag",
                             normalized_query=stripped_text,
                             decision_source="rag_enabled",
@@ -80,27 +96,26 @@ class SharedPlannerCore:
         user_text: str,
         mentions: list[str],
         active_category: str | None,
+        provider_hint: str | None,
     ) -> PlannerDecision:
         clean_query = strip_at_mentions(user_text)
         plans: list[PlannerToolPlan] = []
-        candidate_summary = (f"{self._default_provider_id}.search_docs_rag",)
+        selected_provider = provider_hint or self._default_provider_id
+        candidate_summary = (f"{selected_provider}.search_docs_rag",)
         for raw_target in mentions:
             category, filename_filter = split_mention_target(raw_target, active_category)
-            params = {
-                "query": clean_query or raw_target,
-                "filename_filter": filename_filter,
-                "max_docs": 10,
-                "snippet_chars": 1500,
-            }
-            if category:
-                params["category"] = category
+            params = normalize_doc_search_rag_params(
+                query=clean_query or raw_target,
+                category=category,
+                filename_filter=filename_filter,
+            )
             plans.append(
                 PlannerToolPlan(
-                    provider=self._default_provider_id,
+                    provider=selected_provider,
                     action="search_docs_rag",
                     params=params,
                     provenance=self._build_provenance(
-                        provider=self._default_provider_id,
+                        provider=selected_provider,
                         action="search_docs_rag",
                         normalized_query=clean_query or raw_target,
                         decision_source="manual_mentions",
@@ -119,6 +134,21 @@ class SharedPlannerCore:
             plans=tuple(plans),
         )
 
+    def _resolve_activation_catalog(
+        self,
+        *,
+        activation_rule_ref: str,
+        activation_rule_refs: Iterable[str] | None,
+    ) -> CompiledActivationCatalog | CombinedActivationCatalog:
+        if activation_rule_refs is None:
+            return require_activation_catalog(activation_rule_ref)
+        normalized_rule_refs = tuple(rule_ref for rule_ref in activation_rule_refs if rule_ref)
+        if not normalized_rule_refs:
+            return require_activation_catalog(activation_rule_ref)
+        if len(normalized_rule_refs) == 1:
+            return require_activation_catalog(normalized_rule_refs[0])
+        return build_combined_activation_catalog(normalized_rule_refs)
+
     def _build_scenario_decision(self, stripped_text: str, active_category: str | None, scenario: Any) -> PlannerDecision:
         scenario_plans = scenario.to_tool_plans(active_category=active_category)
         candidate_summary = tuple(f"{plan.provider}.{plan.action}" for plan in scenario_plans)
@@ -126,7 +156,15 @@ class SharedPlannerCore:
             PlannerToolPlan(
                 provider=plan.provider,
                 action=plan.action,
-                params=plan.params,
+                params=normalize_doc_search_rag_params(
+                    plan.params,
+                    query=str(plan.params.get("query", stripped_text)),
+                    category=plan.params.get("category"),
+                    filename_filter=plan.params.get("filename_filter"),
+                    settings=self._doc_search_settings,
+                )
+                if plan.action == "search_docs_rag"
+                else plan.params,
                 provenance=self._build_provenance(
                     provider=plan.provider,
                     action=plan.action,
@@ -145,49 +183,64 @@ class SharedPlannerCore:
         return PlannerDecision(route="scenario", clean_query=stripped_text, plans=plans)
 
     def _build_catalog_decision(self, stripped_text: str, active_category: str | None, matches: tuple[Any, ...]) -> PlannerDecision:
-        selected = matches[0]
         candidate_summary = tuple(f"{match.provider_id}.{match.action}" for match in matches)
-        params = dict(selected.params)
-        if selected.action == "search_docs_rag":
-            params = self._build_rag_params(
-                stripped_text,
-                active_category if selected.use_active_category else None,
-                **params,
+        plans: list[PlannerToolPlan] = []
+        for selected in self._select_catalog_matches(matches):
+            params = dict(selected.params)
+            resolved_category = active_category if selected.use_active_category else None
+            if resolved_category is None and len(selected.matched_categories) == 1:
+                resolved_category = selected.matched_categories[0]
+            if selected.action == "search_docs_rag":
+                params = self._build_rag_params(
+                    stripped_text,
+                    resolved_category,
+                    **params,
+                )
+            plans.append(
+                PlannerToolPlan(
+                    provider=selected.provider_id,
+                    action=selected.action,
+                    params=params,
+                    provenance=self._build_provenance(
+                        provider=selected.provider_id,
+                        action=selected.action,
+                        normalized_query=stripped_text,
+                        decision_source="keyword_rule",
+                        matched_rule=selected.rule_id,
+                        active_category=resolved_category,
+                        matched_keywords=selected.matched_keywords,
+                        provider_candidates=candidate_summary,
+                        reason=selected.description,
+                    ),
+                )
             )
-        plan = PlannerToolPlan(
-            provider=selected.provider_id,
-            action=selected.action,
-            params=params,
-            provenance=self._build_provenance(
-                provider=selected.provider_id,
-                action=selected.action,
-                normalized_query=stripped_text,
-                decision_source="keyword_rule",
-                matched_rule=selected.rule_id,
-                active_category=active_category,
-                matched_keywords=selected.matched_keywords,
-                provider_candidates=candidate_summary,
-                reason=selected.description,
-            ),
-        )
-        return PlannerDecision(route="catalog_match", clean_query=stripped_text, plans=(plan,))
+        return PlannerDecision(route="catalog_match", clean_query=stripped_text, plans=tuple(plans))
+
+    def _select_catalog_matches(self, matches: tuple[Any, ...]) -> tuple[Any, ...]:
+        selected_matches: list[Any] = []
+        seen_providers: set[str] = set()
+        for match in matches:
+            if match.provider_id in seen_providers:
+                continue
+            selected_matches.append(match)
+            seen_providers.add(match.provider_id)
+        return tuple(selected_matches)
 
     def _build_rag_params(
         self,
         query: str,
         active_category: str | None,
         *,
-        max_docs: int = 5,
-        snippet_chars: int = 1500,
+        filename_filter: str | None = None,
+        **params: object,
     ) -> dict[str, object]:
-        params: dict[str, object] = {
-            "query": query,
-            "max_docs": max_docs,
-            "snippet_chars": snippet_chars,
-        }
-        if active_category:
-            params["category"] = active_category
-        return params
+        return normalize_doc_search_rag_params(
+            params,
+            query=query,
+            category=active_category,
+            filename_filter=filename_filter,
+            settings=self._doc_search_settings,
+        )
 
     def _build_provenance(
         self,

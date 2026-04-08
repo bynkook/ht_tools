@@ -9,6 +9,8 @@ import os
 
 import toml
 
+from .doc_search_policy import DEFAULT_DOC_SEARCH_SETTINGS, McpDocSearchSettings
+
 DOC_SEARCH_PROVIDER_ID = "internal_docs"
 DOC_SEARCH_PROVIDER_NAME = "fastmcp-doc-search"
 DOC_SEARCH_PROVIDER_TRANSPORT = "streamable_http"
@@ -48,6 +50,7 @@ class McpHostSettings:
     test_mode: bool
     test_mode_verbose_json: bool
     test_mode_scenario_path: Path
+    test_mode_enable_scenario_override: bool
     test_mode_discovery_on_startup: bool
     test_mode_store_system_logs: bool
     test_mode_max_payload_chars: int
@@ -55,6 +58,7 @@ class McpHostSettings:
     test_mode_raw_bytes_limit: int
     test_mode_redact_headers: bool
     test_mode_allow_remote_mcp: bool
+    doc_search: McpDocSearchSettings
 
 
 @dataclass(frozen=True)
@@ -71,10 +75,6 @@ class McpEventPolicy:
 class McpSettings:
     host: McpHostSettings
     providers: dict[str, McpServerConfig]
-
-    @property
-    def doc_server(self) -> McpServerConfig:
-        return self.require_provider(DOC_SEARCH_PROVIDER_ID)
 
     def get_provider(self, provider_id: str) -> McpServerConfig | None:
         provider = self.providers.get(provider_id)
@@ -137,6 +137,10 @@ def _host_section(secrets: dict) -> dict:
     if host_section:
         return host_section
     return _coerce_section(secrets.get("mcp_host"))
+
+
+def _doc_search_section(host_config: dict) -> dict:
+    return _coerce_section(host_config.get("doc_search"))
 
 
 def _provider_sections(secrets: dict) -> dict:
@@ -246,6 +250,7 @@ def load_doc_search_server_config(secrets: dict | None = None) -> McpServerConfi
 def load_mcp_host_settings(secrets: dict | None = None) -> McpHostSettings:
     current_secrets = load_secrets() if secrets is None else secrets
     host_config = _host_section(current_secrets)
+    doc_search_config = _doc_search_section(host_config)
 
     scenario_path = os.getenv(
         "MCP_TEST_MODE_SCENARIO_PATH",
@@ -258,6 +263,10 @@ def load_mcp_host_settings(secrets: dict | None = None) -> McpHostSettings:
             _parse_bool(host_config.get("test_mode_verbose_json"), True),
         ),
         test_mode_scenario_path=_resolve_scenario_path(scenario_path),
+        test_mode_enable_scenario_override=_parse_bool(
+            os.getenv("MCP_TEST_MODE_ENABLE_SCENARIO_OVERRIDE"),
+            _parse_bool(host_config.get("test_mode_enable_scenario_override"), False),
+        ),
         test_mode_discovery_on_startup=_parse_bool(
             os.getenv("MCP_TEST_MODE_DISCOVERY_ON_STARTUP"),
             _parse_bool(host_config.get("test_mode_discovery_on_startup"), True),
@@ -286,6 +295,54 @@ def load_mcp_host_settings(secrets: dict | None = None) -> McpHostSettings:
             os.getenv("MCP_TEST_MODE_ALLOW_REMOTE_MCP"),
             _parse_bool(host_config.get("test_mode_allow_remote_mcp"), False),
         ),
+        doc_search=McpDocSearchSettings(
+            max_docs=_parse_int(doc_search_config.get("max_docs"), DEFAULT_DOC_SEARCH_SETTINGS.max_docs),
+            snippet_chars=_parse_int(doc_search_config.get("snippet_chars"), DEFAULT_DOC_SEARCH_SETTINGS.snippet_chars),
+            prompt_max_per_doc=_parse_int(
+                doc_search_config.get("prompt_max_per_doc"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_max_per_doc,
+            ),
+            prompt_compact_max_total=_parse_int(
+                doc_search_config.get("prompt_compact_max_total"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_compact_max_total,
+            ),
+            prompt_compact_max_total_chars=_parse_int(
+                doc_search_config.get("prompt_compact_max_total_chars"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_compact_max_total_chars,
+            ),
+            prompt_default_max_total=_parse_int(
+                doc_search_config.get("prompt_default_max_total"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_default_max_total,
+            ),
+            prompt_default_max_total_chars=_parse_int(
+                doc_search_config.get("prompt_default_max_total_chars"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_default_max_total_chars,
+            ),
+            prompt_expand_max_total=_parse_int(
+                doc_search_config.get("prompt_expand_max_total"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_expand_max_total,
+            ),
+            prompt_expand_max_total_chars=_parse_int(
+                doc_search_config.get("prompt_expand_max_total_chars"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_expand_max_total_chars,
+            ),
+            prompt_file_filter_max_per_doc=_parse_int(
+                doc_search_config.get("prompt_file_filter_max_per_doc"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_file_filter_max_per_doc,
+            ),
+            prompt_file_filter_max_total=_parse_int(
+                doc_search_config.get("prompt_file_filter_max_total"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_file_filter_max_total,
+            ),
+            prompt_file_filter_max_total_chars=_parse_int(
+                doc_search_config.get("prompt_file_filter_max_total_chars"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_file_filter_max_total_chars,
+            ),
+            prompt_file_fallback_max_files=_parse_int(
+                doc_search_config.get("prompt_file_fallback_max_files"),
+                DEFAULT_DOC_SEARCH_SETTINGS.prompt_file_fallback_max_files,
+            ),
+        ),
     )
 
 
@@ -297,15 +354,15 @@ def load_mcp_settings(secrets: dict | None = None) -> McpSettings:
     )
 
 
-def build_mcp_event_policy(settings: McpSettings | None = None) -> McpEventPolicy:
-    current_settings = settings or load_mcp_settings()
+def build_mcp_event_policy(host_settings: McpHostSettings | None = None) -> McpEventPolicy:
+    resolved_host_settings = host_settings or load_mcp_settings().host
     return McpEventPolicy(
-        verbose_json=current_settings.host.test_mode_verbose_json,
-        redact_headers=current_settings.host.test_mode_redact_headers,
-        max_payload_chars=current_settings.host.test_mode_max_payload_chars,
-        persist_system_logs=current_settings.host.test_mode_store_system_logs,
-        visible_band_limit=current_settings.host.test_mode_visible_band_limit,
-        raw_bytes_limit=current_settings.host.test_mode_raw_bytes_limit,
+        verbose_json=resolved_host_settings.test_mode_verbose_json,
+        redact_headers=resolved_host_settings.test_mode_redact_headers,
+        max_payload_chars=resolved_host_settings.test_mode_max_payload_chars,
+        persist_system_logs=resolved_host_settings.test_mode_store_system_logs,
+        visible_band_limit=resolved_host_settings.test_mode_visible_band_limit,
+        raw_bytes_limit=resolved_host_settings.test_mode_raw_bytes_limit,
     )
 
 

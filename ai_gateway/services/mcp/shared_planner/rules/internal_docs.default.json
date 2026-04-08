@@ -25,12 +25,12 @@
       "id": "doc_search_target + search_action",
       "intent_label": "doc_search",
       "action": "search_docs_rag",
-      "description": "Document-target keywords and search-intent keywords matched the document search rule.",
+      "description": "Document/category/folder target keywords and search-or-summary intent keywords matched the document search rule.",
       "keyword_groups": {
         "doc_target": [
           "문서",
-          "계약서",
-          "표준계약서",
+          "폴더",
+          "디렉터리",
           "자료",
           "파일",
           "조항",
@@ -46,6 +46,13 @@
           "확인",
           "알려",
           "보여",
+          "요약",
+          "정리",
+          "주요",
+          "핵심",
+          "최근",
+          "최신",
+          "요점",
           "look up",
           "search",
           "find"
@@ -55,8 +62,7 @@
           "내용",
           "조항",
           "항목",
-          "본문",
-          "위약금"
+          "본문"
         ]
       },
       "match": {
@@ -64,17 +70,15 @@
           "search_action"
         ],
         "any_of_groups": [
-          "doc_target"
+          "doc_target",
+          "context_hint"
         ],
         "active_category_any_of_groups": [
           "context_hint"
         ]
       },
-      "params": {
-        "max_docs": 5,
-        "snippet_chars": 1500
-      },
-      "use_active_category": true
+      "use_active_category": true,
+      "match_provider_categories": true
     }
   ]
 }

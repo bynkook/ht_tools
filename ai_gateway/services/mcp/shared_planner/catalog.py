@@ -25,16 +25,28 @@ class CompiledActivationCatalog:
     def __init__(self, catalog: ActivationRuleCatalog):
         self.catalog = catalog
 
-    def match(self, user_text: str, active_category: str | None = None) -> tuple[ActivationRuleMatchResult, ...]:
+    def match(
+        self,
+        user_text: str,
+        active_category: str | None = None,
+        provider_hint: str | None = None,
+        provider_categories: dict[str, tuple[str, ...]] | None = None,
+    ) -> tuple[ActivationRuleMatchResult, ...]:
         lowered_text = user_text.strip().lower()
         if not lowered_text:
             return ()
 
         matches: list[ActivationRuleMatchResult] = []
         for rule in self.catalog.rules:
-            matched_keywords = _match_rule(rule, lowered_text, active_category)
-            if matched_keywords is None:
+            match_result = _match_rule(
+                rule,
+                lowered_text,
+                active_category,
+                provider_categories=provider_categories,
+            )
+            if match_result is None:
                 continue
+            matched_keywords, matched_categories = match_result
             matches.append(
                 ActivationRuleMatchResult(
                     rule_ref=self.catalog.rule_ref,
@@ -43,11 +55,51 @@ class CompiledActivationCatalog:
                     action=rule.action,
                     intent_label=rule.intent_label,
                     description=rule.description,
+                    priority=rule.priority,
                     matched_keywords=matched_keywords,
+                    matched_categories=matched_categories,
                     params=dict(rule.params),
                     use_active_category=rule.use_active_category,
                 )
             )
+        return tuple(matches)
+
+
+class CombinedActivationCatalog:
+    def __init__(self, catalogs: tuple[CompiledActivationCatalog, ...]):
+        if not catalogs:
+            raise ActivationCatalogError("Combined activation catalog requires at least one catalog")
+        self.catalogs = catalogs
+
+    def match(
+        self,
+        user_text: str,
+        active_category: str | None = None,
+        provider_hint: str | None = None,
+        provider_categories: dict[str, tuple[str, ...]] | None = None,
+    ) -> tuple[ActivationRuleMatchResult, ...]:
+        matches: list[ActivationRuleMatchResult] = []
+        for catalog in self.catalogs:
+            matches.extend(
+                catalog.match(
+                    user_text,
+                    active_category=active_category,
+                    provider_hint=provider_hint,
+                    provider_categories=provider_categories,
+                )
+            )
+        if not matches:
+            return ()
+        matches.sort(
+            key=lambda match: (
+                0 if provider_hint and match.provider_id == provider_hint else 1,
+                match.priority,
+                -len(match.matched_keywords),
+                match.provider_id,
+                match.rule_ref,
+                match.rule_id,
+            )
+        )
         return tuple(matches)
 
 
@@ -129,10 +181,12 @@ def _build_rule(provider_id: str, raw_rule: object, *, index: int) -> Activation
         action=action,
         intent_label=intent_label,
         description=str(raw_rule.get("description", "")).strip(),
+        priority=_parse_priority(raw_rule.get("priority"), rule_id=rule_id),
         keyword_groups=_normalize_keyword_groups(raw_rule.get("keyword_groups")),
         match=_normalize_match(raw_rule.get("match")),
         params=dict(raw_rule.get("params", {})) if isinstance(raw_rule.get("params"), dict) else {},
         use_active_category=bool(raw_rule.get("use_active_category", False)),
+        match_provider_categories=bool(raw_rule.get("match_provider_categories", False)),
     )
     _validate_group_refs(rule)
     return rule
@@ -207,11 +261,32 @@ def require_activation_catalog(
     return catalogs[rule_ref]
 
 
+def build_combined_activation_catalog(
+    rule_refs: Iterable[str],
+    *,
+    rules_dir: Path | None = None,
+    provider_ids: Iterable[str] | None = None,
+) -> CombinedActivationCatalog:
+    catalogs = load_activation_catalogs(rules_dir=rules_dir, provider_ids=provider_ids)
+    selected: list[CompiledActivationCatalog] = []
+    seen_rule_refs: set[str] = set()
+    for rule_ref in rule_refs:
+        if rule_ref in seen_rule_refs:
+            continue
+        seen_rule_refs.add(rule_ref)
+        if rule_ref not in catalogs:
+            raise ActivationCatalogError(f"Activation catalog is not registered: {rule_ref}")
+        selected.append(catalogs[rule_ref])
+    return CombinedActivationCatalog(tuple(selected))
+
+
 def _match_rule(
     rule: ActivationRuleDefinition,
     lowered_text: str,
     active_category: str | None,
-) -> tuple[str, ...] | None:
+    *,
+    provider_categories: dict[str, tuple[str, ...]] | None = None,
+) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
     if rule.match.starts_with_any and not any(lowered_text.startswith(prefix) for prefix in rule.match.starts_with_any):
         return None
 
@@ -233,9 +308,17 @@ def _match_rule(
         for group_name in rule.match.active_category_any_of_groups
         if active_category and matches_by_group[group_name]
     )
+    matched_provider_categories = (
+        _match_provider_categories(
+            provider_categories.get(rule.provider_id, ()) if provider_categories else (),
+            lowered_text,
+        )
+        if rule.match_provider_categories
+        else ()
+    )
 
-    if (rule.match.any_of_groups or rule.match.active_category_any_of_groups) and not (
-        positive_any_groups or positive_active_groups
+    if (rule.match.any_of_groups or rule.match.active_category_any_of_groups or rule.match_provider_categories) and not (
+        positive_any_groups or positive_active_groups or matched_provider_categories
     ):
         return None
 
@@ -244,13 +327,37 @@ def _match_rule(
         for keyword in matches_by_group.get(group_name, ()):
             if keyword not in matched_keywords:
                 matched_keywords.append(keyword)
-    return tuple(matched_keywords)
+    if rule.match_provider_categories:
+        for category_name in matched_provider_categories:
+            if category_name not in matched_keywords:
+                matched_keywords.append(category_name)
+    return tuple(matched_keywords), matched_provider_categories
+
+
+def _match_provider_categories(categories: tuple[str, ...], lowered_text: str) -> tuple[str, ...]:
+    matched: list[str] = []
+    for category_name in categories:
+        normalized_name = category_name.casefold()
+        if normalized_name and normalized_name in lowered_text and category_name not in matched:
+            matched.append(category_name)
+    return tuple(matched)
+
+
+def _parse_priority(value: object, *, rule_id: str) -> int:
+    if value is None:
+        return 100
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ActivationCatalogError(f"Activation catalog rule '{rule_id}' has invalid priority") from exc
 
 
 __all__ = [
     "ActivationCatalogError",
+    "CombinedActivationCatalog",
     "CompiledActivationCatalog",
     "RULES_DIR",
+    "build_combined_activation_catalog",
     "load_activation_catalogs",
     "require_activation_catalog",
 ]

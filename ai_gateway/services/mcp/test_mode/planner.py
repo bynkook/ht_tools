@@ -2,9 +2,7 @@
 Deterministic tool planner for MCP Test Mode.
 """
 
-from collections.abc import Callable
-
-from ..config import DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF, DOC_SEARCH_PROVIDER_ID, McpServerConfig
+from ..config import DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF, DOC_SEARCH_PROVIDER_ID, McpHostSettings, McpServerConfig
 from ..shared_planner.core import SharedPlannerCore
 from ..shared_planner.models import PlannerDecision, PlannerDecisionProvenance, PlannerToolPlan
 from .scenario_loader import ScenarioLoader
@@ -19,30 +17,27 @@ class DeterministicToolPlanner:
         self,
         scenario_loader: ScenarioLoader,
         planner_core: SharedPlannerCore | None = None,
-        provider_config_resolver: Callable[[str], McpServerConfig] | None = None,
+        provider_configs: dict[str, McpServerConfig] | None = None,
         default_provider_id: str = DOC_SEARCH_PROVIDER_ID,
+        enable_scenario_overrides: bool = False,
+        host_settings: McpHostSettings | None = None,
     ):
         self._scenario_loader = scenario_loader
-        self._provider_config_resolver = provider_config_resolver
         self._default_provider_id = default_provider_id
-        self._planner_cache: dict[str, SharedPlannerCore] = {}
-        self._planner_core = planner_core or SharedPlannerCore(default_provider_id=default_provider_id)
-        self._planner_cache[default_provider_id] = self._planner_core
-
-    def _planner_for_provider(self, provider_id: str | None) -> SharedPlannerCore:
-        resolved_provider_id = provider_id or self._default_provider_id
-        cached = self._planner_cache.get(resolved_provider_id)
-        if cached is not None:
-            return cached
-        if self._provider_config_resolver is None:
-            return self._planner_core
-        provider_config = self._provider_config_resolver(resolved_provider_id)
-        planner_core = SharedPlannerCore(
-            default_provider_id=resolved_provider_id,
-            activation_rule_ref=provider_config.activation_rule_ref or DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF,
+        self._enable_scenario_overrides = enable_scenario_overrides
+        activation_rule_refs = tuple(
+            dict.fromkeys(
+                config.activation_rule_ref or DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF
+                for config in (provider_configs or {}).values()
+                if config.enabled
+            )
         )
-        self._planner_cache[resolved_provider_id] = planner_core
-        return planner_core
+        self._planner_core = planner_core or SharedPlannerCore(
+            default_provider_id=default_provider_id,
+            activation_rule_ref=activation_rule_refs[0] if activation_rule_refs else DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF,
+            activation_rule_refs=activation_rule_refs or None,
+            doc_search_settings=host_settings.doc_search if host_settings is not None else None,
+        )
 
     def decide(
         self,
@@ -51,13 +46,16 @@ class DeterministicToolPlanner:
         *,
         rag_enabled: bool = False,
         provider_id: str | None = None,
+        provider_categories: dict[str, tuple[str, ...]] | None = None,
     ) -> ToolDecision:
-        return self._planner_for_provider(provider_id).plan(
+        return self._planner_core.plan(
             user_text,
             active_category=active_category,
             rag_enabled=rag_enabled,
             scenario_loader=self._scenario_loader,
-            enable_scenarios=True,
+            enable_scenarios=self._enable_scenario_overrides,
+            provider_hint=provider_id,
+            provider_categories=provider_categories,
         )
 
     def plan(
@@ -67,6 +65,7 @@ class DeterministicToolPlanner:
         *,
         rag_enabled: bool = False,
         provider_id: str | None = None,
+        provider_categories: dict[str, tuple[str, ...]] | None = None,
     ) -> list[ToolPlan]:
         return list(
             self.decide(
@@ -74,6 +73,7 @@ class DeterministicToolPlanner:
                 active_category=active_category,
                 rag_enabled=rag_enabled,
                 provider_id=provider_id,
+                provider_categories=provider_categories,
             ).plans
         )
 

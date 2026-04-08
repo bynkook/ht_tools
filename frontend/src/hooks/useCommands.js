@@ -357,6 +357,7 @@ export const useCommands = ({
     const action = parts[1];
     const providerForState = activeProvider || DEFAULT_MCP_PROVIDER_ID;
     const commandProviderId = overrideProviderId || providerForState;
+    const canReuseActiveCategory = !overrideProviderId || commandProviderId === providerForState;
 
     if (!action || action === 'help') {
       const categoryStatus = activeCategory
@@ -516,7 +517,7 @@ export const useCommands = ({
           activeCategory
             ? `🗂️ 검색 대상: **"${activeCategory}"** 카테고리`
             : '🗂️ 검색 대상: 전체 문서 (카테고리 미지정)',
-          '📊 검색 규모: 문서 **최대 10개** × 스니펫 **1,500자** (BM25 관련성 랭킹 + 최신 우선)',
+          '📊 검색 규모: 서버의 doc search 설정(문서 수, 스니펫 길이, 핵심 스니펫 조립 상한)을 따릅니다.',
           '',
           '> 카테고리를 지정하려면 `/mcp set <카테고리명>` 을 입력하세요.',
           '> 캐시를 초기화하려면 `/mcp rag refresh` 를 입력하세요.',
@@ -566,7 +567,7 @@ export const useCommands = ({
           return;
         }
         params.query = queryParts.join(' ');
-        if (activeCategory) {
+        if (activeCategory && canReuseActiveCategory) {
           params.category = activeCategory;
         }
       } else if (action === 'read') {
@@ -588,7 +589,7 @@ export const useCommands = ({
           params.filename = rawTarget;
         }
 
-        if (!pathMatch && !rawTarget.includes('/') && !rawTarget.includes('\\') && activeCategory) {
+        if (!pathMatch && !rawTarget.includes('/') && !rawTarget.includes('\\') && activeCategory && canReuseActiveCategory) {
           params.category = activeCategory;
         }
       } else {

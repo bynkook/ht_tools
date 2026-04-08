@@ -3,18 +3,27 @@ Generic MCP host helpers used by FabriX Chat runtimes and MCP command routes.
 """
 
 from dataclasses import dataclass
+import logging
 from typing import Any
 
 from fastapi import HTTPException
 
 from .config import DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF, DOC_SEARCH_PROVIDER_ID, McpSettings
 from .context_merge import build_multi_file_system_prompt, merge_system_prompts
-from .providers import require_provider_manifest
+from .doc_search_policy import (
+    DOC_SEARCH_DEFAULT_MAX_DOCS,
+    DOC_SEARCH_DEFAULT_SNIPPET_CHARS,
+    normalize_doc_search_rag_params,
+)
+from .providers import get_provider_manifest, require_provider_manifest
 from .rag_context import build_rag_response
 from .registry import connect_provider
 from .result_normalizer import tool_result_to_dict
 from .shared_planner.core import SharedPlannerCore
 from .shared_planner.models import PlannerDecision
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -41,7 +50,13 @@ def _context_fragment_type(context_result: dict[str, Any]) -> str:
     return "tool_result"
 
 
-def normalize_context_result(*, action: str, arguments: dict[str, Any] | None, raw_result: Any) -> dict[str, Any]:
+def normalize_context_result(
+    *,
+    action: str,
+    arguments: dict[str, Any] | None,
+    raw_result: Any,
+    doc_search_settings=None,
+) -> dict[str, Any]:
     resolved_arguments = dict(arguments or {})
     if action == "search_docs_rag":
         return build_rag_response(
@@ -49,13 +64,17 @@ def normalize_context_result(*, action: str, arguments: dict[str, Any] | None, r
             category=resolved_arguments.get("category"),
             filename_filter=resolved_arguments.get("filename_filter"),
             data=_coerce_result_dict(raw_result),
+            doc_search_settings=doc_search_settings,
         )
 
+    raw_result_dict = _coerce_result_dict(raw_result)
     return {
         "action": action,
         "arguments": resolved_arguments,
-        "raw_result": _coerce_result_dict(raw_result),
-        "system_prompt": None,
+        "query": resolved_arguments.get("query"),
+        "category": resolved_arguments.get("category"),
+        "raw_result": raw_result_dict,
+        "system_prompt": raw_result_dict.get("system_prompt"),
     }
 
 
@@ -94,30 +113,103 @@ class GenericMcpHost:
         self.settings = settings
         enabled_providers = settings.enabled_provider_configs()
         self.default_provider_id = enabled_providers[0].provider_id if enabled_providers else DOC_SEARCH_PROVIDER_ID
-        self._planner_cache: dict[str, SharedPlannerCore] = {}
-        base_provider = settings.require_provider(self.default_provider_id)
-        self._planner_cache[self.default_provider_id] = planner or SharedPlannerCore(
-            default_provider_id=self.default_provider_id,
-            activation_rule_ref=base_provider.activation_rule_ref or DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF,
+        self._planner_provider_categories_cache: dict[str, tuple[str, ...]] | None = None
+        rule_refs = tuple(
+            dict.fromkeys(
+                provider.activation_rule_ref or DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF
+                for provider in enabled_providers
+            )
         )
+        self._planner = planner or SharedPlannerCore(
+            default_provider_id=self.default_provider_id,
+            activation_rule_ref=rule_refs[0] if rule_refs else DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF,
+            activation_rule_refs=rule_refs,
+            doc_search_settings=settings.host.doc_search,
+        )
+
+    async def build_planner_provider_categories(self) -> dict[str, tuple[str, ...]]:
+        if self._planner_provider_categories_cache is not None:
+            return dict(self._planner_provider_categories_cache)
+
+        provider_categories: dict[str, tuple[str, ...]] = {}
+        for provider_config in self.settings.enabled_provider_configs():
+            manifest = get_provider_manifest(provider_config.provider_id)
+            if manifest is None:
+                continue
+            capability_policy = manifest.capability_policy
+            if capability_policy is not None and not capability_policy.supports_category_catalog:
+                continue
+            try:
+                categories = await self.list_category_catalog(provider_id=provider_config.provider_id)
+            except Exception as error:
+                logger.warning(
+                    "Planner category preload failed for provider %s: %s",
+                    provider_config.provider_id,
+                    error,
+                )
+                continue
+            category_names = tuple(
+                dict.fromkeys(
+                    str(item.get("name", "")).strip()
+                    for item in categories
+                    if str(item.get("name", "")).strip()
+                )
+            )
+            if category_names:
+                provider_categories[provider_config.provider_id] = category_names
+
+        self._planner_provider_categories_cache = dict(provider_categories)
+        return dict(provider_categories)
 
     def _resolve_provider_id(self, provider_id: str | None = None) -> str:
         resolved_provider_id = provider_id or self.default_provider_id
         self.settings.require_provider(resolved_provider_id)
         return resolved_provider_id
 
-    def _planner_for_provider(self, provider_id: str | None = None) -> SharedPlannerCore:
+    def _require_tool_action_supported(self, action: str, *, provider_id: str | None = None) -> str:
         resolved_provider_id = self._resolve_provider_id(provider_id)
-        cached = self._planner_cache.get(resolved_provider_id)
-        if cached is not None:
-            return cached
-        provider_config = self.settings.require_provider(resolved_provider_id)
-        planner_core = SharedPlannerCore(
-            default_provider_id=resolved_provider_id,
-            activation_rule_ref=provider_config.activation_rule_ref or DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF,
-        )
-        self._planner_cache[resolved_provider_id] = planner_core
-        return planner_core
+        manifest = require_provider_manifest(resolved_provider_id)
+        capability_policy = manifest.capability_policy
+        if capability_policy is None:
+            return resolved_provider_id
+
+        if action == "search_docs_rag" and not capability_policy.supports_rag_context:
+            raise ValueError(f"MCP provider does not support RAG context search: {resolved_provider_id}")
+        if action == "search_docs" and not capability_policy.supports_search:
+            raise ValueError(f"MCP provider does not support search: {resolved_provider_id}")
+        if action == "read_doc" and not capability_policy.supports_document_read:
+            raise ValueError(f"MCP provider does not support document read: {resolved_provider_id}")
+        if action in {"list_category_catalog", "list_categories_detail", "list_docs_detail"} and not capability_policy.supports_category_catalog:
+            raise ValueError(f"MCP provider does not support category listing: {resolved_provider_id}")
+        return resolved_provider_id
+
+    def _require_manual_command_supported(self, action: str, *, provider_id: str | None = None) -> str:
+        resolved_provider_id = self._resolve_provider_id(provider_id)
+        manifest = require_provider_manifest(resolved_provider_id)
+        capability_policy = manifest.capability_policy
+        if capability_policy is None or not capability_policy.manual_commands:
+            return resolved_provider_id
+        if action not in capability_policy.manual_commands:
+            raise ValueError(f"Manual MCP command is not supported by provider: {resolved_provider_id}.{action}")
+        return resolved_provider_id
+
+    @staticmethod
+    def _action_uses_category(action: str, arguments: dict[str, Any] | None = None) -> bool:
+        if arguments is None:
+            return False
+        category = arguments.get("category")
+        if not isinstance(category, str) or not category.strip():
+            return False
+        return action in {"search_docs_rag", "search_docs", "list_docs_detail", "read_doc"}
+
+    async def _validate_plan(self, plan) -> None:
+        resolved_provider_id = self._require_tool_action_supported(plan.action, provider_id=plan.provider)
+        if self._action_uses_category(plan.action, plan.params):
+            await self.validate_category(str(plan.params["category"]), provider_id=resolved_provider_id)
+
+    async def validate_planner_decision(self, decision: PlannerDecision) -> None:
+        for plan in decision.plans:
+            await self._validate_plan(plan)
 
     async def discover_provider_capabilities(self, *, provider_id: str | None = None) -> dict[str, Any]:
         resolved_provider_id = self._resolve_provider_id(provider_id)
@@ -150,6 +242,7 @@ class GenericMcpHost:
         arguments: dict[str, Any] | None = None,
         provider_id: str | None = None,
     ) -> Any:
+        self._require_tool_action_supported(action, provider_id=provider_id)
         return await self._call_provider_action(
             action=action,
             arguments=arguments,
@@ -158,27 +251,28 @@ class GenericMcpHost:
 
     async def list_category_catalog(self, *, provider_id: str | None = None) -> list[dict[str, Any]]:
         resolved_provider_id = self._resolve_provider_id(provider_id)
+        manifest = require_provider_manifest(resolved_provider_id)
+        capability_policy = manifest.capability_policy
+        if capability_policy is not None and not capability_policy.supports_category_catalog:
+            raise ValueError(f"MCP provider does not support category listing: {resolved_provider_id}")
         async with connect_provider(resolved_provider_id, settings=self.settings) as provider:
-            if hasattr(provider, "list_category_catalog"):
-                categories = await provider.list_category_catalog()
-            elif hasattr(provider, "list_categories_detail"):
-                detail = await provider.list_categories_detail()
-                categories = detail.get("categories", []) if isinstance(detail, dict) else []
-            else:
+            provider_method = getattr(provider, "list_category_catalog", None)
+            if not callable(provider_method):
                 raise ValueError(f"MCP provider does not support category listing: {resolved_provider_id}")
+            categories = await provider_method()
         return categories if isinstance(categories, list) else []
 
     async def validate_category(self, category: str, *, provider_id: str | None = None) -> dict[str, Any]:
-        target = category.strip()
-        if not target:
-            raise ValueError("카테고리 이름을 입력하세요.")
-        categories = await self.list_category_catalog(provider_id=provider_id)
-        normalized_target = target.casefold()
-        for item in categories:
-            name = str(item.get("name", "")).strip()
-            if name.casefold() == normalized_target:
-                return item
-        raise ValueError(f"카테고리를 찾을 수 없습니다: {category}")
+        resolved_provider_id = self._resolve_provider_id(provider_id)
+        manifest = require_provider_manifest(resolved_provider_id)
+        capability_policy = manifest.capability_policy
+        if capability_policy is not None and not capability_policy.supports_category_catalog:
+            raise ValueError(f"MCP provider does not support category validation: {resolved_provider_id}")
+        async with connect_provider(resolved_provider_id, settings=self.settings) as provider:
+            provider_method = getattr(provider, "validate_category", None)
+            if not callable(provider_method):
+                raise ValueError(f"MCP provider does not support category validation: {resolved_provider_id}")
+            return await provider_method(category)
 
     async def run_rag_search(
         self,
@@ -186,26 +280,62 @@ class GenericMcpHost:
         query: str,
         category: str | None = None,
         filename_filter: str | None = None,
-        max_docs: int = 10,
-        snippet_chars: int = 1500,
+        max_docs: int | None = DOC_SEARCH_DEFAULT_MAX_DOCS,
+        snippet_chars: int | None = DOC_SEARCH_DEFAULT_SNIPPET_CHARS,
         provider_id: str | None = None,
     ) -> dict[str, Any]:
+        resolved_provider_id = self._require_tool_action_supported("search_docs_rag", provider_id=provider_id)
+        if category:
+            await self.validate_category(category, provider_id=resolved_provider_id)
+        arguments = normalize_doc_search_rag_params(
+            {"max_docs": max_docs, "snippet_chars": snippet_chars},
+            query=query,
+            category=category,
+            filename_filter=filename_filter,
+            settings=self.settings.host.doc_search,
+        )
         data = await self.execute_tool_action(
             action="search_docs_rag",
-            arguments={
-                "query": query,
-                "category": category,
-                "filename_filter": filename_filter,
-                "max_docs": max_docs,
-                "snippet_chars": snippet_chars,
-            },
-            provider_id=provider_id,
+            arguments=arguments,
+            provider_id=resolved_provider_id,
         )
         return build_rag_response(
             query=query,
             category=category,
             filename_filter=filename_filter,
             data=_coerce_result_dict(data),
+            doc_search_settings=self.settings.host.doc_search,
+        )
+
+    def _resolve_doc_search_plan_params(self, plan_params: dict[str, Any], *, default_query: str) -> dict[str, Any]:
+        return normalize_doc_search_rag_params(
+            plan_params,
+            query=str(plan_params.get("query", default_query)),
+            settings=self.settings.host.doc_search,
+        )
+
+    async def _execute_context_plan(self, plan, *, default_query: str) -> dict[str, Any]:
+        if plan.action == "search_docs_rag":
+            resolved_params = self._resolve_doc_search_plan_params(plan.params, default_query=default_query)
+            return await self.run_rag_search(
+                query=str(resolved_params["query"]),
+                category=resolved_params.get("category"),
+                filename_filter=resolved_params.get("filename_filter"),
+                max_docs=int(resolved_params["max_docs"]),
+                snippet_chars=int(resolved_params["snippet_chars"]),
+                provider_id=plan.provider,
+            )
+
+        raw_result = await self.execute_tool_action(
+            action=plan.action,
+            arguments=plan.params,
+            provider_id=plan.provider,
+        )
+        return normalize_context_result(
+            action=plan.action,
+            arguments=plan.params,
+            raw_result=raw_result,
+            doc_search_settings=self.settings.host.doc_search,
         )
 
     async def build_chat_resolution(
@@ -216,11 +346,23 @@ class GenericMcpHost:
         rag_enabled: bool = False,
         provider_id: str | None = None,
     ) -> McpChatResolution:
-        decision = self._planner_for_provider(provider_id).plan(
+        decision = self._planner.plan(
             user_text,
             active_category=active_category,
             rag_enabled=rag_enabled,
+            provider_hint=provider_id,
         )
+        if decision.route == "chat_only":
+            provider_categories = await self.build_planner_provider_categories()
+            if provider_categories:
+                decision = self._planner.plan(
+                    user_text,
+                    active_category=active_category,
+                    rag_enabled=rag_enabled,
+                    provider_hint=provider_id,
+                    provider_categories=provider_categories,
+                )
+        await self.validate_planner_decision(decision)
 
         if decision.route == "chat_only":
             return McpChatResolution(route="chat_only", system_prompt=None, missing_mentions=[], decision=decision)
@@ -230,13 +372,14 @@ class GenericMcpHost:
             resolved_mentions: list[dict[str, Any]] = []
 
             for raw_target, plan in zip(decision.mentions, decision.plans):
+                resolved_params = self._resolve_doc_search_plan_params(plan.params, default_query=raw_target)
                 try:
                     result = await self.run_rag_search(
-                        query=str(plan.params.get("query", raw_target)),
-                        category=plan.params.get("category"),
-                        filename_filter=plan.params.get("filename_filter"),
-                        max_docs=int(plan.params.get("max_docs", 10)),
-                        snippet_chars=int(plan.params.get("snippet_chars", 1500)),
+                        query=str(resolved_params["query"]),
+                        category=resolved_params.get("category"),
+                        filename_filter=resolved_params.get("filename_filter"),
+                        max_docs=int(resolved_params["max_docs"]),
+                        snippet_chars=int(resolved_params["snippet_chars"]),
                         provider_id=plan.provider,
                     )
                 except HTTPException as error:
@@ -247,7 +390,7 @@ class GenericMcpHost:
 
                 snippets = result.get("snippets") or []
                 resolved_filename = (
-                    plan.params.get("filename_filter")
+                    resolved_params.get("filename_filter")
                     or (snippets[0].get("filename") if snippets else None)
                     or raw_target
                 )
@@ -278,18 +421,13 @@ class GenericMcpHost:
         if not decision.plans:
             return McpChatResolution(route="chat_only", system_prompt=None, missing_mentions=[], decision=decision)
 
-        primary_plan = decision.plans[0]
-        rag_result = await self.run_rag_search(
-            query=str(primary_plan.params.get("query", decision.clean_query)),
-            category=primary_plan.params.get("category"),
-            filename_filter=primary_plan.params.get("filename_filter"),
-            max_docs=int(primary_plan.params.get("max_docs", 10)),
-            snippet_chars=int(primary_plan.params.get("snippet_chars", 1500)),
-            provider_id=primary_plan.provider,
-        )
+        system_prompt = None
+        for plan in decision.plans:
+            context_result = await self._execute_context_plan(plan, default_query=decision.clean_query)
+            system_prompt = merge_system_prompts(system_prompt, context_result.get("system_prompt"))
         return McpChatResolution(
             route=decision.route,
-            system_prompt=rag_result.get("system_prompt"),
+            system_prompt=system_prompt,
             missing_mentions=[],
             decision=decision,
         )
@@ -304,8 +442,9 @@ class GenericMcpHost:
         max_results: int = 5,
         provider_id: str | None = None,
     ) -> dict[str, Any]:
-        resolved_provider_id = self._resolve_provider_id(provider_id)
-        require_provider_manifest(resolved_provider_id)
+        resolved_provider_id = self._require_manual_command_supported(action, provider_id=provider_id)
+        if category and action in {"list", "search", "read"}:
+            await self.validate_category(category, provider_id=resolved_provider_id)
         async with connect_provider(resolved_provider_id, settings=self.settings) as provider:
             provider_command = getattr(provider, "execute_manual_command", None)
             if not callable(provider_command):

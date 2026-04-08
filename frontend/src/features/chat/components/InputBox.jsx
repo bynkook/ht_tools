@@ -23,7 +23,6 @@ const InputBox = ({
   const historyIdxRef = useRef(-1);  // 탐색 위치 (-1: 탐색 중 아님)
   const draftRef      = useRef('');  // 탐색 시작 전 입력값 보존
   const {
-    focusInput,
     inputFocusProps,
     keepFocusOnPointerDown,
     requestRestoreFocus,
@@ -107,9 +106,6 @@ const InputBox = ({
     const newText = content + '\n';
     setText(newText);
     setIsTemplateActive(true);
-    requestAnimationFrame(() => {
-      focusInput();
-    });
   };
 
   const handleTemplateClear = () => {
@@ -118,7 +114,6 @@ const InputBox = ({
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    focusInput();
   };
 
   return (
@@ -148,6 +143,7 @@ const InputBox = ({
             disabled={isBusy}
             isActive={isTemplateActive}
             onClear={handleTemplateClear}
+            onPreserveInputPointerDown={keepFocusOnPointerDown}
           />
           {/* Send / Stop Button */}
           {isLoading ? (

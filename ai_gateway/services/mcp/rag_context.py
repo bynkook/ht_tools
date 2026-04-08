@@ -5,38 +5,11 @@ Shared RAG prompt-building helpers for MCP-backed document context.
 from typing import Any
 
 from fastapi import HTTPException
-
-
-def _classify_query_shape(query: str) -> dict[str, bool]:
-    query_lower = query.lower()
-    raw_tokens = [token for token in query.split() if token.strip()]
-    procedural_keywords = ("절차", "단계", "방법", "순서", "비교", "차이", "예외", "주의")
-    expand_hint = any(keyword in query_lower for keyword in procedural_keywords)
-    compact_hint = len(raw_tokens) <= 2 and len(query.strip()) <= 20 and not expand_hint
-    return {"expand_hint": expand_hint, "compact_hint": compact_hint}
-
-
-def _decide_prompt_budget(query: str, snippets: list[dict[str, Any]]) -> dict[str, int]:
-    shape = _classify_query_shape(query)
-    unique_docs = len({snippet.get("filename", "") for snippet in snippets if snippet.get("filename")})
-
-    if shape["compact_hint"]:
-        max_total = 6
-        max_total_chars = 6000
-    elif shape["expand_hint"]:
-        max_total = 12
-        max_total_chars = 12000
-    else:
-        max_total = 9
-        max_total_chars = 9000
-
-    min_docs_covered = min(unique_docs, max(3, min(6, max_total)))
-    return {
-        "max_per_doc": 3,
-        "max_total": max_total,
-        "max_total_chars": max_total_chars,
-        "min_docs_covered": min_docs_covered,
-    }
+from .doc_search_policy import (
+    DOC_SEARCH_FILE_FALLBACK_MAX_FILES,
+    McpDocSearchSettings,
+    build_doc_search_prompt_budget,
+)
 
 
 def _select_prompt_snippets(
@@ -107,6 +80,7 @@ def build_rag_response(
     category: str | None,
     filename_filter: str | None,
     data: dict[str, Any],
+    doc_search_settings: McpDocSearchSettings | None = None,
 ) -> dict[str, Any]:
     if data.get("error"):
         raise HTTPException(status_code=404, detail=data["error"])
@@ -132,25 +106,33 @@ def build_rag_response(
 
     category_label = f" ({category})" if category else " (전체)"
     if snippets:
-        if filename_filter:
-            budget = {
-                "max_per_doc": 12,
-                "max_total": 12,
-                "max_total_chars": 14000,
-                "min_docs_covered": 1,
-            }
-        else:
-            budget = _decide_prompt_budget(query, snippets)
-        selected_snippets = _select_prompt_snippets(snippets, **budget)
+        budget = build_doc_search_prompt_budget(
+            query,
+            snippets,
+            filename_filter=filename_filter,
+            settings=doc_search_settings,
+        )
+        selected_snippets = _select_prompt_snippets(
+            snippets,
+            max_per_doc=budget.max_per_doc,
+            max_total=budget.max_total,
+            max_total_chars=budget.max_total_chars,
+            min_docs_covered=budget.min_docs_covered,
+        )
         doc_blocks = "\n\n---\n\n".join(
             f"📄 파일: {snippet['filename']}\n🔹 발췌 구간: {snippet.get('start', '-')}-{snippet.get('end', '-')}\n\n{snippet['snippet']}"
             for snippet in selected_snippets
         )
     else:
         selected_snippets = []
+        fallback_file_limit = (
+            doc_search_settings.prompt_file_fallback_max_files
+            if doc_search_settings is not None
+            else DOC_SEARCH_FILE_FALLBACK_MAX_FILES
+        )
         doc_blocks = "\n\n---\n\n".join(
             f"📄 파일: {file_item['filename']}\n\n{file_item['snippet']}"
-            for file_item in files[:4]
+            for file_item in files[:fallback_file_limit]
         )
 
     system_prompt = (

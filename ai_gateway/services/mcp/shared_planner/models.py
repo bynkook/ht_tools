@@ -21,10 +21,12 @@ class ActivationRuleDefinition:
     action: str
     intent_label: str
     description: str
+    priority: int = 100
     keyword_groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
     match: ActivationRuleMatch = field(default_factory=ActivationRuleMatch)
     params: dict[str, Any] = field(default_factory=dict)
     use_active_category: bool = False
+    match_provider_categories: bool = False
 
 
 @dataclass(frozen=True)
@@ -43,7 +45,9 @@ class ActivationRuleMatchResult:
     action: str
     intent_label: str
     description: str
+    priority: int
     matched_keywords: tuple[str, ...]
+    matched_categories: tuple[str, ...]
     params: dict[str, Any]
     use_active_category: bool
 

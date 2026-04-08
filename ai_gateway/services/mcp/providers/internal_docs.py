@@ -10,6 +10,7 @@ from typing import Any, AsyncIterator
 from fastmcp import Client
 
 from ..config import DOC_SEARCH_PROVIDER_ID, McpServerConfig, load_provider_config
+from ..doc_search_policy import DOC_SEARCH_DEFAULT_MAX_DOCS, DOC_SEARCH_DEFAULT_SNIPPET_CHARS
 from ..result_normalizer import tool_result_to_dict, tool_result_to_text
 
 LIST_CATEGORIES_DETAIL_TOOL = "list_categories_detail"
@@ -64,6 +65,17 @@ class InternalDocsProvider:
         categories = data.get("categories", [])
         return categories if isinstance(categories, list) else []
 
+    async def validate_category(self, category: str) -> dict[str, Any]:
+        target = category.strip()
+        if not target:
+            raise ValueError("카테고리 이름을 입력하세요.")
+        normalized_target = target.casefold()
+        for item in await self.list_category_catalog():
+            name = str(item.get("name", "")).strip()
+            if name.casefold() == normalized_target:
+                return item
+        raise ValueError(f"카테고리를 찾을 수 없습니다: {category}")
+
     async def list_docs_detail(self, category: str) -> dict[str, Any]:
         return await self.call_tool_dict(LIST_DOCS_DETAIL_TOOL, {"category": category})
 
@@ -89,8 +101,8 @@ class InternalDocsProvider:
         query: str,
         category: str | None = None,
         filename_filter: str | None = None,
-        max_docs: int = 10,
-        snippet_chars: int = 1500,
+        max_docs: int | None = DOC_SEARCH_DEFAULT_MAX_DOCS,
+        snippet_chars: int | None = DOC_SEARCH_DEFAULT_SNIPPET_CHARS,
     ) -> dict[str, Any]:
         tool_args: dict[str, Any] = {
             "query": query,

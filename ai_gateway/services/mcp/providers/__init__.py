@@ -8,7 +8,13 @@ from ..config import (
     DOC_SEARCH_PROVIDER_ORIGIN_TYPE,
     DOC_SEARCH_PROVIDER_TRANSPORT,
 )
-from ..provider_manifest import McpProviderManifest
+from ..provider_manifest import (
+    McpCapabilityPolicy,
+    McpConnectionProfileSchema,
+    McpHealthcheckDefinition,
+    McpInstallProfile,
+    McpProviderManifest,
+)
 from .internal_docs import INTERNAL_DOCS_NORMALIZER_REF, INTERNAL_DOCS_POLICY_REF, InternalDocsProvider
 
 INTERNAL_DOCS_PROVIDER_MANIFEST = McpProviderManifest(
@@ -19,6 +25,29 @@ INTERNAL_DOCS_PROVIDER_MANIFEST = McpProviderManifest(
     adapter_class=InternalDocsProvider,
     normalizer_ref=INTERNAL_DOCS_NORMALIZER_REF,
     policy_ref=INTERNAL_DOCS_POLICY_REF,
+    install_profile=McpInstallProfile(
+        profile_id="internal_docs.offline_copy_injection",
+        distribution="upstream_snapshot",
+        deployment_model="copy_to_server",
+        update_strategy="replace_snapshot_and_rewire_adapter",
+        rollback_strategy="restore_previous_snapshot_and_config",
+    ),
+    connection_profile_schema=McpConnectionProfileSchema(
+        required_fields=("base_url", "transport"),
+        optional_fields=("kind", "origin_type", "activation_rule_ref", "install_profile", "connection_profile"),
+    ),
+    capability_policy=McpCapabilityPolicy(
+        manual_commands=("list", "search", "read"),
+        supports_category_catalog=True,
+        supports_document_read=True,
+        supports_search=True,
+        supports_rag_context=True,
+    ),
+    healthcheck_definition=McpHealthcheckDefinition(
+        method="list_capabilities",
+        timeout_seconds=10,
+        startup_required=False,
+    ),
 )
 
 _PROVIDER_MANIFESTS = {

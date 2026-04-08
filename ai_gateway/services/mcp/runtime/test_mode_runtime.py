@@ -41,8 +41,10 @@ class TestModeChatRuntime(BaseChatRuntime):
         )
         self._planner = planner or DeterministicToolPlanner(
             ScenarioLoader.from_settings(settings),
-            provider_config_resolver=mcp_host.settings.require_provider,
+            provider_configs=mcp_host.settings.providers,
             default_provider_id=mcp_host.default_provider_id,
+            enable_scenario_overrides=settings.test_mode_enable_scenario_override,
+            host_settings=settings,
         )
         self._event_emitter = event_emitter or SystemEventEmitter(self._event_policy, channel="mcp_test")
 
@@ -51,12 +53,15 @@ class TestModeChatRuntime(BaseChatRuntime):
         active_category = runtime_input.mcp_context.active_category if runtime_input.mcp_context else None
         rag_enabled = runtime_input.mcp_context.rag_enabled if runtime_input.mcp_context else False
         provider_id = runtime_input.mcp_context.provider_id if runtime_input.mcp_context else None
+        provider_categories = await self.mcp_host.build_planner_provider_categories()
         decision = self._planner.decide(
             runtime_input.contents[-1],
             active_category=active_category,
             rag_enabled=rag_enabled,
             provider_id=provider_id,
+            provider_categories=provider_categories or None,
         )
+        await self.mcp_host.validate_planner_decision(decision)
         recorder = ProtocolRecorder(
             self._event_emitter,
             request_id=request_id,
@@ -281,6 +286,7 @@ class TestModeChatRuntime(BaseChatRuntime):
                 action=plan.action,
                 arguments=plan.params,
                 raw_result=raw_result,
+                doc_search_settings=self._settings.doc_search,
             ),
         }
 

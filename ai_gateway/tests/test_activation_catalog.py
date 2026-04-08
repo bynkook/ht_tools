@@ -6,7 +6,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from services.mcp.shared_planner import ActivationCatalogError, load_activation_catalogs, require_activation_catalog
+from services.mcp.shared_planner import (
+    ActivationCatalogError,
+    build_combined_activation_catalog,
+    load_activation_catalogs,
+    require_activation_catalog,
+)
 
 
 def test_internal_docs_activation_catalog_loads_successfully():
@@ -33,12 +38,13 @@ def test_internal_docs_activation_catalog_matches_category_listing_query():
 def test_internal_docs_activation_catalog_matches_doc_search_query():
     catalog = require_activation_catalog("internal_docs.default")
 
-    matches = catalog.match("표준계약서에서 위약금 관련 내용을 검색")
+    matches = catalog.match("위약금 관련 내용을 검색")
 
     doc_search = next(match for match in matches if match.rule_id == "doc_search_target + search_action")
     assert doc_search.action == "search_docs_rag"
-    assert doc_search.params == {"max_docs": 5, "snippet_chars": 1500}
-    assert "표준계약서" in doc_search.matched_keywords
+    assert doc_search.params == {}
+    assert "관련" in doc_search.matched_keywords
+    assert "내용" in doc_search.matched_keywords
     assert "검색" in doc_search.matched_keywords
 
 
@@ -49,7 +55,7 @@ def test_internal_docs_activation_catalog_uses_active_category_context_hint():
 
     doc_search = next(match for match in matches if match.rule_id == "doc_search_target + search_action")
     assert doc_search.use_active_category is True
-    assert "위약금" in doc_search.matched_keywords
+    assert "관련" in doc_search.matched_keywords
     assert "검색" in doc_search.matched_keywords
 
 
@@ -64,3 +70,36 @@ def test_activation_catalog_loader_fails_fast_for_unknown_provider_reference():
 
         with pytest.raises(ActivationCatalogError, match="unknown provider"):
             load_activation_catalogs(rules_dir=rules_dir)
+
+
+def test_combined_activation_catalog_prefers_provider_hint_when_rules_overlap():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        rules_dir = Path(temp_dir)
+        (rules_dir / "internal_docs.json").write_text(
+            (
+                '{"rule_ref":"internal_docs.default","provider_id":"internal_docs","rules":['
+                '{"id":"shared-rule","intent_label":"search","action":"search_docs_rag",'
+                '"keyword_groups":{"target":["검색"],"subject":["품질"]},'
+                '"match":{"all_of_groups":["target","subject"]}}]}'
+            ),
+            encoding="utf-8",
+        )
+        (rules_dir / "legal_cases.json").write_text(
+            (
+                '{"rule_ref":"legal_cases.default","provider_id":"legal_cases","rules":['
+                '{"id":"shared-rule","intent_label":"search","action":"search_docs_rag",'
+                '"keyword_groups":{"target":["검색"],"subject":["품질"]},'
+                '"match":{"all_of_groups":["target","subject"]}}]}'
+            ),
+            encoding="utf-8",
+        )
+
+        combined = build_combined_activation_catalog(
+            ["internal_docs.default", "legal_cases.default"],
+            rules_dir=rules_dir,
+            provider_ids=("internal_docs", "legal_cases"),
+        )
+
+        matches = combined.match("품질 검색", provider_hint="legal_cases")
+
+    assert [match.provider_id for match in matches] == ["legal_cases", "internal_docs"]

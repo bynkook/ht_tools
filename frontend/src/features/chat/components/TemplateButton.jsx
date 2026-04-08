@@ -8,7 +8,13 @@ import templates from '../template/chat_templates.json';
  * Clicking a template calls onSelect(content) and closes the popup.
  * When a template is active, shows an × button to clear the textarea.
  */
-const TemplateButton = ({ onSelect, disabled, isActive, onClear }) => {
+const TemplateButton = ({
+  onSelect,
+  disabled,
+  isActive,
+  onClear,
+  onPreserveInputPointerDown,
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef(null);
 
@@ -40,9 +46,8 @@ const TemplateButton = ({ onSelect, disabled, isActive, onClear }) => {
               <li key={tpl.id}>
                 <button
                   className="w-full text-left px-3 py-1.5 text-xs text-[var(--text-primary)] hover:bg-cyan-50 hover:text-cyan-700 transition-colors"
-                  /* Use onMouseDown + preventDefault to prevent textarea blur before selection */
                   onMouseDown={(e) => {
-                    e.preventDefault();
+                    onPreserveInputPointerDown?.(e);
                     handleSelect(tpl.content);
                   }}
                 >
@@ -67,6 +72,7 @@ const TemplateButton = ({ onSelect, disabled, isActive, onClear }) => {
         <button
           type="button"
           disabled={disabled}
+          onMouseDown={onPreserveInputPointerDown}
           onClick={() => !disabled && setIsOpen((prev) => !prev)}
           className={`flex items-center gap-1 pl-4 pr-3 py-1 text-sm font-medium transition-colors disabled:cursor-not-allowed
             ${isOpen || isActive ? 'text-cyan-600' : 'text-[var(--text-secondary)]'}`}
@@ -83,7 +89,7 @@ const TemplateButton = ({ onSelect, disabled, isActive, onClear }) => {
           <button
             type="button"
             onMouseDown={(e) => {
-              e.preventDefault();
+              onPreserveInputPointerDown?.(e);
               onClear();
             }}
             className="pr-3 py-1 text-cyan-500 hover:text-red-500 transition-colors"
