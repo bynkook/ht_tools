@@ -1,18 +1,48 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, StopCircle } from 'lucide-react';
 import TemplateButton from './TemplateButton';
+import useInputFocusRestore from '../../../hooks/useInputFocusRestore';
 
 /**
  * Input component for Model Chat (FabriX Chat)
  * Simplified version without file upload - Model Chat API doesn't support file attachments
  */
-const InputBox = ({ onSend, isLoading, onStop }) => {
+const InputBox = ({
+  onSend,
+  isLoading,
+  isBusy = isLoading,
+  onStop,
+  sessionId = null,
+  resetVersion = 0,
+}) => {
   const [text, setText] = useState('');
   const [isTemplateActive, setIsTemplateActive] = useState(false);
+  const composerRef = useRef(null);
   const textareaRef = useRef(null);
   const historyRef    = useRef([]);  // 최근 5개 전송 메시지 (최신=index 0)
   const historyIdxRef = useRef(-1);  // 탐색 위치 (-1: 탐색 중 아님)
   const draftRef      = useRef('');  // 탐색 시작 전 입력값 보존
+  const {
+    focusInput,
+    inputFocusProps,
+    keepFocusOnPointerDown,
+    requestRestoreFocus,
+  } = useInputFocusRestore({
+    inputRef: textareaRef,
+    scopeRef: composerRef,
+    isBusy,
+  });
+
+  useEffect(() => {
+    setText('');
+    setIsTemplateActive(false);
+    historyRef.current = [];
+    historyIdxRef.current = -1;
+    draftRef.current = '';
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [resetVersion, sessionId]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -24,7 +54,7 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
   }, [text]);
 
   const handleSend = async () => {
-    if (!text.trim() || isLoading) return;
+    if (!text.trim() || isBusy) return;
 
     const message = text.trim();
     if (historyRef.current[0] !== message) {
@@ -36,7 +66,15 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    await onSend(message);
+
+    try {
+      const result = onSend(message);
+      if (result && typeof result.then === 'function') {
+        await result;
+      }
+    } finally {
+      requestRestoreFocus();
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -69,13 +107,8 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
     const newText = content + '\n';
     setText(newText);
     setIsTemplateActive(true);
-    // Restore focus and move cursor to end after render
     requestAnimationFrame(() => {
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        const len = newText.length;
-        textareaRef.current.setSelectionRange(len, len);
-      }
+      focusInput();
     });
   };
 
@@ -84,19 +117,23 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
     setIsTemplateActive(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.focus();
     }
+    focusInput();
   };
 
   return (
     <div className="w-full">
-      <div className="flex flex-col bg-white border border-[var(--border-color)] rounded-2xl p-1 shadow-md hover:shadow-md focus-within:shadow-md transition-all w-full">
+      <div
+        ref={composerRef}
+        className="flex flex-col bg-white border border-[var(--border-color)] rounded-2xl p-1 shadow-md hover:shadow-md focus-within:shadow-md transition-all w-full"
+      >
         {/* Text Input */}
         <textarea
           ref={textareaRef}
           value={text}
           onChange={(e) => { setText(e.target.value); historyIdxRef.current = -1; if (isTemplateActive) setIsTemplateActive(false); }}
           onKeyDown={handleKeyDown}
+          {...inputFocusProps}
           placeholder="Message FabriX Chat..."
           rows={1}
           readOnly={isLoading}
@@ -108,13 +145,14 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
         <div className="flex items-center justify-between px-2 pt-1 pb-2">
           <TemplateButton
             onSelect={handleTemplateSelect}
-            disabled={isLoading}
+            disabled={isBusy}
             isActive={isTemplateActive}
             onClear={handleTemplateClear}
           />
           {/* Send / Stop Button */}
           {isLoading ? (
             <button
+              onMouseDown={keepFocusOnPointerDown}
               onClick={onStop}
               className="flex items-center justify-center w-10 h-10 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all hover:scale-105 active:scale-95"
               title="Stop generating"
@@ -123,8 +161,9 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
             </button>
           ) : (
             <button
+              onMouseDown={keepFocusOnPointerDown}
               onClick={handleSend}
-              disabled={!text.trim()}
+              disabled={!text.trim() || isBusy}
               className="flex items-center justify-center w-10 h-10 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-lg hover:scale-105 active:scale-95 transition-all"
               title="Send message"
             >

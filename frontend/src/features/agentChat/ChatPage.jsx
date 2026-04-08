@@ -45,6 +45,7 @@ const ChatPage = () => {
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [composerResetVersion, setComposerResetVersion] = useState(0);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
  
@@ -79,6 +80,7 @@ const ChatPage = () => {
       setSuccessMessage(null);
       assistantSavedRef.current = false;
       currentStreamingMsgRef.current = '';
+      setComposerResetVersion((prev) => prev + 1);
     };
     window.addEventListener('new-chat-requested', onNewChatRequested);
     return () => window.removeEventListener('new-chat-requested', onNewChatRequested);
@@ -582,7 +584,14 @@ const updateLastMessage = useCallback((content) => {
       {/* Input Area */}
       <div className="flex-shrink-0 bg-[var(--bg-primary)] p-4 pb-6">
         <div className="max-w-3xl mx-auto">
-          <InputBox key={currentSessionId ?? 'new'} onSend={handleSend} isLoading={isLoading} onStop={handleStop} />
+          <InputBox
+            onSend={handleSend}
+            isLoading={isLoading}
+            isBusy={isLoading}
+            onStop={handleStop}
+            resetVersion={composerResetVersion}
+            sessionId={currentSessionId}
+          />
         </div>
       </div>
     </div>

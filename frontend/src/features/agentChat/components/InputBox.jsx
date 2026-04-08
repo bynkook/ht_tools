@@ -2,23 +2,48 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Paperclip, Square, X, ArrowUp } from 'lucide-react';
 import useInputFocusRestore from '../../../hooks/useInputFocusRestore';
 
-const InputBox = ({ onSend, isLoading, onStop }) => {
+const InputBox = ({
+  onSend,
+  isLoading,
+  isBusy = isLoading,
+  onStop,
+  sessionId = null,
+  resetVersion = 0,
+}) => {
   const [message, setMessage] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
+  const composerRef = useRef(null);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
   const historyRef    = useRef([]);  // 최근 5개 전송 메시지 (최신=index 0)
   const historyIdxRef = useRef(-1);  // 탐색 위치 (-1: 탐색 중 아님)
   const draftRef      = useRef('');  // 탐색 시작 전 입력값 보존
-  const { requestRestoreFocus } = useInputFocusRestore({
+  const {
+    inputFocusProps,
+    keepFocusOnPointerDown,
+    requestRestoreFocus,
+  } = useInputFocusRestore({
     inputRef: textareaRef,
-    isLoading,
+    scopeRef: composerRef,
+    isBusy,
   });
 
-  const handleSend = async (trigger = 'mouse') => {
-    if ((!message.trim() && !selectedFile) || isLoading) return;
+  useEffect(() => {
+    setMessage('');
+    setSelectedFile(null);
+    historyRef.current = [];
+    historyIdxRef.current = -1;
+    draftRef.current = '';
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [resetVersion, sessionId]);
 
-    const shouldRestore = trigger === 'keyboard';
+  const handleSend = async () => {
+    if ((!message.trim() && !selectedFile) || isBusy) return;
     const messageToSend = message;
     const fileToSend = selectedFile;
 
@@ -37,9 +62,7 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
         await result;
       }
     } finally {
-      if (shouldRestore) {
-        requestRestoreFocus();
-      }
+      requestRestoreFocus();
     }
   };
 
@@ -65,7 +88,7 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend('keyboard');
+        handleSend();
     }
   };
 
@@ -93,6 +116,7 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
             {selectedFile.name}
           </span>
           <button
+            onMouseDown={keepFocusOnPointerDown}
             onClick={() => setSelectedFile(null)}
             className="text-gray-400 hover:text-red-500 ml-1 transition-colors"
           >
@@ -102,13 +126,17 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
       )}
 
       {/* Main Input Container */}
-      <div className="relative flex items-end gap-2 bg-white border border-[var(--border-color)] rounded-2xl p-1 shadow-md hover:shadow-md focus-within:shadow-md transition-all w-full">
+      <div
+        ref={composerRef}
+        className="relative flex items-end gap-2 bg-white border border-[var(--border-color)] rounded-2xl p-1 shadow-md hover:shadow-md focus-within:shadow-md transition-all w-full"
+      >
        
         {/* File Button */}
         <button
+          onMouseDown={keepFocusOnPointerDown}
           onClick={() => fileInputRef.current?.click()}
           className="p-3 text-[var(--text-secondary)] hover:text-[var(--accent-color)] hover:bg-blue-50 rounded-full transition-colors flex-shrink-0 mb-0.5"
-          disabled={isLoading}
+          disabled={isBusy}
           title="Attach file"
         >
           <Paperclip size={20} />
@@ -121,6 +149,7 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
           value={message}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
+          {...inputFocusProps}
           placeholder="Message FabriX Agent..."
           rows={1}
           readOnly={isLoading}
@@ -132,6 +161,7 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
         <div className="mb-1 mr-1">
             {isLoading ? (
             <button
+                onMouseDown={keepFocusOnPointerDown}
                 onClick={onStop}
                 className="p-2.5 bg-[var(--text-primary)] text-white rounded-full hover:opacity-80 transition-all shadow-md"
                 title="Stop"
@@ -140,11 +170,12 @@ const InputBox = ({ onSend, isLoading, onStop }) => {
             </button>
             ) : (
             <button
-              onClick={() => handleSend('mouse')}
-                disabled={!message.trim() && !selectedFile}
+              onMouseDown={keepFocusOnPointerDown}
+              onClick={handleSend}
+                disabled={(!message.trim() && !selectedFile) || isBusy}
                 className={`
                 p-2.5 rounded-full transition-all shadow-md
-                ${(!message.trim() && !selectedFile)
+                ${((!message.trim() && !selectedFile) || isBusy)
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     : 'bg-[var(--accent-color)] text-white hover:bg-[var(--accent-hover)] hover:scale-105 active:scale-95'}
                 `}

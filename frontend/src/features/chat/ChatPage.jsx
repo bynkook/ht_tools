@@ -55,6 +55,7 @@ const ChatPage = () => {
   const [messages, setMessages] = useState([]);
   const [selectedModelId, setSelectedModelId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [composerResetVersion, setComposerResetVersion] = useState(0);
   const { runtimeConfig, ensureRuntimeConfig } = useChatRuntimeConfig();
   
   const abortControllerRef = useRef(null);
@@ -162,6 +163,7 @@ const ChatPage = () => {
       activeSessionIdRef.current = null;
       pendingBootstrapSessionIdRef.current = null;
       currentSessionTitleRef.current = DEFAULT_SESSION_TITLE;
+      setComposerResetVersion((prev) => prev + 1);
     };
     window.addEventListener('new-chat-requested', onNewChatRequested);
     return () => window.removeEventListener('new-chat-requested', onNewChatRequested);
@@ -555,7 +557,14 @@ const ChatPage = () => {
       {/* Input Area */}
       <div className="flex-shrink-0 bg-[var(--bg-primary)] p-4 pb-6">
         <div className="max-w-3xl mx-auto">
-          <InputBox key={currentSessionId ?? 'new'} onSend={handleSend} isLoading={isLoading} onStop={handleStop} />
+          <InputBox
+            onSend={handleSend}
+            isLoading={isLoading}
+            isBusy={isLoading || isCommandLoading}
+            onStop={handleStop}
+            resetVersion={composerResetVersion}
+            sessionId={currentSessionId}
+          />
         </div>
       </div>
     </div>
