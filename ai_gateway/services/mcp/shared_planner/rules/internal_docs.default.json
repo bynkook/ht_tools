@@ -1,0 +1,80 @@
+{
+  "rule_ref": "internal_docs.default",
+  "provider_id": "internal_docs",
+  "description": "Default keyword activation rules for the internal docs provider.",
+  "rules": [
+    {
+      "id": "category_listing_keywords",
+      "intent_label": "category_listing",
+      "action": "list_categories_detail",
+      "description": "Category/listing keywords matched a documentation catalog request.",
+      "keyword_groups": {
+        "category_listing": [
+          "카테고리",
+          "category",
+          "문서 목록"
+        ]
+      },
+      "match": {
+        "any_of_groups": [
+          "category_listing"
+        ]
+      }
+    },
+    {
+      "id": "doc_search_target + search_action",
+      "intent_label": "doc_search",
+      "action": "search_docs_rag",
+      "description": "Document-target keywords and search-intent keywords matched the document search rule.",
+      "keyword_groups": {
+        "doc_target": [
+          "문서",
+          "계약서",
+          "표준계약서",
+          "자료",
+          "파일",
+          "조항",
+          "약관",
+          "규정",
+          "기준",
+          "본문"
+        ],
+        "search_action": [
+          "검색",
+          "찾",
+          "조회",
+          "확인",
+          "알려",
+          "보여",
+          "look up",
+          "search",
+          "find"
+        ],
+        "context_hint": [
+          "관련",
+          "내용",
+          "조항",
+          "항목",
+          "본문",
+          "위약금"
+        ]
+      },
+      "match": {
+        "all_of_groups": [
+          "search_action"
+        ],
+        "any_of_groups": [
+          "doc_target"
+        ],
+        "active_category_any_of_groups": [
+          "context_hint"
+        ]
+      },
+      "params": {
+        "max_docs": 5,
+        "snippet_chars": 1500
+      },
+      "use_active_category": true
+    }
+  ]
+}

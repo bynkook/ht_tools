@@ -4,11 +4,11 @@ Minimal MCP provider registry for Phase 1.
 
 from contextlib import asynccontextmanager
 import ipaddress
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 from urllib.parse import urlparse
 
-from .config import DOC_SEARCH_PROVIDER_ID, McpServerConfig, McpSettings, load_doc_search_server_config
-from .providers import InternalDocsProvider
+from .config import DOC_SEARCH_PROVIDER_ID, McpServerConfig, McpSettings, load_mcp_settings, load_provider_config
+from .providers import require_provider_manifest
 
 
 def _is_loopback_host(hostname: str | None) -> bool:
@@ -31,8 +31,20 @@ def _enforce_remote_policy(config: McpServerConfig, settings: McpSettings | None
     raise RuntimeError(f"Remote MCP provider is disabled by MCP_TEST_MODE_ALLOW_REMOTE_MCP: {config.base_url}")
 
 
+def _ensure_manifest_matches_config(config: McpServerConfig) -> None:
+    manifest = require_provider_manifest(config.provider_id)
+    if config.transport != manifest.transport_type:
+        raise ValueError(
+            f"Configured transport does not match registered MCP provider manifest: {config.provider_id}"
+        )
+
+
 def list_provider_configs(settings: McpSettings | None = None) -> list[McpServerConfig]:
-    return [get_provider_config(settings=settings)]
+    current_settings = settings or load_mcp_settings()
+    configs = current_settings.enabled_provider_configs()
+    for config in configs:
+        _ensure_manifest_matches_config(config)
+    return configs
 
 
 def get_provider_config(
@@ -40,9 +52,13 @@ def get_provider_config(
     *,
     settings: McpSettings | None = None,
 ) -> McpServerConfig:
-    if provider_id != DOC_SEARCH_PROVIDER_ID:
-        raise ValueError(f"Unknown MCP provider: {provider_id}")
-    return settings.doc_server if settings is not None else load_doc_search_server_config()
+    if settings is not None:
+        config = settings.require_provider(provider_id)
+    else:
+        config = load_provider_config(provider_id)
+
+    _ensure_manifest_matches_config(config)
+    return config
 
 
 @asynccontextmanager
@@ -50,12 +66,11 @@ async def connect_provider(
     provider_id: str = DOC_SEARCH_PROVIDER_ID,
     *,
     settings: McpSettings | None = None,
-) -> AsyncIterator[InternalDocsProvider]:
-    if provider_id != DOC_SEARCH_PROVIDER_ID:
-        raise ValueError(f"Unknown MCP provider: {provider_id}")
+) -> AsyncIterator[Any]:
     config = get_provider_config(provider_id, settings=settings)
+    manifest = require_provider_manifest(provider_id)
     _enforce_remote_policy(config, settings)
-    async with InternalDocsProvider.connect_from_config(config) as provider:
+    async with manifest.connect_from_config(config) as provider:
         yield provider
 
 

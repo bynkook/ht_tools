@@ -13,8 +13,14 @@ export const normalizeSseEvent = (parsed) => {
           channel: parsed.channel ?? 'system',
           phase: parsed.phase ?? null,
           title: parsed.title ?? null,
-          provider: parsed.provider ?? null,
+          provider: parsed.provider ?? parsed.provider_id ?? parsed.providerId ?? null,
+          providerId: parsed.provider_id ?? parsed.providerId ?? parsed.provider ?? null,
+          providerDisplayName: parsed.provider_display_name ?? parsed.providerDisplayName ?? null,
           tool: parsed.tool ?? null,
+          selectionReason: parsed.selection_reason ?? parsed.selectionReason ?? null,
+          selectionRank: parsed.selection_rank ?? parsed.selectionRank ?? null,
+          candidateSummary: parsed.candidate_summary ?? parsed.candidateSummary ?? null,
+          partialFailure: parsed.partial_failure ?? parsed.partialFailure ?? null,
           raw: parsed.raw ?? null,
           requestId: parsed.request_id ?? parsed.requestId ?? null,
           fingerprint: parsed.fingerprint ?? null,
@@ -55,4 +61,3 @@ export const normalizeSseEvent = (parsed) => {
     payload: parsed,
   };
 };
-

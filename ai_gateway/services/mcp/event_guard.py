@@ -22,6 +22,8 @@ class SystemEventGuard:
         self._raw_bytes_used = 0
         self._last_context: dict[str, Any] = {
             "provider": None,
+            "provider_id": None,
+            "provider_display_name": None,
             "tool": None,
             "timestamp": None,
         }
@@ -81,6 +83,8 @@ class SystemEventGuard:
     def _remember_context(self, event: SystemEvent) -> None:
         self._last_context = {
             "provider": event.provider,
+            "provider_id": event.provider_id,
+            "provider_display_name": event.provider_display_name,
             "tool": event.tool,
             "timestamp": event.timestamp,
         }
@@ -112,6 +116,7 @@ class SystemEventGuard:
         suppressed_count: int = 0,
         raw_suppressed_count: int = 0,
     ) -> SystemEvent:
+        provider_id = self._last_context["provider_id"] or self._last_context["provider"]
         return SystemEvent(
             kind="system_log",
             level="info",
@@ -120,7 +125,9 @@ class SystemEventGuard:
             title=title,
             content=content,
             request_id=self._request_id,
-            provider=self._last_context["provider"],
+            provider=provider_id,
+            provider_id=provider_id,
+            provider_display_name=self._last_context["provider_display_name"],
             tool=self._last_context["tool"],
             meta={
                 "persist": self._policy.persist_system_logs,
@@ -129,7 +136,7 @@ class SystemEventGuard:
             fingerprint=build_event_fingerprint(
                 level="info",
                 phase="log_guard",
-                provider=self._last_context["provider"],
+                provider=provider_id,
                 tool=self._last_context["tool"],
                 request_id=self._request_id,
                 content=content,

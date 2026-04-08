@@ -196,8 +196,12 @@ async def lifespan(app: FastAPI):
         HTTPX_TIMEOUT_WRITE_SECONDS,
         HTTPX_TIMEOUT_POOL_SECONDS,
     )
+    enabled_providers = [
+        f"{provider.provider_id}:{provider.transport}:{provider.base_url}"
+        for provider in app.state.mcp_settings.enabled_provider_configs()
+    ]
     logger.info(
-        "✅ MCP settings initialized (test_mode=%s, verbose_json=%s, discovery_on_startup=%s, store_system_logs=%s, max_payload_chars=%s, visible_band_limit=%s, raw_bytes_limit=%s, redact_headers=%s, allow_remote_mcp=%s, doc_server=%s)",
+        "✅ MCP settings initialized (test_mode=%s, verbose_json=%s, discovery_on_startup=%s, store_system_logs=%s, max_payload_chars=%s, visible_band_limit=%s, raw_bytes_limit=%s, redact_headers=%s, allow_remote_mcp=%s, providers=%s)",
         app.state.mcp_settings.host.test_mode,
         app.state.mcp_settings.host.test_mode_verbose_json,
         app.state.mcp_settings.host.test_mode_discovery_on_startup,
@@ -207,7 +211,7 @@ async def lifespan(app: FastAPI):
         app.state.mcp_settings.host.test_mode_raw_bytes_limit,
         app.state.mcp_settings.host.test_mode_redact_headers,
         app.state.mcp_settings.host.test_mode_allow_remote_mcp,
-        app.state.mcp_settings.doc_server.base_url,
+        enabled_providers,
     )
     app.state.mcp_startup_capabilities = None
     if (

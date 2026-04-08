@@ -106,7 +106,13 @@ class SystemEvent:
     content: str
     request_id: str
     provider: str | None = None
+    provider_id: str | None = None
+    provider_display_name: str | None = None
     tool: str | None = None
+    selection_reason: str | None = None
+    selection_rank: int | None = None
+    candidate_summary: Any = None
+    partial_failure: Any = None
     raw: Any = None
     meta: dict[str, Any] = field(default_factory=dict)
     fingerprint: str | None = None

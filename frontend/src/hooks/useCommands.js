@@ -4,6 +4,8 @@ import { memoryApi, modelChatApi } from '../api/djangoApi';
 import { mcpCommandApi, mcpRagApi } from '../api/fastapiApi';
 import { buildSystemMessage } from '../features/chat/utils/systemMessageState';
 
+const DEFAULT_MCP_PROVIDER_ID = 'internal_docs';
+
 // =============================================================================
 // @<파일명> mention 파싱 유틸리티 (ChatPage에서 import하여 사용)
 // =============================================================================
@@ -45,9 +47,10 @@ export function stripAtMentions(text) {
  * @param {string[]} mentions  parseAtMentions() 결과
  * @param {string} cleanQuery  stripAtMentions() 결과 (LLM에 전달할 실제 질문)
  * @param {string|null} activeCategory  현재 세션 카테고리
+ * @param {string} providerId  현재 MCP provider
  * @returns {Promise<{ resolved: Array<{filename, system_prompt, snippets}>, errors: string[] }>}
  */
-export async function resolveAtMentions(mentions, cleanQuery, activeCategory) {
+export async function resolveAtMentions(mentions, cleanQuery, activeCategory, providerId = DEFAULT_MCP_PROVIDER_ID) {
   const results = await Promise.allSettled(
     mentions.map(async (raw) => {
       let filenameFilter = raw;
@@ -63,6 +66,7 @@ export async function resolveAtMentions(mentions, cleanQuery, activeCategory) {
         query: cleanQuery || raw,
         filename_filter: filenameFilter,
         ...(category ? { category } : {}),
+        ...(providerId ? { provider_id: providerId } : {}),
       });
       if (!response.data?.success) {
         throw new Error(`not found: ${raw}`);
@@ -91,13 +95,37 @@ const getApiErrorMessage = (error, fallback) => {
     || fallback;
 };
 
+const extractProviderOverride = (command) => {
+  const rawParts = command.trim().split(/\s+/);
+  const parts = [];
+  let providerId = null;
+  let missingValue = false;
+
+  for (let index = 0; index < rawParts.length; index += 1) {
+    if (rawParts[index] !== '--provider') {
+      parts.push(rawParts[index]);
+      continue;
+    }
+
+    const nextValue = rawParts[index + 1]?.trim();
+    if (!nextValue) {
+      missingValue = true;
+      break;
+    }
+    providerId = nextValue;
+    index += 1;
+  }
+
+  return { parts, providerId, missingValue };
+};
+
 /**
  * Chat 커맨드 처리를 위한 커스텀 훅
  * "/" 로 시작하는 커맨드들을 파싱하고 실행한다.
  *
  * 지원 커맨드:
  * - /memory save|load|delete|list|clear "이름"
- * - /mcp list|search|read|category|help
+ * - /mcp list|search|read|set|clear|rag|use|help
  *
  * @param {Object} params
  * @param {Array} params.messages - 현재 메시지 배열
@@ -113,11 +141,13 @@ export const useCommands = ({
 }) => {
   const [isCommandLoading, setIsCommandLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState(null);
+  const [activeProvider, setActiveProvider] = useState(DEFAULT_MCP_PROVIDER_ID);
   const [ragEnabled, setRagEnabled] = useState(false);
   const ragCacheRef = useRef(null);
 
   const resetCommandState = useCallback(() => {
     setActiveCategory(null);
+    setActiveProvider(DEFAULT_MCP_PROVIDER_ID);
     setRagEnabled(false);
     ragCacheRef.current = null;
   }, []);
@@ -182,47 +212,38 @@ export const useCommands = ({
         return;
       }
 
-      const restoredMessages = snapshot.snapshot_data?.messages || [];
-      if (restoredMessages.length === 0) {
-        await emitCommandError(sessionId, `스냅샷 "${name}"에 저장된 메시지가 없습니다.`);
-        return;
-      }
-
-      const successText = `메모리 로드 완료: "${name}" (${restoredMessages.length}개 메시지, ${new Date(snapshot.created_at).toLocaleString('ko-KR')})`;
-      const message = buildSystemMessage(`✅ ${successText}`, {
-        channel: 'command_result',
+      setMessages(snapshot.messages || []);
+      const successText = `메모리 불러오기 완료: "${name}" (${snapshot.messages?.length || 0}개 메시지)`;
+      await appendSystemHistory(sessionId, `✅ ${successText}`, {
         title: 'Memory loaded',
         phase: 'memory',
       });
-      const messageMetadata = message.metadata;
-      setMessages([
-        ...restoredMessages,
-        message,
-      ]);
-      if (sessionId) {
-        await modelChatApi.saveMessage(sessionId, 'system', `✅ ${successText}`, messageMetadata);
-      }
     } catch (error) {
       await emitCommandError(sessionId, `스냅샷 로드에 실패했습니다: ${error.message || '알 수 없는 오류'}`);
     } finally {
       setIsCommandLoading(false);
     }
-  }, [emitCommandError, setMessages]);
+  }, [appendSystemHistory, emitCommandError, setMessages]);
 
   const handleMemoryList = useCallback(async (sessionId) => {
     setIsCommandLoading(true);
     try {
       const snapshots = await memoryApi.listSnapshots(sessionId);
-      if (snapshots.length === 0) {
-        await appendSystemHistory(sessionId, '저장된 스냅샷이 없습니다.', {
+      if (!snapshots.length) {
+        await appendSystemHistory(sessionId, '저장된 메모리 스냅샷이 없습니다.', {
           title: 'Memory list',
           phase: 'memory',
         });
       } else {
-        const listText = snapshots.map((snapshot, index) =>
-          `${index + 1}. "${snapshot.name}" (${new Date(snapshot.created_at).toLocaleString('ko-KR')})`,
-        ).join('\n');
-        await appendSystemHistory(sessionId, `저장된 스냅샷 (${snapshots.length}개):\n${listText}`, {
+        const rows = snapshots.map(snapshot => `| ${snapshot.name} | ${snapshot.message_count} | ${new Date(snapshot.updated_at).toLocaleString()} |`);
+        const content = [
+          '## 🧠 저장된 메모리 스냅샷',
+          '',
+          '| 이름 | 메시지 수 | 수정일 |',
+          '|:---|---:|:---|',
+          ...rows,
+        ].join('\n');
+        await appendSystemHistory(sessionId, content, {
           title: 'Memory list',
           phase: 'memory',
         });
@@ -327,8 +348,15 @@ export const useCommands = ({
   ]);
 
   const handleMcpCommand = useCallback(async (sessionId, command) => {
-    const parts = command.trim().split(/\s+/);
+    const { parts, providerId: overrideProviderId, missingValue } = extractProviderOverride(command);
+    if (missingValue) {
+      await emitCommandError(sessionId, '사용법: /mcp ... --provider <provider_id>');
+      return;
+    }
+
     const action = parts[1];
+    const providerForState = activeProvider || DEFAULT_MCP_PROVIDER_ID;
+    const commandProviderId = overrideProviderId || providerForState;
 
     if (!action || action === 'help') {
       const categoryStatus = activeCategory
@@ -351,6 +379,8 @@ export const useCommands = ({
         '| `/mcp rag on` | RAG 모드 재활성화 |',
         '| `/mcp rag status` | RAG 모드 상태 + 캐시 정보 확인 |',
         '| `/mcp rag refresh` | RAG 검색 캐시 강제 초기화 |',
+        '| `/mcp use <provider_id>` | 기본 MCP provider 전환 |',
+        '| `/mcp ... --provider <provider_id>` | 이번 명령만 provider override |',
         '| `/mcp help` | 이 도움말 표시 |',
         '',
         '---',
@@ -366,6 +396,7 @@ export const useCommands = ({
         '> `@`는 질문 어느 위치에나 사용 가능. 세션 카테고리 설정 시 경로 없는 파일명은 해당 카테고리 내 탐색.',
         '',
         '---',
+        `🔌 현재 기본 provider: **"${providerForState}"**`,
         categoryStatus,
         ragEnabled
           ? '🤖 RAG 모드: **ON** — 일반 질문 입력 시 문서를 자동 검색합니다'
@@ -375,7 +406,33 @@ export const useCommands = ({
       await appendSystemHistory(sessionId, helpContent, {
         title: 'MCP help',
         phase: 'command',
-        provider: 'internal_docs',
+        provider: providerForState,
+      });
+      return;
+    }
+
+    if (action === 'use') {
+      const nextProvider = parts[2]?.trim();
+      if (!nextProvider) {
+        await emitCommandError(sessionId, 'provider_id를 입력하세요. 예: /mcp use internal_docs');
+        return;
+      }
+
+      setActiveProvider(nextProvider);
+      setActiveCategory(null);
+      setRagEnabled(false);
+      ragCacheRef.current = null;
+      await appendSystemHistory(sessionId, [
+        '## 🔌 MCP provider 변경',
+        '',
+        `기본 provider가 **"${nextProvider}"** 로 변경되었습니다.`,
+        'provider 의미가 섞이지 않도록 기존 카테고리와 RAG 상태는 초기화했습니다.',
+        '',
+        '> 필요한 경우 `/mcp set <카테고리명>` 으로 다시 카테고리를 설정하세요.',
+      ].join('\n'), {
+        title: 'MCP provider changed',
+        phase: 'command',
+        provider: nextProvider,
       });
       return;
     }
@@ -387,7 +444,7 @@ export const useCommands = ({
         return;
       }
 
-      const validation = await mcpCommandApi.validateCategory(categoryName);
+      const validation = await mcpCommandApi.validateCategory(categoryName, providerForState);
       const validatedCategory = validation.data?.category || categoryName;
 
       setActiveCategory(validatedCategory);
@@ -396,7 +453,7 @@ export const useCommands = ({
       await appendSystemHistory(sessionId, [
         '## 🗂️ 문서 카테고리 설정',
         '',
-        `카테고리 **"${validatedCategory}"** 이(가) 설정되었습니다.`,
+        `provider **"${providerForState}"** 에서 카테고리 **"${validatedCategory}"** 이(가) 설정되었습니다.`,
         '📚 **RAG 모드가 자동으로 활성화**되었습니다.',
         '',
         '> 이제 채팅창에서 일반 질문을 입력하면 해당 카테고리 문서를 자동 검색하여 답변에 활용합니다.',
@@ -405,7 +462,7 @@ export const useCommands = ({
       ].join('\n'), {
         title: 'MCP category set',
         phase: 'command',
-        provider: 'internal_docs',
+        provider: providerForState,
       });
       return;
     }
@@ -414,10 +471,10 @@ export const useCommands = ({
       setActiveCategory(null);
       setRagEnabled(false);
       ragCacheRef.current = null;
-      await appendSystemHistory(sessionId, '🗂️ MCP 문서 카테고리가 해제되었습니다. RAG 모드도 비활성화되었습니다.', {
+      await appendSystemHistory(sessionId, `🗂️ MCP 문서 카테고리가 해제되었습니다. provider는 **"${providerForState}"** 로 유지되며, RAG 모드도 비활성화되었습니다.`, {
         title: 'MCP category cleared',
         phase: 'command',
-        provider: 'internal_docs',
+        provider: providerForState,
       });
       return;
     }
@@ -428,22 +485,25 @@ export const useCommands = ({
         const cacheAge = ragCacheRef.current
           ? Math.round((Date.now() - ragCacheRef.current.cachedAt) / 1000)
           : null;
-        await appendSystemHistory(
-          sessionId,
-          ragEnabled
-            ? [
-                '## 🤖 RAG 모드: **ON**',
-                `🗂️ 검색 카테고리: ${activeCategory ? `**"${activeCategory}"**` : '전체 (카테고리 미지정)'}`,
-                '📊 용량: 문서 최대 10개 × 1,500자 스니펫 (BM25 관련성 랭킹 + 최신 우선)',
-                cacheAge !== null ? `🗃️ 캐시: ${cacheAge}초 전 검색 결과 보관 중` : '🗃️ 캐시: 없음 (첫 질문 시 검색)',
-              ].join('\n')
-            : '🤖 RAG 모드: **OFF**\n`/mcp set <카테고리>` 로 활성화하세요.',
-          {
-            title: 'RAG status',
-            phase: 'command',
-            provider: 'internal_docs',
-          },
-        );
+        const statusContent = ragEnabled
+          ? [
+              '## 🤖 RAG 모드: **ON**',
+              `🔌 provider: **"${providerForState}"**`,
+              `🗂️ 검색 카테고리: ${activeCategory ? `**"${activeCategory}"**` : '전체 (카테고리 미지정)'}`,
+              '📊 용량: 문서 최대 10개 × 1,500자 스니펫 (BM25 관련성 랭킹 + 최신 우선)',
+              cacheAge !== null ? `🗃️ 캐시: ${cacheAge}초 전 검색 결과 보관 중` : '🗃️ 캐시: 없음 (첫 질문 시 검색)',
+            ].join('\n')
+          : [
+              '🤖 RAG 모드: **OFF**',
+              `현재 provider: **"${providerForState}"**`,
+              '',
+              '`/mcp set <카테고리>` 로 활성화하세요.',
+            ].join('\n');
+        await appendSystemHistory(sessionId, statusContent, {
+          title: 'RAG status',
+          phase: 'command',
+          provider: providerForState,
+        });
       } else if (sub === 'on') {
         setRagEnabled(true);
         ragCacheRef.current = null;
@@ -452,6 +512,7 @@ export const useCommands = ({
           '',
           '이제 일반 질문을 입력하면 **자동으로 문서를 검색**하여 LLM 답변에 활용합니다.',
           '',
+          `🔌 provider: **"${providerForState}"**`,
           activeCategory
             ? `🗂️ 검색 대상: **"${activeCategory}"** 카테고리`
             : '🗂️ 검색 대상: 전체 문서 (카테고리 미지정)',
@@ -463,22 +524,22 @@ export const useCommands = ({
         ].join('\n'), {
           title: 'RAG enabled',
           phase: 'command',
-          provider: 'internal_docs',
+          provider: providerForState,
         });
       } else if (sub === 'off') {
         setRagEnabled(false);
         ragCacheRef.current = null;
-        await appendSystemHistory(sessionId, '🤖 RAG 모드 **비활성화** — LLM이 자체 지식으로 답변합니다.', {
+        await appendSystemHistory(sessionId, `🤖 RAG 모드 **비활성화** — provider **"${providerForState}"** 는 유지되고, LLM이 자체 지식으로 답변합니다.`, {
           title: 'RAG disabled',
           phase: 'command',
-          provider: 'internal_docs',
+          provider: providerForState,
         });
       } else if (sub === 'refresh') {
         ragCacheRef.current = null;
-        await appendSystemHistory(sessionId, '🗃️ RAG 캐시 초기화 완료 — 다음 질문 시 새로 문서를 검색합니다.', {
+        await appendSystemHistory(sessionId, `🗃️ RAG 캐시 초기화 완료 — provider **"${providerForState}"** 로 다음 질문 시 새로 문서를 검색합니다.`, {
           title: 'RAG cache refreshed',
           phase: 'command',
-          provider: 'internal_docs',
+          provider: providerForState,
         });
       } else {
         await emitCommandError(sessionId, '사용법: /mcp rag on | off | status | refresh');
@@ -488,7 +549,10 @@ export const useCommands = ({
 
     setIsCommandLoading(true);
     try {
-      const params = { action };
+      const params = {
+        action,
+        provider_id: commandProviderId,
+      };
 
       if (action === 'list') {
         const category = parts.slice(2).join(' ').trim() || null;
@@ -536,14 +600,14 @@ export const useCommands = ({
       await appendSystemHistory(sessionId, response.data.content, {
         title: `/mcp ${action}`,
         phase: 'command',
-        provider: 'internal_docs',
+        provider: commandProviderId,
       });
     } catch (error) {
       await emitCommandError(sessionId, `/mcp 커맨드 실패: ${getApiErrorMessage(error, '알 수 없는 오류')}`);
     } finally {
       setIsCommandLoading(false);
     }
-  }, [activeCategory, ragEnabled, appendSystemHistory, emitCommandError]);
+  }, [activeCategory, activeProvider, ragEnabled, appendSystemHistory, emitCommandError]);
 
   const executeCommand = useCallback(async (text, options = {}) => {
     const originalText = options.originalText || text;
@@ -577,6 +641,7 @@ export const useCommands = ({
     executeCommand,
     isCommandLoading,
     activeCategory,
+    activeProvider,
     ragEnabled,
     ragCacheRef,
     resetCommandState,

@@ -21,6 +21,7 @@ class NormalChatRuntime(BaseChatRuntime):
                 user_text=runtime_input.contents[-1],
                 active_category=runtime_input.mcp_context.active_category,
                 rag_enabled=runtime_input.mcp_context.rag_enabled,
+                provider_id=runtime_input.mcp_context.provider_id,
             )
             system_prompt = merge_system_prompts(system_prompt, resolution.system_prompt)
 

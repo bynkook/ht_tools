@@ -129,7 +129,7 @@ const ChatPage = () => {
   }, []);
 
   // 커맨드 처리 훅
-  const { executeCommand, isCommandLoading, activeCategory, ragEnabled, ragCacheRef, resetCommandState } = useCommands({
+  const { executeCommand, isCommandLoading, activeCategory, activeProvider, ragEnabled, ragCacheRef, resetCommandState } = useCommands({
     messages,
     setMessages,
     currentSessionId,
@@ -309,6 +309,7 @@ const ChatPage = () => {
           mcpContext: {
             activeCategory,
             ragEnabled,
+            providerId: activeProvider,
           },
         }),
         signal: abortControllerRef.current.signal,

@@ -14,14 +14,18 @@ export const getSystemMessageTitle = (message) => {
 
 export const getSystemMessageMetaLine = (message) => {
   const metadata = message?.metadata || {};
+  const providerLabel = metadata.providerDisplayName || metadata.providerId || metadata.provider;
+  const candidateCount = Array.isArray(metadata.candidateSummary) ? metadata.candidateSummary.length : 0;
   const parts = [
     metadata.phase,
-    metadata.provider,
+    providerLabel,
     metadata.tool,
+    metadata.selectionRank > 1 ? `rank ${metadata.selectionRank}` : null,
+    candidateCount > 1 ? `candidates ${candidateCount}` : null,
+    metadata.partialFailure ? 'partial failure' : null,
     metadata.requestId,
     metadata.suppressedCount > 0 ? `suppressed ${metadata.suppressedCount}` : null,
     metadata.rawSuppressed ? 'raw suppressed' : null,
   ].filter(Boolean);
   return parts.join(' · ');
 };
-

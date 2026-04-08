@@ -15,6 +15,7 @@ from ..host import GenericMcpHost
 class McpContextInput:
     active_category: str | None
     rag_enabled: bool
+    provider_id: str | None = None
 
 
 @dataclass(frozen=True)

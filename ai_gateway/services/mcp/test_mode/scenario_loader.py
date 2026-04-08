@@ -1,5 +1,5 @@
 """
-Scenario loader for deterministic MCP Test Mode plans.
+Scenario loader for deterministic MCP Test Mode override fixtures.
 """
 
 from dataclasses import dataclass, field
