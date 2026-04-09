@@ -8,7 +8,7 @@ from apps.pe_log_sheet.services.csv_loader import csv_to_workbook, compute_csv_c
 
 
 class Command(BaseCommand):
-    help = 'Re-initialise PE Log Sheet from the canonical CSV source.'
+    help = 'Re-initialise PE Log Sheet from the seed CSV.'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -19,7 +19,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         csv_path = os.path.normpath(
-            os.path.join(settings.BASE_DIR, '..', 'data', 'pe_log', 'pe_log.csv')
+            os.path.join(settings.BASE_DIR, '..', 'data', 'pe_log', 'seed.csv')
         )
 
         if not os.path.exists(csv_path):

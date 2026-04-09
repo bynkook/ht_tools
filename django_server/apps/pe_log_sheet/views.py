@@ -4,20 +4,26 @@ from queue import Empty
 
 from django.conf import settings
 from django.db import transaction
-from django.http import StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from rest_framework import status
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import PeLogSheetState, PeLogSheetRevision
 from .serializers import PeLogSheetOpsSerializer
-from .services.csv_loader import csv_to_workbook, compute_csv_checksum
+from .services.csv_loader import (
+    compute_csv_checksum,
+    csv_to_workbook,
+    csv_upload_to_workbook,
+    workbook_to_csv_bytes,
+)
 from .services.stream_hub import get_hub
 
 
 def _csv_path() -> str:
-    path = os.path.join(settings.BASE_DIR, '..', 'data', 'pe_log', 'pe_log.csv')
+    path = os.path.join(settings.BASE_DIR, '..', 'data', 'pe_log', 'seed.csv')
     return os.path.normpath(path)
 
 
@@ -167,3 +173,52 @@ class SheetResetView(APIView):
             'revision': state.revision,
             'message': 'CSV 기준으로 시트가 재초기화되었습니다.',
         })
+
+
+class SheetCsvUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        uploaded_file = request.FILES.get('file')
+        if uploaded_file is None:
+            return Response({'error': 'CSV 파일이 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not uploaded_file.name.lower().endswith('.csv'):
+            return Response({'error': 'CSV 파일만 업로드할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            workbook_data = csv_upload_to_workbook(uploaded_file)
+        except (UnicodeDecodeError, ValueError) as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            state, _ = PeLogSheetState.objects.select_for_update().get_or_create(
+                singleton_key='main',
+            )
+            state.workbook_data = workbook_data
+            state.revision = state.revision + 1
+            state.source_checksum = ''
+            state.last_editor = request.user
+            state.save()
+
+        get_hub().broadcast({
+            'type': 'reset',
+            'revision': state.revision,
+        })
+
+        return Response({
+            'revision': state.revision,
+            'workbook_data': workbook_data,
+            'message': 'CSV 업로드가 완료되었습니다.',
+        })
+
+
+class SheetCsvDownloadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        state = _get_or_init_state()
+        csv_bytes = workbook_to_csv_bytes(state.workbook_data)
+        response = HttpResponse(csv_bytes, content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = 'attachment; filename="pe_log_sheet.csv"'
+        return response

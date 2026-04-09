@@ -17,7 +17,8 @@ export default function PeLogSheetPage() {
     conflictMessage,
     dismissConflict,
     handleOp,
-    resetFromSource,
+    uploadCsv,
+    downloadCsv,
   } = usePeLogSheet(workbookRef);
 
   const onOp = useCallback((ops) => {
@@ -41,7 +42,8 @@ export default function PeLogSheetPage() {
         syncStatus={syncStatus}
         revision={revision}
         onHelpOpen={() => setShowHelp(true)}
-        onResetFromSource={resetFromSource}
+        onCsvUpload={uploadCsv}
+        onCsvDownload={downloadCsv}
       />
 
       {conflictMessage && (

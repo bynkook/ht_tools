@@ -19,26 +19,33 @@ export function usePeLogSheet(workbookRef) {
   const [revision, setRevision] = useState(0);
   const [syncStatus, setSyncStatus] = useState('idle'); // idle | saving | conflict | error
   const [conflictMessage, setConflictMessage] = useState(null);
-  const [activeUsers, setActiveUsers] = useState(0);
 
   const revisionRef = useRef(0);
-  const sseAbortCtrlRef = useRef(null);
 
   const updateRevision = useCallback((rev) => {
     setRevision(rev);
     revisionRef.current = rev;
   }, []);
 
+  const applyWorkbookData = useCallback((nextWorkbookData) => {
+    setWorkbookData(nextWorkbookData);
+    if (workbookRef.current && nextWorkbookData) {
+      workbookRef.current.updateSheet(nextWorkbookData);
+    }
+  }, [workbookRef]);
+
   // ── Initial load ──────────────────────────────────────────────────
   const loadState = useCallback(async () => {
     try {
       const data = await peLogSheetApi.getState();
-      setWorkbookData(data.workbook_data);
+      applyWorkbookData(data.workbook_data);
       updateRevision(data.revision);
+      return data;
     } catch (err) {
       console.error('[peLogSheet] loadState failed', err);
+      return null;
     }
-  }, [updateRevision]);
+  }, [applyWorkbookData, updateRevision]);
 
   useEffect(() => {
     loadState();
@@ -50,7 +57,6 @@ export function usePeLogSheet(workbookRef) {
     if (!token) return;
 
     const ctrl = new AbortController();
-    sseAbortCtrlRef.current = ctrl;
 
     const streamUrl = peLogSheetApi.getStreamUrl();
 
@@ -71,20 +77,12 @@ export function usePeLogSheet(workbookRef) {
                   workbookRef.current.applyOp(msg.ops);
                 } catch (e) {
                   console.warn('[peLogSheet] applyOp failed, reloading', e);
-                  loadState().then(() => {
-                    if (workbookRef.current && workbookData) {
-                      workbookRef.current.updateSheet(workbookData);
-                    }
-                  });
+                  loadState();
                 }
               }
               updateRevision(msg.revision);
             } else if (msg.type === 'reset') {
-              loadState().then(() => {
-                if (workbookRef.current) {
-                  workbookRef.current.updateSheet(workbookData);
-                }
-              });
+              loadState();
               updateRevision(msg.revision);
             }
           },
@@ -132,16 +130,15 @@ export function usePeLogSheet(workbookRef) {
         updateRevision(serverRev);
         setSyncStatus('conflict');
         setConflictMessage('다른 사용자가 동시에 편집했습니다. 최신 버전으로 복원되었습니다.');
-        if (workbookRef.current && serverSheet) {
-          workbookRef.current.updateSheet(serverSheet);
-          setWorkbookData(serverSheet);
+        if (serverSheet) {
+          applyWorkbookData(serverSheet);
         }
       } else {
         setSyncStatus('error');
         console.error('[peLogSheet] submitOps failed', err);
       }
     }
-  }, [updateRevision, workbookRef]);
+  }, [applyWorkbookData, updateRevision, workbookRef]);
 
   useEffect(() => {
     batcherRef.current = new OpBatcher({
@@ -151,20 +148,38 @@ export function usePeLogSheet(workbookRef) {
     return () => batcherRef.current?.cancel();
   }, [commitOps]);
 
-  // ── Reset from CSV ────────────────────────────────────────────────
-  const resetFromSource = useCallback(async () => {
+  const uploadCsv = useCallback(async (file) => {
+    batcherRef.current?.cancel();
     try {
-      const result = await peLogSheetApi.resetFromSource();
-      await loadState();
-      if (workbookRef.current) {
-        const latest = await peLogSheetApi.getState();
-        workbookRef.current.updateSheet(latest.workbook_data);
-      }
+      const result = await peLogSheetApi.uploadCsv(file);
+      applyWorkbookData(result.workbook_data);
       updateRevision(result.revision);
+      setSyncStatus('idle');
+      setConflictMessage(null);
+      return result;
     } catch (err) {
-      console.error('[peLogSheet] resetFromSource failed', err);
+      setSyncStatus('error');
+      console.error('[peLogSheet] uploadCsv failed', err);
+      throw err;
     }
-  }, [loadState, updateRevision, workbookRef]);
+  }, [applyWorkbookData, updateRevision]);
+
+  const downloadCsv = useCallback(async () => {
+    try {
+      const blob = await peLogSheetApi.downloadCsv();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'pe_log_sheet.csv';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setSyncStatus('error');
+      console.error('[peLogSheet] downloadCsv failed', err);
+    }
+  }, []);
 
   return {
     workbookData,
@@ -173,6 +188,7 @@ export function usePeLogSheet(workbookRef) {
     conflictMessage,
     dismissConflict: () => { setSyncStatus('idle'); setConflictMessage(null); },
     handleOp,
-    resetFromSource,
+    uploadCsv,
+    downloadCsv,
   };
 }

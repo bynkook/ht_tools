@@ -515,6 +515,24 @@ export const peLogSheetApi = {
     return response.data;
   },
 
+  uploadCsv: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await djangoClient.post('/api/pe-log-sheet/csv-upload/', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  downloadCsv: async () => {
+    const response = await djangoClient.get('/api/pe-log-sheet/csv-download/', {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
   getStreamUrl: () => {
     const protocol = window.location.protocol;
     const hostname = window.location.hostname;

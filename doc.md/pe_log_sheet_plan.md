@@ -89,7 +89,7 @@
 따라서 실제 구현에서는 아래처럼 분리하는 것이 안전하다.
 
 - 참조 원본: `test\pe_log\pe_log.csv`
-- 앱 canonical seed: `data\pe_log\pe_log.csv`
+- 앱 초기 seed: `data\pe_log\seed.csv`
 
 이미지 예시(`2025_PE로그.png`, `2026_PE로그.png`)는 요구사항 해석용 참고 자료로만 유지한다.
 
@@ -426,7 +426,7 @@ django_server\apps\pe_log_sheet\
 ## Phase 2 — CSV 기반 초기 상태 생성
 
 1. `pe_log.csv` 스키마 분석 로직 작성
-2. `data\pe_log\pe_log.csv` canonical 위치 확정
+2. `data\pe_log\seed.csv` 초기 seed 위치 확정
 3. workbook_data 생성기 작성
 4. 초기 shared state row 생성 로직 작성
 5. 관리 명령으로 재적재 가능하게 구성
@@ -486,7 +486,7 @@ django_server\apps\pe_log_sheet\
 
 ### 데이터/문서
 
-- `data\pe_log\pe_log.csv` (canonical source 예정)
+- `data\pe_log\seed.csv` (초기 seed 파일)
 - `doc.md\pe_log_sheet_plan.md`
 
 ---
