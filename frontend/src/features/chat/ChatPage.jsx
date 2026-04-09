@@ -75,6 +75,13 @@ const ChatPage = () => {
     messagesRef.current = messages;
   }, [messages]);
 
+  // Abort any in-flight SSE stream when the component unmounts
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   const ensureSession = useCallback(async ({ titleSeed } = {}) => {
     if (activeSessionIdRef.current) {
       return activeSessionIdRef.current;

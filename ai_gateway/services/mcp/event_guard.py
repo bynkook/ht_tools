@@ -11,7 +11,9 @@ from .event_schema import SystemEvent, build_event_fingerprint
 
 
 class SystemEventGuard:
-    def __init__(self, policy: McpEventPolicy, *, request_id: str, channel: str = "mcp_test"):
+    def __init__(
+        self, policy: McpEventPolicy, *, request_id: str, channel: str = "mcp_test"
+    ):
         self._policy = policy
         self._request_id = request_id
         self._channel = channel
@@ -33,11 +35,17 @@ class SystemEventGuard:
         guarded_event = self._apply_raw_budget(event)
         self._remember_context(guarded_event)
 
-        if self._pending_event is not None and self._pending_event.fingerprint == guarded_event.fingerprint:
+        if (
+            self._pending_event is not None
+            and self._pending_event.fingerprint == guarded_event.fingerprint
+        ):
             self._pending_event = replace(
                 self._pending_event,
-                repeat_count=self._pending_event.repeat_count + guarded_event.repeat_count,
-                raw=guarded_event.raw if guarded_event.raw is not None else self._pending_event.raw,
+                repeat_count=self._pending_event.repeat_count
+                + guarded_event.repeat_count,
+                raw=guarded_event.raw
+                if guarded_event.raw is not None
+                else self._pending_event.raw,
                 timestamp=guarded_event.timestamp,
             )
             return emitted
@@ -116,7 +124,9 @@ class SystemEventGuard:
         suppressed_count: int = 0,
         raw_suppressed_count: int = 0,
     ) -> SystemEvent:
-        provider_id = self._last_context["provider_id"] or self._last_context["provider"]
+        provider_id = (
+            self._last_context["provider_id"] or self._last_context["provider"]
+        )
         return SystemEvent(
             kind="system_log",
             level="info",
@@ -149,7 +159,7 @@ class SystemEventGuard:
     def _serialized_size(value: Any) -> int:
         try:
             return len(dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8"))
-        except TypeError:
+        except Exception:
             return len(str(value).encode("utf-8"))
 
 

@@ -2,10 +2,12 @@
 FastAPI Router: MCP Command
 /mcp 슬래시 커맨드 처리 — configured MCP provider host 연동
 """
+
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ..dependencies import verify_token
 from ..services.mcp import GenericMcpHost
@@ -14,18 +16,38 @@ from ..services.mcp.doc_search_policy import DOC_SEARCH_FILE_FALLBACK_MAX_FILES
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Path traversal 방지: .. 또는 절대경로 패턴 검출
+_UNSAFE_PATH_RE = re.compile(r"\.\.|^[/\\]|[<>:\"|?*\x00-\x1f]")
+
+
+def _validate_filename(value: str | None, field_name: str = "filename") -> str | None:
+    """파일명/경로에 path traversal 패턴이 포함되어 있으면 ValueError를 발생시킨다."""
+    if value is None:
+        return value
+    stripped = value.strip()
+    if _UNSAFE_PATH_RE.search(stripped):
+        raise ValueError(
+            f"Invalid {field_name}: path traversal or unsafe characters not allowed"
+        )
+    return stripped or None
+
 
 class McpCommandRequest(BaseModel):
-    action: str                       # "search" | "read" | "list"
-    query: str | None = None          # search 시 검색어
-    target: str | None = None         # list/read 시 원본 인자
-    category: str | None = None       # search/list 시 카테고리 필터
-    filename: str | None = None       # read 시 파일 경로
+    action: str  # "search" | "read" | "list"
+    query: str | None = None  # search 시 검색어
+    target: str | None = None  # list/read 시 원본 인자
+    category: str | None = None  # search/list 시 카테고리 필터
+    filename: str | None = None  # read 시 파일 경로
     session_category: str | None = None
     session_provider_id: str | None = None
     rag_enabled: bool = False
     max_results: int = 5
     provider_id: str | None = None
+
+    @field_validator("target", "filename", mode="before")
+    @classmethod
+    def validate_path_fields(cls, value):
+        return _validate_filename(value, "path")
 
 
 class ValidateCategoryRequest(BaseModel):
@@ -40,6 +62,11 @@ class RagSearchRequest(BaseModel):
     max_docs: int | None = None
     snippet_chars: int | None = None
     provider_id: str | None = None
+
+    @field_validator("filename_filter", mode="before")
+    @classmethod
+    def validate_filename_filter(cls, value):
+        return _validate_filename(value, "filename_filter")
 
 
 def _configured_host(request: Request) -> GenericMcpHost:
@@ -65,7 +92,9 @@ async def validate_category(body: ValidateCategoryRequest, request: Request):
         raise
     except Exception as error:
         logger.warning("카테고리 검증 오류: %s", error)
-        raise HTTPException(status_code=502, detail=f"카테고리 검증 실패: {error}") from error
+        raise HTTPException(
+            status_code=502, detail=f"카테고리 검증 실패: {error}"
+        ) from error
 
 
 @router.post("", dependencies=[Depends(verify_token)])

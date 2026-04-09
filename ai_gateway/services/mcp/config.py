@@ -2,6 +2,7 @@
 MCP provider and host configuration helpers.
 """
 
+import logging
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -11,13 +12,17 @@ import toml
 
 from .doc_search_policy import DEFAULT_DOC_SEARCH_SETTINGS, McpDocSearchSettings
 
+logger = logging.getLogger(__name__)
+
 DOC_SEARCH_PROVIDER_ID = "internal_docs"
 DOC_SEARCH_PROVIDER_NAME = "fastmcp-doc-search"
 DOC_SEARCH_PROVIDER_TRANSPORT = "streamable_http"
 DOC_SEARCH_PROVIDER_ORIGIN_TYPE = "local"
 DEFAULT_DOC_SERVER_URL = "http://127.0.0.1:8002/mcp"
 DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF = "internal_docs.default"
-DEFAULT_TEST_MODE_SCENARIO_PATH = "ai_gateway/services/mcp/test_mode/scenarios/default.json"
+DEFAULT_TEST_MODE_SCENARIO_PATH = (
+    "ai_gateway/services/mcp/test_mode/scenarios/default.json"
+)
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 SECRETS_PATH = BASE_DIR / "secrets.toml"
@@ -106,7 +111,13 @@ def _parse_int(value: str | int | None, default: int) -> int:
     try:
         parsed = int(value)
         return parsed if parsed > 0 else default
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "MCP config: failed to parse int value %r (using default %r): %s",
+            value,
+            default,
+            exc,
+        )
         return default
 
 
@@ -114,7 +125,13 @@ def _parse_non_negative_int(value: str | int | None, default: int) -> int:
     try:
         parsed = int(value)
         return parsed if parsed >= 0 else default
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "MCP config: failed to parse int value %r (using default %r): %s",
+            value,
+            default,
+            exc,
+        )
         return default
 
 
@@ -163,8 +180,12 @@ def _legacy_internal_docs_section(secrets: dict) -> dict:
         "base_url": legacy_doc_server.get("base_url", DEFAULT_DOC_SERVER_URL),
         "kind": legacy_doc_server.get("kind", "remote"),
         "enabled": legacy_doc_server.get("enabled", True),
-        "origin_type": legacy_doc_server.get("origin_type", DOC_SEARCH_PROVIDER_ORIGIN_TYPE),
-        "activation_rule_ref": legacy_doc_server.get("activation_rule_ref", DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF),
+        "origin_type": legacy_doc_server.get(
+            "origin_type", DOC_SEARCH_PROVIDER_ORIGIN_TYPE
+        ),
+        "activation_rule_ref": legacy_doc_server.get(
+            "activation_rule_ref", DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF
+        ),
         "install_profile": legacy_doc_server.get("install_profile"),
         "connection_profile": legacy_doc_server.get("connection_profile"),
     }
@@ -176,12 +197,16 @@ def load_secrets() -> dict:
         return toml.load(handle)
 
 
-def _build_provider_config(provider_id: str, raw_config: dict, *, legacy_alias: dict | None = None) -> McpServerConfig:
+def _build_provider_config(
+    provider_id: str, raw_config: dict, *, legacy_alias: dict | None = None
+) -> McpServerConfig:
     merged = dict(legacy_alias or {})
     merged.update(_coerce_section(raw_config))
 
     enabled = _parse_bool(merged.get("enabled"), True)
-    display_name = _clean_optional_text(merged.get("display_name") or merged.get("name"))
+    display_name = _clean_optional_text(
+        merged.get("display_name") or merged.get("name")
+    )
     transport = _clean_optional_text(merged.get("transport"))
     base_url = _clean_optional_text(merged.get("base_url"))
     kind = _clean_optional_text(merged.get("kind")) or "remote"
@@ -195,7 +220,9 @@ def _build_provider_config(provider_id: str, raw_config: dict, *, legacy_alias: 
         transport = transport or DOC_SEARCH_PROVIDER_TRANSPORT
         base_url = base_url or DEFAULT_DOC_SERVER_URL
         origin_type = origin_type or DOC_SEARCH_PROVIDER_ORIGIN_TYPE
-        activation_rule_ref = activation_rule_ref or DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF
+        activation_rule_ref = (
+            activation_rule_ref or DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF
+        )
     else:
         display_name = display_name or provider_id
         origin_type = origin_type or kind
@@ -227,7 +254,11 @@ def load_provider_configs(secrets: dict | None = None) -> dict[str, McpServerCon
     for provider_id, raw_config in provider_sections.items():
         if not isinstance(raw_config, dict):
             raise ValueError(f"MCP provider '{provider_id}' settings must be an object")
-        legacy_alias = _legacy_internal_docs_section(current_secrets) if provider_id == DOC_SEARCH_PROVIDER_ID else None
+        legacy_alias = (
+            _legacy_internal_docs_section(current_secrets)
+            if provider_id == DOC_SEARCH_PROVIDER_ID
+            else None
+        )
         provider_configs[provider_id] = _build_provider_config(
             provider_id,
             raw_config,
@@ -244,7 +275,9 @@ def load_provider_configs(secrets: dict | None = None) -> dict[str, McpServerCon
     return provider_configs
 
 
-def load_provider_config(provider_id: str, secrets: dict | None = None) -> McpServerConfig:
+def load_provider_config(
+    provider_id: str, secrets: dict | None = None
+) -> McpServerConfig:
     provider_configs = load_provider_configs(secrets)
     if provider_id not in provider_configs:
         raise ValueError(f"Unknown MCP provider: {provider_id}")
@@ -265,7 +298,9 @@ def load_mcp_host_settings(secrets: dict | None = None) -> McpHostSettings:
         host_config.get("test_mode_scenario_path", DEFAULT_TEST_MODE_SCENARIO_PATH),
     )
     return McpHostSettings(
-        test_mode=_parse_bool(os.getenv("MCP_TEST_MODE"), _parse_bool(host_config.get("test_mode"), False)),
+        test_mode=_parse_bool(
+            os.getenv("MCP_TEST_MODE"), _parse_bool(host_config.get("test_mode"), False)
+        ),
         test_mode_verbose_json=_parse_bool(
             os.getenv("MCP_TEST_MODE_VERBOSE_JSON"),
             _parse_bool(host_config.get("test_mode_verbose_json"), True),
@@ -304,8 +339,13 @@ def load_mcp_host_settings(secrets: dict | None = None) -> McpHostSettings:
             _parse_bool(host_config.get("test_mode_allow_remote_mcp"), False),
         ),
         doc_search=McpDocSearchSettings(
-            max_docs=_parse_int(doc_search_config.get("max_docs"), DEFAULT_DOC_SEARCH_SETTINGS.max_docs),
-            snippet_chars=_parse_int(doc_search_config.get("snippet_chars"), DEFAULT_DOC_SEARCH_SETTINGS.snippet_chars),
+            max_docs=_parse_int(
+                doc_search_config.get("max_docs"), DEFAULT_DOC_SEARCH_SETTINGS.max_docs
+            ),
+            snippet_chars=_parse_int(
+                doc_search_config.get("snippet_chars"),
+                DEFAULT_DOC_SEARCH_SETTINGS.snippet_chars,
+            ),
             unscoped_fanout_enabled=_parse_bool(
                 doc_search_config.get("unscoped_fanout_enabled"),
                 DEFAULT_DOC_SEARCH_SETTINGS.unscoped_fanout_enabled,
@@ -374,7 +414,9 @@ def load_mcp_settings(secrets: dict | None = None) -> McpSettings:
     )
 
 
-def build_mcp_event_policy(host_settings: McpHostSettings | None = None) -> McpEventPolicy:
+def build_mcp_event_policy(
+    host_settings: McpHostSettings | None = None,
+) -> McpEventPolicy:
     resolved_host_settings = host_settings or load_mcp_settings().host
     return McpEventPolicy(
         verbose_json=resolved_host_settings.test_mode_verbose_json,

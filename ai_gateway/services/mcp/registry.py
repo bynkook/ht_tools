@@ -7,28 +7,41 @@ import ipaddress
 from typing import Any, AsyncIterator
 from urllib.parse import urlparse
 
-from .config import DOC_SEARCH_PROVIDER_ID, McpServerConfig, McpSettings, load_mcp_settings, load_provider_config
+from .config import (
+    DOC_SEARCH_PROVIDER_ID,
+    McpServerConfig,
+    McpSettings,
+    load_mcp_settings,
+    load_provider_config,
+)
 from .providers import require_provider_manifest
 
 
 def _is_loopback_host(hostname: str | None) -> bool:
     if not hostname:
         return True
-    if hostname in {"localhost", "127.0.0.1", "::1"}:
+    # Normalise: strip trailing dots (DNS absolute form), lowercase
+    normalised = hostname.rstrip(".").lower()
+    # Well-known loopback literals
+    if normalised in {"localhost", "127.0.0.1", "::1", "0.0.0.0", "0:0:0:0:0:0:0:1"}:
         return True
     try:
-        return ipaddress.ip_address(hostname).is_loopback
+        return ipaddress.ip_address(normalised).is_loopback
     except ValueError:
         return False
 
 
-def _enforce_remote_policy(config: McpServerConfig, settings: McpSettings | None) -> None:
+def _enforce_remote_policy(
+    config: McpServerConfig, settings: McpSettings | None
+) -> None:
     if settings is None or settings.host.test_mode_allow_remote_mcp:
         return
     parsed = urlparse(config.base_url)
     if _is_loopback_host(parsed.hostname):
         return
-    raise RuntimeError(f"Remote MCP provider is disabled by MCP_TEST_MODE_ALLOW_REMOTE_MCP: {config.base_url}")
+    raise RuntimeError(
+        f"Remote MCP provider is disabled by MCP_TEST_MODE_ALLOW_REMOTE_MCP: {config.base_url}"
+    )
 
 
 def _ensure_manifest_matches_config(config: McpServerConfig) -> None:

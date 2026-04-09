@@ -6,6 +6,18 @@ import { buildSystemMessage } from '../features/chat/utils/systemMessageState';
 
 const DEFAULT_MCP_PROVIDER_ID = 'internal_docs';
 
+// path traversal 및 unsafe 문자 패턴 (서버측 _UNSAFE_PATH_RE와 동일 기준)
+const UNSAFE_PATH_RE = /\.\.|^[/\\]|[<>:"|?*\x00-\x1f]/;
+
+/**
+ * 파일명/경로에 path traversal 패턴이 포함되어 있으면 true를 반환한다.
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isUnsafePath(value) {
+  return UNSAFE_PATH_RE.test(value);
+}
+
 // =============================================================================
 // @<파일명> mention 파싱 유틸리티 (ChatPage에서 import하여 사용)
 // =============================================================================
@@ -16,8 +28,9 @@ const DEFAULT_MCP_PROVIDER_ID = 'internal_docs';
  *   @파일명.md               — 공백 없는 단순 파일명
  *   @"파일명 공백 있음.md"   — 공백/특수문자 포함 시 큰따옴표 감싸기
  *   @카테고리/파일명.md      — 카테고리 경로 포함
+ * path traversal 패턴(.. 또는 절대경로)은 조용히 제거된다.
  * @param {string} text
- * @returns {string[]} 파싱된 파일명 목록 (따옴표 제거 후 trim)
+ * @returns {string[]} 파싱된 파일명 목록 (따옴표 제거 후 trim, unsafe 항목 제외)
  */
 export function parseAtMentions(text) {
   const mentions = [];
@@ -25,7 +38,7 @@ export function parseAtMentions(text) {
   let match;
   while ((match = regex.exec(text)) !== null) {
     const raw = (match[1] ?? match[2]).trim();
-    if (raw) {
+    if (raw && !isUnsafePath(raw)) {
       mentions.push(raw);
     }
   }
@@ -179,6 +192,9 @@ export const buildLegacyMcpRequest = ({
     }
     if (rawTarget.includes('*') || rawTarget.includes('?')) {
       throw new Error('와일드카드(*, ?)는 허용하지 않습니다.');
+    }
+    if (isUnsafePath(rawTarget)) {
+      throw new Error('허용되지 않는 파일 경로입니다. 상대 경로 이동(..)이나 절대 경로는 사용할 수 없습니다.');
     }
     params.target = rawTarget;
     return params;

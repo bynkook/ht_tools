@@ -2,13 +2,18 @@
 Generic MCP host helpers used by FabriX Chat runtimes and MCP command routes.
 """
 
+import asyncio
 from dataclasses import dataclass
 import logging
 from typing import Any
 
 from fastapi import HTTPException
 
-from .config import DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF, DOC_SEARCH_PROVIDER_ID, McpSettings
+from .config import (
+    DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF,
+    DOC_SEARCH_PROVIDER_ID,
+    McpSettings,
+)
 from .context_merge import build_multi_file_system_prompt, merge_system_prompts
 from .doc_search_policy import (
     DOC_SEARCH_DEFAULT_MAX_DOCS,
@@ -152,7 +157,9 @@ def build_context_debug_payload(
                 "system_prompt": context_result.get("system_prompt"),
             }
         )
-        final_system_prompt = merge_system_prompts(final_system_prompt, context_result.get("system_prompt"))
+        final_system_prompt = merge_system_prompts(
+            final_system_prompt, context_result.get("system_prompt")
+        )
 
     return {
         "fragment_count": len(fragments),
@@ -166,17 +173,27 @@ class GenericMcpHost:
     def __init__(self, settings: McpSettings, planner: SharedPlannerCore | None = None):
         self.settings = settings
         enabled_providers = settings.enabled_provider_configs()
-        self.default_provider_id = enabled_providers[0].provider_id if enabled_providers else DOC_SEARCH_PROVIDER_ID
-        self._planner_provider_categories_cache: dict[str, tuple[str, ...]] | None = None
+        self.default_provider_id = (
+            enabled_providers[0].provider_id
+            if enabled_providers
+            else DOC_SEARCH_PROVIDER_ID
+        )
+        self._planner_provider_categories_cache: dict[str, tuple[str, ...]] | None = (
+            None
+        )
+        self._planner_categories_lock = asyncio.Lock()
         rule_refs = tuple(
             dict.fromkeys(
-                provider.activation_rule_ref or DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF
+                provider.activation_rule_ref
+                or DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF
                 for provider in enabled_providers
             )
         )
         self._planner = planner or SharedPlannerCore(
             default_provider_id=self.default_provider_id,
-            activation_rule_ref=rule_refs[0] if rule_refs else DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF,
+            activation_rule_ref=rule_refs[0]
+            if rule_refs
+            else DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF,
             activation_rule_refs=rule_refs,
             doc_search_settings=settings.host.doc_search,
         )
@@ -185,42 +202,54 @@ class GenericMcpHost:
         if self._planner_provider_categories_cache is not None:
             return dict(self._planner_provider_categories_cache)
 
-        provider_categories: dict[str, tuple[str, ...]] = {}
-        for provider_config in self.settings.enabled_provider_configs():
-            manifest = get_provider_manifest(provider_config.provider_id)
-            if manifest is None:
-                continue
-            capability_policy = manifest.capability_policy
-            if capability_policy is not None and not capability_policy.supports_category_catalog:
-                continue
-            try:
-                categories = await self.list_category_catalog(provider_id=provider_config.provider_id)
-            except Exception as error:
-                logger.warning(
-                    "Planner category preload failed for provider %s: %s",
-                    provider_config.provider_id,
-                    error,
-                )
-                continue
-            category_names = tuple(
-                dict.fromkeys(
-                    str(item.get("name", "")).strip()
-                    for item in categories
-                    if str(item.get("name", "")).strip()
-                )
-            )
-            if category_names:
-                provider_categories[provider_config.provider_id] = category_names
+        async with self._planner_categories_lock:
+            # Double-checked locking: re-check after acquiring the lock
+            if self._planner_provider_categories_cache is not None:
+                return dict(self._planner_provider_categories_cache)
 
-        self._planner_provider_categories_cache = dict(provider_categories)
-        return dict(provider_categories)
+            provider_categories: dict[str, tuple[str, ...]] = {}
+            for provider_config in self.settings.enabled_provider_configs():
+                manifest = get_provider_manifest(provider_config.provider_id)
+                if manifest is None:
+                    continue
+                capability_policy = manifest.capability_policy
+                if (
+                    capability_policy is not None
+                    and not capability_policy.supports_category_catalog
+                ):
+                    continue
+                try:
+                    categories = await self.list_category_catalog(
+                        provider_id=provider_config.provider_id
+                    )
+                except Exception as error:
+                    logger.warning(
+                        "Planner category preload failed for provider %s: %s",
+                        provider_config.provider_id,
+                        error,
+                    )
+                    continue
+                category_names = tuple(
+                    dict.fromkeys(
+                        str(item.get("name", "")).strip()
+                        for item in categories
+                        if str(item.get("name", "")).strip()
+                    )
+                )
+                if category_names:
+                    provider_categories[provider_config.provider_id] = category_names
+
+            self._planner_provider_categories_cache = dict(provider_categories)
+            return dict(provider_categories)
 
     def _resolve_provider_id(self, provider_id: str | None = None) -> str:
         resolved_provider_id = provider_id or self.default_provider_id
         self.settings.require_provider(resolved_provider_id)
         return resolved_provider_id
 
-    def _require_tool_action_supported(self, action: str, *, provider_id: str | None = None) -> str:
+    def _require_tool_action_supported(
+        self, action: str, *, provider_id: str | None = None
+    ) -> str:
         resolved_provider_id = self._resolve_provider_id(provider_id)
         manifest = require_provider_manifest(resolved_provider_id)
         capability_policy = manifest.capability_policy
@@ -228,48 +257,81 @@ class GenericMcpHost:
             return resolved_provider_id
 
         if action == "search_docs_rag" and not capability_policy.supports_rag_context:
-            raise ValueError(f"MCP provider does not support RAG context search: {resolved_provider_id}")
+            raise ValueError(
+                f"MCP provider does not support RAG context search: {resolved_provider_id}"
+            )
         if action == "search_docs" and not capability_policy.supports_search:
-            raise ValueError(f"MCP provider does not support search: {resolved_provider_id}")
+            raise ValueError(
+                f"MCP provider does not support search: {resolved_provider_id}"
+            )
         if action == "read_doc" and not capability_policy.supports_document_read:
-            raise ValueError(f"MCP provider does not support document read: {resolved_provider_id}")
-        if action in {"list_category_catalog", "list_categories_detail", "list_docs_detail"} and not capability_policy.supports_category_catalog:
-            raise ValueError(f"MCP provider does not support category listing: {resolved_provider_id}")
+            raise ValueError(
+                f"MCP provider does not support document read: {resolved_provider_id}"
+            )
+        if (
+            action
+            in {"list_category_catalog", "list_categories_detail", "list_docs_detail"}
+            and not capability_policy.supports_category_catalog
+        ):
+            raise ValueError(
+                f"MCP provider does not support category listing: {resolved_provider_id}"
+            )
         return resolved_provider_id
 
-    def _require_manual_command_supported(self, action: str, *, provider_id: str | None = None) -> str:
+    def _require_manual_command_supported(
+        self, action: str, *, provider_id: str | None = None
+    ) -> str:
         resolved_provider_id = self._resolve_provider_id(provider_id)
         manifest = require_provider_manifest(resolved_provider_id)
         capability_policy = manifest.capability_policy
         if capability_policy is None or not capability_policy.manual_commands:
             return resolved_provider_id
         if action not in capability_policy.manual_commands:
-            raise ValueError(f"Manual MCP command is not supported by provider: {resolved_provider_id}.{action}")
+            raise ValueError(
+                f"Manual MCP command is not supported by provider: {resolved_provider_id}.{action}"
+            )
         return resolved_provider_id
 
     @staticmethod
-    def _action_uses_category(action: str, arguments: dict[str, Any] | None = None) -> bool:
+    def _action_uses_category(
+        action: str, arguments: dict[str, Any] | None = None
+    ) -> bool:
         if arguments is None:
             return False
         category = arguments.get("category")
         if not isinstance(category, str) or not category.strip():
             return False
-        return action in {"search_docs_rag", "search_docs", "list_docs_detail", "read_doc"}
+        return action in {
+            "search_docs_rag",
+            "search_docs",
+            "list_docs_detail",
+            "read_doc",
+        }
 
     async def _validate_plan(self, plan) -> None:
-        resolved_provider_id = self._require_tool_action_supported(plan.action, provider_id=plan.provider)
+        resolved_provider_id = self._require_tool_action_supported(
+            plan.action, provider_id=plan.provider
+        )
         if self._action_uses_category(plan.action, plan.params):
-            await self.validate_category(str(plan.params["category"]), provider_id=resolved_provider_id)
+            await self.validate_category(
+                str(plan.params["category"]), provider_id=resolved_provider_id
+            )
 
     async def validate_planner_decision(self, decision: PlannerDecision) -> None:
         for plan in decision.plans:
             await self._validate_plan(plan)
 
-    async def discover_provider_capabilities(self, *, provider_id: str | None = None) -> dict[str, Any]:
+    async def discover_provider_capabilities(
+        self, *, provider_id: str | None = None
+    ) -> dict[str, Any]:
         resolved_provider_id = self._resolve_provider_id(provider_id)
-        async with connect_provider(resolved_provider_id, settings=self.settings) as provider:
+        async with connect_provider(
+            resolved_provider_id, settings=self.settings
+        ) as provider:
             if not hasattr(provider, "list_capabilities"):
-                raise ValueError(f"MCP provider does not support capability discovery: {resolved_provider_id}")
+                raise ValueError(
+                    f"MCP provider does not support capability discovery: {resolved_provider_id}"
+                )
             return await provider.list_capabilities()
 
     async def _call_provider_action(
@@ -281,13 +343,17 @@ class GenericMcpHost:
     ) -> Any:
         resolved_provider_id = self._resolve_provider_id(provider_id)
         tool_arguments = dict(arguments or {})
-        async with connect_provider(resolved_provider_id, settings=self.settings) as provider:
+        async with connect_provider(
+            resolved_provider_id, settings=self.settings
+        ) as provider:
             provider_method = getattr(provider, action, None)
             if callable(provider_method):
                 return await provider_method(**tool_arguments)
             if hasattr(provider, "call_tool_dict"):
                 return await provider.call_tool_dict(action, tool_arguments)
-            raise ValueError(f"MCP provider does not support action: {resolved_provider_id}.{action}")
+            raise ValueError(
+                f"MCP provider does not support action: {resolved_provider_id}.{action}"
+            )
 
     async def execute_tool_action(
         self,
@@ -303,29 +369,51 @@ class GenericMcpHost:
             provider_id=provider_id,
         )
 
-    async def list_category_catalog(self, *, provider_id: str | None = None) -> list[dict[str, Any]]:
+    async def list_category_catalog(
+        self, *, provider_id: str | None = None
+    ) -> list[dict[str, Any]]:
         resolved_provider_id = self._resolve_provider_id(provider_id)
         manifest = require_provider_manifest(resolved_provider_id)
         capability_policy = manifest.capability_policy
-        if capability_policy is not None and not capability_policy.supports_category_catalog:
-            raise ValueError(f"MCP provider does not support category listing: {resolved_provider_id}")
-        async with connect_provider(resolved_provider_id, settings=self.settings) as provider:
+        if (
+            capability_policy is not None
+            and not capability_policy.supports_category_catalog
+        ):
+            raise ValueError(
+                f"MCP provider does not support category listing: {resolved_provider_id}"
+            )
+        async with connect_provider(
+            resolved_provider_id, settings=self.settings
+        ) as provider:
             provider_method = getattr(provider, "list_category_catalog", None)
             if not callable(provider_method):
-                raise ValueError(f"MCP provider does not support category listing: {resolved_provider_id}")
+                raise ValueError(
+                    f"MCP provider does not support category listing: {resolved_provider_id}"
+                )
             categories = await provider_method()
         return categories if isinstance(categories, list) else []
 
-    async def validate_category(self, category: str, *, provider_id: str | None = None) -> dict[str, Any]:
+    async def validate_category(
+        self, category: str, *, provider_id: str | None = None
+    ) -> dict[str, Any]:
         resolved_provider_id = self._resolve_provider_id(provider_id)
         manifest = require_provider_manifest(resolved_provider_id)
         capability_policy = manifest.capability_policy
-        if capability_policy is not None and not capability_policy.supports_category_catalog:
-            raise ValueError(f"MCP provider does not support category validation: {resolved_provider_id}")
-        async with connect_provider(resolved_provider_id, settings=self.settings) as provider:
+        if (
+            capability_policy is not None
+            and not capability_policy.supports_category_catalog
+        ):
+            raise ValueError(
+                f"MCP provider does not support category validation: {resolved_provider_id}"
+            )
+        async with connect_provider(
+            resolved_provider_id, settings=self.settings
+        ) as provider:
             provider_method = getattr(provider, "validate_category", None)
             if not callable(provider_method):
-                raise ValueError(f"MCP provider does not support category validation: {resolved_provider_id}")
+                raise ValueError(
+                    f"MCP provider does not support category validation: {resolved_provider_id}"
+                )
             return await provider_method(category)
 
     async def run_rag_search(
@@ -338,7 +426,9 @@ class GenericMcpHost:
         snippet_chars: int | None = DOC_SEARCH_DEFAULT_SNIPPET_CHARS,
         provider_id: str | None = None,
     ) -> dict[str, Any]:
-        resolved_provider_id = self._require_tool_action_supported("search_docs_rag", provider_id=provider_id)
+        resolved_provider_id = self._require_tool_action_supported(
+            "search_docs_rag", provider_id=provider_id
+        )
         if category:
             await self.validate_category(category, provider_id=resolved_provider_id)
         data = await self._execute_rag_search_with_coverage(
@@ -447,7 +537,10 @@ class GenericMcpHost:
 
         manifest = require_provider_manifest(provider_id)
         capability_policy = manifest.capability_policy
-        if capability_policy is not None and not capability_policy.supports_category_catalog:
+        if (
+            capability_policy is not None
+            and not capability_policy.supports_category_catalog
+        ):
             return None
 
         categories = await self.list_category_catalog(provider_id=provider_id)
@@ -457,6 +550,11 @@ class GenericMcpHost:
             if isinstance(item, dict) and str(item.get("name", "")).strip()
         ]
         if not category_names:
+            logger.warning(
+                "Unscoped fanout RAG search skipped: category catalog returned no usable categories "
+                "(provider_id=%s)",
+                provider_id,
+            )
             return None
 
         category_limit = doc_search_settings.unscoped_fanout_category_limit
@@ -472,15 +570,33 @@ class GenericMcpHost:
 
         category_results: list[tuple[str, dict[str, Any]]] = []
         for category_name in category_names:
-            raw_result = await self._execute_raw_rag_search(
-                query=query,
-                category=category_name,
-                filename_filter=None,
-                max_docs=per_category_docs,
-                snippet_chars=snippet_chars,
-                provider_id=provider_id,
-            )
+            try:
+                raw_result = await self._execute_raw_rag_search(
+                    query=query,
+                    category=category_name,
+                    filename_filter=None,
+                    max_docs=per_category_docs,
+                    snippet_chars=snippet_chars,
+                    provider_id=provider_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Unscoped fanout RAG search failed for category %r (provider_id=%s): %s",
+                    category_name,
+                    provider_id,
+                    exc,
+                )
+                continue
             category_results.append((category_name, raw_result))
+
+        if not category_results:
+            logger.warning(
+                "Unscoped fanout RAG search: all %d categor%s failed; returning None (provider_id=%s)",
+                len(category_names),
+                "y" if len(category_names) == 1 else "ies",
+                provider_id,
+            )
+            return None
 
         merged = self._merge_unscoped_rag_results(
             category_results,
@@ -516,7 +632,11 @@ class GenericMcpHost:
         )
         merged_snippets = _round_robin_merge(
             snippet_groups,
-            limit=max(1, final_max_docs * max(2, self.settings.host.doc_search.prompt_max_per_doc)),
+            limit=max(
+                1,
+                final_max_docs
+                * max(2, self.settings.host.doc_search.prompt_max_per_doc),
+            ),
             identity_builder=_snippet_identity,
         )
 
@@ -525,16 +645,22 @@ class GenericMcpHost:
             "snippets": merged_snippets,
         }
 
-    def _resolve_doc_search_plan_params(self, plan_params: dict[str, Any], *, default_query: str) -> dict[str, Any]:
+    def _resolve_doc_search_plan_params(
+        self, plan_params: dict[str, Any], *, default_query: str
+    ) -> dict[str, Any]:
         return normalize_doc_search_rag_params(
             plan_params,
             query=str(plan_params.get("query", default_query)),
             settings=self.settings.host.doc_search,
         )
 
-    async def _execute_context_plan(self, plan, *, default_query: str) -> dict[str, Any]:
+    async def _execute_context_plan(
+        self, plan, *, default_query: str
+    ) -> dict[str, Any]:
         if plan.action == "search_docs_rag":
-            resolved_params = self._resolve_doc_search_plan_params(plan.params, default_query=default_query)
+            resolved_params = self._resolve_doc_search_plan_params(
+                plan.params, default_query=default_query
+            )
             return await self.run_rag_search(
                 query=str(resolved_params["query"]),
                 category=resolved_params.get("category"),
@@ -583,14 +709,21 @@ class GenericMcpHost:
         await self.validate_planner_decision(decision)
 
         if decision.route == "chat_only":
-            return McpChatResolution(route="chat_only", system_prompt=None, missing_mentions=[], decision=decision)
+            return McpChatResolution(
+                route="chat_only",
+                system_prompt=None,
+                missing_mentions=[],
+                decision=decision,
+            )
 
         if decision.route == "manual_mentions":
             missing_mentions: list[str] = []
             resolved_mentions: list[dict[str, Any]] = []
 
             for raw_target, plan in zip(decision.mentions, decision.plans):
-                resolved_params = self._resolve_doc_search_plan_params(plan.params, default_query=raw_target)
+                resolved_params = self._resolve_doc_search_plan_params(
+                    plan.params, default_query=raw_target
+                )
                 try:
                     result = await self.run_rag_search(
                         query=str(resolved_params["query"]),
@@ -637,12 +770,21 @@ class GenericMcpHost:
             )
 
         if not decision.plans:
-            return McpChatResolution(route="chat_only", system_prompt=None, missing_mentions=[], decision=decision)
+            return McpChatResolution(
+                route="chat_only",
+                system_prompt=None,
+                missing_mentions=[],
+                decision=decision,
+            )
 
         system_prompt = None
         for plan in decision.plans:
-            context_result = await self._execute_context_plan(plan, default_query=decision.clean_query)
-            system_prompt = merge_system_prompts(system_prompt, context_result.get("system_prompt"))
+            context_result = await self._execute_context_plan(
+                plan, default_query=decision.clean_query
+            )
+            system_prompt = merge_system_prompts(
+                system_prompt, context_result.get("system_prompt")
+            )
         return McpChatResolution(
             route=decision.route,
             system_prompt=system_prompt,
@@ -664,11 +806,17 @@ class GenericMcpHost:
         max_results: int = 5,
         provider_id: str | None = None,
     ) -> dict[str, Any]:
-        resolved_provider_id = self._require_manual_command_supported(action, provider_id=provider_id)
-        async with connect_provider(resolved_provider_id, settings=self.settings) as provider:
+        resolved_provider_id = self._require_manual_command_supported(
+            action, provider_id=provider_id
+        )
+        async with connect_provider(
+            resolved_provider_id, settings=self.settings
+        ) as provider:
             provider_command = getattr(provider, "execute_manual_command", None)
             if not callable(provider_command):
-                raise ValueError(f"Manual MCP commands are not supported by provider: {resolved_provider_id}")
+                raise ValueError(
+                    f"Manual MCP commands are not supported by provider: {resolved_provider_id}"
+                )
             return await provider_command(
                 action=action,
                 query=query,
