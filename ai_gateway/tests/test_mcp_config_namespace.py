@@ -30,6 +30,9 @@ def test_load_mcp_settings_reads_nested_host_and_provider_namespaces():
                     "doc_search": {
                         "max_docs": 12,
                         "snippet_chars": 2000,
+                        "unscoped_fanout_enabled": True,
+                        "unscoped_fanout_per_category_docs": 4,
+                        "unscoped_fanout_category_limit": 0,
                         "prompt_default_max_total": 11,
                         "prompt_file_fallback_max_files": 5,
                     },
@@ -51,6 +54,9 @@ def test_load_mcp_settings_reads_nested_host_and_provider_namespaces():
     assert settings.host.test_mode_enable_scenario_override is True
     assert settings.host.doc_search.max_docs == 12
     assert settings.host.doc_search.snippet_chars == 2000
+    assert settings.host.doc_search.unscoped_fanout_enabled is True
+    assert settings.host.doc_search.unscoped_fanout_per_category_docs == 4
+    assert settings.host.doc_search.unscoped_fanout_category_limit == 0
     assert settings.host.doc_search.prompt_default_max_total == 11
     assert settings.host.doc_search.prompt_file_fallback_max_files == 5
     assert settings.require_provider("internal_docs").base_url == "http://127.0.0.1:8101/mcp"

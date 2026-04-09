@@ -110,6 +110,14 @@ def _parse_int(value: str | int | None, default: int) -> int:
         return default
 
 
+def _parse_non_negative_int(value: str | int | None, default: int) -> int:
+    try:
+        parsed = int(value)
+        return parsed if parsed >= 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
 def _resolve_scenario_path(raw_path: str) -> Path:
     scenario_path = Path(raw_path)
     if not scenario_path.is_absolute():
@@ -298,6 +306,18 @@ def load_mcp_host_settings(secrets: dict | None = None) -> McpHostSettings:
         doc_search=McpDocSearchSettings(
             max_docs=_parse_int(doc_search_config.get("max_docs"), DEFAULT_DOC_SEARCH_SETTINGS.max_docs),
             snippet_chars=_parse_int(doc_search_config.get("snippet_chars"), DEFAULT_DOC_SEARCH_SETTINGS.snippet_chars),
+            unscoped_fanout_enabled=_parse_bool(
+                doc_search_config.get("unscoped_fanout_enabled"),
+                DEFAULT_DOC_SEARCH_SETTINGS.unscoped_fanout_enabled,
+            ),
+            unscoped_fanout_per_category_docs=_parse_int(
+                doc_search_config.get("unscoped_fanout_per_category_docs"),
+                DEFAULT_DOC_SEARCH_SETTINGS.unscoped_fanout_per_category_docs,
+            ),
+            unscoped_fanout_category_limit=_parse_non_negative_int(
+                doc_search_config.get("unscoped_fanout_category_limit"),
+                DEFAULT_DOC_SEARCH_SETTINGS.unscoped_fanout_category_limit,
+            ),
             prompt_max_per_doc=_parse_int(
                 doc_search_config.get("prompt_max_per_doc"),
                 DEFAULT_DOC_SEARCH_SETTINGS.prompt_max_per_doc,

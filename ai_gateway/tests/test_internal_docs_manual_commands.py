@@ -31,7 +31,7 @@ async def _fake_list_category_catalog(self):
 
 
 async def _fake_list_docs_detail(self, category):
-    return {"docs": [{"filename": "minutes.md", "updated_at": "2026-04-08"}]}
+    return {"files": [{"filename": "minutes.md", "updated_at": "2026-04-08"}]}
 
 
 async def _fake_search_docs(self, query, max_results, category=None):
@@ -48,7 +48,7 @@ def test_internal_docs_manual_list_renders_existing_markdown_tables():
     provider = _build_provider()
 
     category_result = asyncio.run(provider.execute_manual_command(action="list"))
-    docs_result = asyncio.run(provider.execute_manual_command(action="list", category="회의록"))
+    docs_result = asyncio.run(provider.execute_manual_command(action="list", target="회의록"))
 
     assert category_result["success"] is True
     assert "## MCP 카테고리 목록" in category_result["content"]
@@ -58,8 +58,31 @@ def test_internal_docs_manual_list_renders_existing_markdown_tables():
     assert "| minutes.md | 2026-04-08 |" in docs_result["content"]
 
 
+def test_internal_docs_normalizes_legacy_doc_list_shapes():
+    provider = _build_provider()
+
+    normalized = provider._normalize_list_docs_detail_result(
+        {
+            "docs": [
+                {
+                    "name": "legacy-minutes.md",
+                    "modified_at": "2026-04-09",
+                }
+            ]
+        }
+    )
+
+    assert normalized["files"] == [
+        {
+            "filename": "legacy-minutes.md",
+            "updated_at": "2026-04-09",
+        }
+    ]
+
+
 @patch.object(InternalDocsProvider, "search_docs", _fake_search_docs)
 @patch.object(InternalDocsProvider, "read_doc", _fake_read_doc)
+@patch.object(InternalDocsProvider, "list_category_catalog", _fake_list_category_catalog)
 def test_internal_docs_manual_search_and_read_preserve_text_rendering():
     provider = _build_provider()
 
@@ -67,17 +90,37 @@ def test_internal_docs_manual_search_and_read_preserve_text_rendering():
         provider.execute_manual_command(
             action="search",
             query="품질 관련 내용",
-            category="회의록",
+            session_category="회의록",
+            session_provider_id="internal_docs",
+            rag_enabled=True,
             max_results=7,
         )
     )
     read_result = asyncio.run(
         provider.execute_manual_command(
             action="read",
-            filename="minutes.md",
-            category="회의록",
+            target="회의록/minutes.md",
         )
     )
 
     assert search_result == {"success": True, "content": "품질 관련 내용:7:회의록"}
     assert read_result == {"success": True, "content": "minutes.md:회의록"}
+
+
+@patch.object(InternalDocsProvider, "search_docs", _fake_search_docs)
+@patch.object(InternalDocsProvider, "list_category_catalog", _fake_list_category_catalog)
+def test_internal_docs_manual_search_ignores_session_category_when_rag_is_off():
+    provider = _build_provider()
+
+    search_result = asyncio.run(
+        provider.execute_manual_command(
+            action="search",
+            query="안전",
+            session_category="회의록",
+            session_provider_id="internal_docs",
+            rag_enabled=False,
+            max_results=5,
+        )
+    )
+
+    assert search_result == {"success": True, "content": "안전:5:None"}

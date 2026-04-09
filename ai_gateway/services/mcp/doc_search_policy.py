@@ -20,6 +20,9 @@ class DocSearchPromptBudget:
 class McpDocSearchSettings:
     max_docs: int = 10
     snippet_chars: int = 1500
+    unscoped_fanout_enabled: bool = True
+    unscoped_fanout_per_category_docs: int = 3
+    unscoped_fanout_category_limit: int = 0
     prompt_max_per_doc: int = 3
     prompt_compact_max_total: int = 6
     prompt_compact_max_total_chars: int = 6000
@@ -83,7 +86,13 @@ def build_doc_search_prompt_budget(
     raw_tokens = [token for token in query.split() if token.strip()]
     expand_hint = any(keyword in query_lower for keyword in _DOC_SEARCH_PROCEDURAL_KEYWORDS)
     compact_hint = len(raw_tokens) <= 2 and len(query.strip()) <= 20 and not expand_hint
-    unique_docs = len({snippet.get("filename", "") for snippet in snippets if snippet.get("filename")})
+    unique_docs = len(
+        {
+            (snippet.get("category"), snippet.get("filename", ""))
+            for snippet in snippets
+            if snippet.get("filename")
+        }
+    )
 
     if compact_hint:
         max_total = resolved_settings.prompt_compact_max_total

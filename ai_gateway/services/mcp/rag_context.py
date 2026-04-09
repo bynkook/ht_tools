@@ -12,6 +12,10 @@ from .doc_search_policy import (
 )
 
 
+def _doc_key(item: dict[str, Any]) -> tuple[str | None, str]:
+    return (item.get("category"), str(item.get("filename", "")))
+
+
 def _select_prompt_snippets(
     snippets: list[dict[str, Any]],
     max_per_doc: int = 2,
@@ -20,15 +24,16 @@ def _select_prompt_snippets(
     min_docs_covered: int = 4,
 ) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
-    doc_counts: dict[str, int] = {}
+    doc_counts: dict[tuple[str | None, str], int] = {}
     total_chars = 0
-    covered_docs: set[str] = set()
+    covered_docs: set[tuple[str | None, str]] = set()
 
     for snippet in snippets:
         if len(selected) >= max_total or len(covered_docs) >= min_docs_covered:
             break
-        filename = snippet.get("filename", "")
-        if not filename or filename in covered_docs:
+        doc_key = _doc_key(snippet)
+        filename = doc_key[1]
+        if not filename or doc_key in covered_docs:
             continue
         snippet_text = str(snippet.get("snippet", "")).strip()
         if not snippet_text:
@@ -38,18 +43,19 @@ def _select_prompt_snippets(
             continue
 
         selected.append(snippet)
-        doc_counts[filename] = 1
-        covered_docs.add(filename)
+        doc_counts[doc_key] = 1
+        covered_docs.add(doc_key)
         total_chars = next_total
 
     for snippet in snippets:
         if len(selected) >= max_total:
             break
-        filename = snippet.get("filename", "")
-        if not filename or doc_counts.get(filename, 0) >= max_per_doc:
+        doc_key = _doc_key(snippet)
+        filename = doc_key[1]
+        if not filename or doc_counts.get(doc_key, 0) >= max_per_doc:
             continue
         if any(
-            selected_item.get("filename") == filename
+            _doc_key(selected_item) == doc_key
             and selected_item.get("start") == snippet.get("start")
             and selected_item.get("end") == snippet.get("end")
             for selected_item in selected
@@ -65,7 +71,7 @@ def _select_prompt_snippets(
             continue
 
         selected.append(snippet)
-        doc_counts[filename] = doc_counts.get(filename, 0) + 1
+        doc_counts[doc_key] = doc_counts.get(doc_key, 0) + 1
         total_chars = next_total
 
         if len(selected) >= max_total:
@@ -102,6 +108,7 @@ def build_rag_response(
             "query": query,
             "category": category,
             "system_prompt": no_result_prompt,
+            "retrieval_meta": data.get("retrieval_meta"),
         }
 
     category_label = f" ({category})" if category else " (전체)"
@@ -120,7 +127,11 @@ def build_rag_response(
             min_docs_covered=budget.min_docs_covered,
         )
         doc_blocks = "\n\n---\n\n".join(
-            f"📄 파일: {snippet['filename']}\n🔹 발췌 구간: {snippet.get('start', '-')}-{snippet.get('end', '-')}\n\n{snippet['snippet']}"
+            (
+                f"📄 파일: {snippet['filename']}"
+                + (f"\n🗂️ 카테고리: {snippet.get('category')}" if snippet.get("category") and not category else "")
+                + f"\n🔹 발췌 구간: {snippet.get('start', '-')}-{snippet.get('end', '-')}\n\n{snippet['snippet']}"
+            )
             for snippet in selected_snippets
         )
     else:
@@ -131,7 +142,11 @@ def build_rag_response(
             else DOC_SEARCH_FILE_FALLBACK_MAX_FILES
         )
         doc_blocks = "\n\n---\n\n".join(
-            f"📄 파일: {file_item['filename']}\n\n{file_item['snippet']}"
+            (
+                f"📄 파일: {file_item['filename']}"
+                + (f"\n🗂️ 카테고리: {file_item.get('category')}" if file_item.get("category") and not category else "")
+                + f"\n\n{file_item['snippet']}"
+            )
             for file_item in files[:fallback_file_limit]
         )
 
@@ -149,6 +164,7 @@ def build_rag_response(
         "query": query,
         "category": category,
         "system_prompt": system_prompt,
+        "retrieval_meta": data.get("retrieval_meta"),
     }
 
 

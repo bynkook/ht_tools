@@ -122,7 +122,7 @@ export const docConverterApi = {
 
 export const mcpCommandApi = {
   /**
-   * @param {{ action: string, query?: string, category?: string, filename?: string, max_results?: number, provider_id?: string }} params
+   * @param {{ action: string, query?: string, target?: string, category?: string, filename?: string, session_category?: string, session_provider_id?: string, rag_enabled?: boolean, max_results?: number, provider_id?: string }} params
    * @returns {Promise<AxiosResponse<{ success: boolean, content: string }>>}
    */
   execute: (params) => fastApiClient.post('/mcp-command', params),

@@ -95,8 +95,23 @@ const getApiErrorMessage = (error, fallback) => {
     || fallback;
 };
 
-const extractProviderOverride = (command) => {
-  const rawParts = command.trim().split(/\s+/);
+export const tokenizeCommand = (command) => {
+  const tokens = [];
+  const tokenPattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match;
+
+  while ((match = tokenPattern.exec(command.trim())) !== null) {
+    const token = match[1] ?? match[2] ?? match[3] ?? '';
+    if (token) {
+      tokens.push(token);
+    }
+  }
+
+  return tokens;
+};
+
+export const extractProviderOverride = (command) => {
+  const rawParts = tokenizeCommand(command);
   const parts = [];
   let providerId = null;
   let missingValue = false;
@@ -117,6 +132,59 @@ const extractProviderOverride = (command) => {
   }
 
   return { parts, providerId, missingValue };
+};
+
+export const buildLegacyMcpRequest = ({
+  action,
+  parts,
+  activeCategory,
+  ragEnabled,
+  sessionProviderId,
+  commandProviderId,
+}) => {
+  const params = {
+    action,
+    provider_id: commandProviderId,
+  };
+
+  if (activeCategory) {
+    params.session_category = activeCategory;
+  }
+  if (sessionProviderId) {
+    params.session_provider_id = sessionProviderId;
+  }
+  params.rag_enabled = Boolean(ragEnabled);
+
+  if (action === 'list') {
+    const target = parts.slice(2).join(' ').trim() || null;
+    if (target) {
+      params.target = target;
+    }
+    return params;
+  }
+
+  if (action === 'search') {
+    const queryParts = parts.slice(2);
+    if (!queryParts.length) {
+      throw new Error('검색어를 입력하세요. 예: /mcp search 안전밸브');
+    }
+    params.query = queryParts.join(' ');
+    return params;
+  }
+
+  if (action === 'read') {
+    const rawTarget = parts.slice(2).join(' ').trim();
+    if (!rawTarget) {
+      throw new Error('파일명을 입력하세요. 예: /mcp read valve_spec.md');
+    }
+    if (rawTarget.includes('*') || rawTarget.includes('?')) {
+      throw new Error('와일드카드(*, ?)는 허용하지 않습니다.');
+    }
+    params.target = rawTarget;
+    return params;
+  }
+
+  throw new Error(`알 수 없는 /mcp 커맨드: "${action}". /mcp help 로 확인하세요.`);
 };
 
 /**
@@ -357,7 +425,6 @@ export const useCommands = ({
     const action = parts[1];
     const providerForState = activeProvider || DEFAULT_MCP_PROVIDER_ID;
     const commandProviderId = overrideProviderId || providerForState;
-    const canReuseActiveCategory = !overrideProviderId || commandProviderId === providerForState;
 
     if (!action || action === 'help') {
       const categoryStatus = activeCategory
@@ -371,7 +438,7 @@ export const useCommands = ({
         '|:---|:---|',
         '| `/mcp list` | 카테고리 목록 + 문서 수 조회 |',
         '| `/mcp list <카테고리>` | 해당 카테고리의 파일 목록 + 최종 수정일 조회 |',
-        '| `/mcp search <키워드>` | 키워드로 문서 검색 (기본 카테고리 자동 적용) |',
+        '| `/mcp search <키워드>` | 키워드로 문서 검색 (RAG ON + 카테고리 설정 시 해당 카테고리 우선) |',
         '| `/mcp read <파일명>` | 문서 읽기 (카테고리 설정 시 해당 카테고리 내 탐색, 없으면 전체 탐색) |',
         '| `/mcp read <카테고리/파일명>` | 특정 카테고리의 문서 전체 내용 읽기 |',
         '| `/mcp set <카테고리명>` | 카테고리 설정 + **RAG 자동 활성화** |',
@@ -550,52 +617,14 @@ export const useCommands = ({
 
     setIsCommandLoading(true);
     try {
-      const params = {
+      const params = buildLegacyMcpRequest({
         action,
-        provider_id: commandProviderId,
-      };
-
-      if (action === 'list') {
-        const category = parts.slice(2).join(' ').trim() || null;
-        if (category) {
-          params.category = category;
-        }
-      } else if (action === 'search') {
-        const queryParts = parts.slice(2);
-        if (!queryParts.length) {
-          await emitCommandError(sessionId, '검색어를 입력하세요. 예: /mcp search 안전밸브');
-          return;
-        }
-        params.query = queryParts.join(' ');
-        if (activeCategory && canReuseActiveCategory) {
-          params.category = activeCategory;
-        }
-      } else if (action === 'read') {
-        const rawTarget = parts.slice(2).join(' ').trim();
-        if (!rawTarget) {
-          await emitCommandError(sessionId, '파일명을 입력하세요. 예: /mcp read valve_spec.md');
-          return;
-        }
-        if (rawTarget.includes('*') || rawTarget.includes('?')) {
-          await emitCommandError(sessionId, '와일드카드(*, ?)는 허용하지 않습니다.');
-          return;
-        }
-
-        const pathMatch = rawTarget.match(/^([^/\\]+)[/\\](.+)$/);
-        if (pathMatch) {
-          params.category = pathMatch[1].trim();
-          params.filename = pathMatch[2].trim();
-        } else {
-          params.filename = rawTarget;
-        }
-
-        if (!pathMatch && !rawTarget.includes('/') && !rawTarget.includes('\\') && activeCategory && canReuseActiveCategory) {
-          params.category = activeCategory;
-        }
-      } else {
-        await emitCommandError(sessionId, `알 수 없는 /mcp 커맨드: "${action}". /mcp help 로 확인하세요.`);
-        return;
-      }
+        parts,
+        activeCategory,
+        ragEnabled,
+        sessionProviderId: providerForState,
+        commandProviderId,
+      });
 
       const response = await mcpCommandApi.execute(params);
       await appendSystemHistory(sessionId, response.data.content, {

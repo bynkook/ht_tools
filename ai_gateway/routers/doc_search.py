@@ -18,8 +18,12 @@ logger = logging.getLogger(__name__)
 class McpCommandRequest(BaseModel):
     action: str                       # "search" | "read" | "list"
     query: str | None = None          # search 시 검색어
+    target: str | None = None         # list/read 시 원본 인자
     category: str | None = None       # search/list 시 카테고리 필터
     filename: str | None = None       # read 시 파일 경로
+    session_category: str | None = None
+    session_provider_id: str | None = None
+    rag_enabled: bool = False
     max_results: int = 5
     provider_id: str | None = None
 
@@ -76,8 +80,12 @@ async def mcp_command(body: McpCommandRequest, request: Request):
         return await _configured_host(request).execute_manual_command(
             action=body.action,
             query=body.query,
+            target=body.target,
             category=body.category,
             filename=body.filename,
+            session_category=body.session_category,
+            session_provider_id=body.session_provider_id,
+            rag_enabled=body.rag_enabled,
             max_results=body.max_results,
             provider_id=body.provider_id,
         )
