@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, ImageIcon, Bot, ChevronRight, BarChart3, Settings, Sparkles, LogOut, UserCircle, HelpCircle, FolderUp, LayoutGrid, Calculator } from 'lucide-react';
+import { MessageCircle, ImageIcon, Bot, ChevronRight, BarChart3, Settings, Sparkles, LogOut, UserCircle, HelpCircle, FolderUp, LayoutGrid, Calculator, FileSpreadsheet } from 'lucide-react';
 
 const AppSelectorPage = () => {
   const navigate = useNavigate();
@@ -61,6 +61,14 @@ const AppSelectorPage = () => {
       icon: Calculator,
       color: 'from-orange-500 to-amber-600',
       path: '/esc-calculator'
+    },
+    {
+      id: 'pe-log-sheet',
+      name: 'PE Log Sheet',
+      description: 'PE 업무 로그를 팀 전체가 실시간으로 공동 편집합니다',
+      icon: FileSpreadsheet,
+      color: 'from-teal-500 to-cyan-600',
+      path: '/pe-log-sheet'
     }
   ];
 

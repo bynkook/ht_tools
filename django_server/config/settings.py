@@ -86,6 +86,7 @@ INSTALLED_APPS = [
     'apps.board',                # 게시판 앱
     'apps.doc_uploader',         # 문서 변환 업로더 앱
     'apps.esc_calculator',       # ESC 물가변동 비용 산출 앱
+    'apps.pe_log_sheet',         # PE Log Sheet 협업 스프레드시트
 ]
 
 MIDDLEWARE = [

@@ -25,6 +25,7 @@ const ProfilePage = lazy(() => import('./features/profile/ProfilePage'));
 const HelpPage = lazy(() => import('./features/help/HelpPage'));
 const DocUploaderPage = lazy(() => import('./features/docUploader/DocUploaderPage'));
 const EscCalculatorPage = lazy(() => import('./features/escCalculator/EscCalculatorPage'));
+const PeLogSheetPage = lazy(() => import('./features/peLogSheet/PeLogSheetPage'));
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -149,6 +150,9 @@ const App = () => {
 
             {/* ESC 물가변동 산출 */}
             <Route path="/esc-calculator" element={<PrivateRoute><EscCalculatorPage /></PrivateRoute>} />
+
+            {/* PE Log Sheet */}
+            <Route path="/pe-log-sheet" element={<PrivateRoute><PeLogSheetPage /></PrivateRoute>} />
 
             {/* Board Pages - root-level slug policy */}
             <Route path="/:boardSlug/post/:postId" element={<PrivateRoute><RedditPostDetailPage /></PrivateRoute>} />

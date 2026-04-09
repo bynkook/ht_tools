@@ -493,3 +493,31 @@ export const escApi = {
     return response.data;
   },
 };
+
+export const peLogSheetApi = {
+  getState: async () => {
+    const response = await djangoClient.get('/api/pe-log-sheet/state/');
+    return response.data;
+  },
+
+  submitOps: async ({ base_revision, ops, snapshot, client_id }) => {
+    const response = await djangoClient.post('/api/pe-log-sheet/ops/', {
+      base_revision,
+      ops,
+      snapshot,
+      client_id,
+    });
+    return response.data;
+  },
+
+  resetFromSource: async () => {
+    const response = await djangoClient.post('/api/pe-log-sheet/reset-from-source/');
+    return response.data;
+  },
+
+  getStreamUrl: () => {
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    return `${protocol}//${hostname}:8000/api/pe-log-sheet/stream/`;
+  },
+};
