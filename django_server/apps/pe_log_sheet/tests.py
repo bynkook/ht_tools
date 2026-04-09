@@ -2,12 +2,13 @@ from copy import deepcopy
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from .models import PeLogSheetState
-from .services.csv_loader import HEADERS, get_cell_payload, normalize_workbook_data
+from .services.csv_loader import DEFAULT_HEADERS, get_cell_payload, normalize_workbook_data
 from .services.presence import DEFAULT_DOCUMENT_ID, get_presence_registry
 
 
@@ -27,12 +28,12 @@ def build_runtime_snapshot_from_canonical(workbook_data):
             'order': sheet.get('order', 0),
             'status': sheet.get('status', 1),
             'row': sheet.get('row', 10),
-            'column': sheet.get('column', len(HEADERS)),
+            'column': sheet.get('column', len(DEFAULT_HEADERS)),
             'showGridLines': sheet.get('showGridLines', 1),
             'defaultRowHeight': sheet.get('defaultRowHeight', 22),
             'defaultColWidth': sheet.get('defaultColWidth', 100),
             'config': deepcopy(sheet.get('config', {})),
-            'data': [[None for _ in range(sheet.get('column', len(HEADERS)))] for _ in range(sheet.get('row', 10))],
+            'data': [[None for _ in range(sheet.get('column', len(DEFAULT_HEADERS)))] for _ in range(sheet.get('row', 10))],
         }
         if sheet.get('frozen'):
             runtime_sheet['frozen'] = deepcopy(sheet['frozen'])
@@ -55,13 +56,13 @@ class PeLogSheetNormalizationTests(APITestCase):
             'order': 0,
             'status': 1,
             'row': 10,
-            'column': len(HEADERS),
+            'column': len(DEFAULT_HEADERS),
             'showGridLines': 1,
             'defaultRowHeight': 22,
             'defaultColWidth': 100,
             'config': {'columnlen': {'0': 140}},
             'data': [
-                [make_text_cell(header) for header in HEADERS],
+                [make_text_cell(header) for header in DEFAULT_HEADERS],
                 [make_text_cell('P4'), None, None, None, None, None, None, None, None, None, None, None, None, None],
             ],
             'luckysheet_select_save': [{'row': [0, None], 'column': [0, None]}],
@@ -80,7 +81,7 @@ class PeLogSheetNormalizationTests(APITestCase):
         self.assertNotIn('scrollLeft', sheet)
 
         header_values = [item['v']['m'] for item in sheet['celldata'] if item['r'] == 0]
-        self.assertEqual(header_values, HEADERS)
+        self.assertEqual(header_values, DEFAULT_HEADERS)
 
     def test_state_endpoint_normalizes_existing_runtime_snapshot(self):
         runtime_snapshot = [{
@@ -89,13 +90,13 @@ class PeLogSheetNormalizationTests(APITestCase):
             'order': 0,
             'status': 1,
             'row': 10,
-            'column': len(HEADERS),
+            'column': len(DEFAULT_HEADERS),
             'showGridLines': 1,
             'defaultRowHeight': 22,
             'defaultColWidth': 100,
             'config': {'columnlen': {'0': 140}},
             'data': [
-                [make_text_cell(header) for header in HEADERS],
+                [make_text_cell(header) for header in DEFAULT_HEADERS],
                 [make_text_cell('P4'), None, None, None, None, None, None, None, None, None, None, None, None, None],
             ],
             'luckysheet_select_save': [{'row': [0, None], 'column': [0, None]}],
@@ -113,6 +114,18 @@ class PeLogSheetNormalizationTests(APITestCase):
         persisted = PeLogSheetState.objects.get(singleton_key='main')
         self.assertNotIn('data', persisted.workbook_data[0])
         self.assertNotIn('luckysheet_select_save', persisted.workbook_data[0])
+
+    def test_csv_upload_accepts_dynamic_headers(self):
+        csv_bytes = '\ufeffA,B,C\r\n1,2,3\r\n'.encode('utf-8')
+        upload = SimpleUploadedFile('dynamic.csv', csv_bytes, content_type='text/csv')
+
+        response = self.client.post('/api/pe-log-sheet/csv-upload/', {'file': upload})
+
+        self.assertEqual(response.status_code, 200)
+        state = PeLogSheetState.objects.get(singleton_key='main')
+        header_values = [item['v']['m'] for item in state.workbook_data[0]['celldata'] if item['r'] == 0]
+        self.assertEqual(header_values[:3], ['A', 'B', 'C'])
+        self.assertEqual(state.workbook_data[0]['column'], 3)
 
 
 class PeLogSheetCollaborationTests(APITestCase):
@@ -222,22 +235,137 @@ class PeLogSheetCollaborationTests(APITestCase):
         state = PeLogSheetState.objects.get(singleton_key='main')
         self.assertEqual(get_cell_payload(state.workbook_data, 'pe-log-main', 309, 8)['m'], '__TEST__3')
 
-    def test_structural_ops_are_rejected(self):
+    def test_structural_row_insert_succeeds_on_same_revision(self):
         snapshot = self._make_base_snapshot()
+        sheet = snapshot[0]
+        original_row_count = sheet['row']
+        insert_index = 1
+        original_value = get_cell_payload(self.initial_state['workbook_data'], 'pe-log-main', insert_index, 0)
+        sheet['data'].insert(insert_index, [None for _ in range(sheet['column'])])
+        sheet['row'] += 1
         self._auth(self.token_one)
         response = self.client.post('/api/pe-log-sheet/ops/', {
             'base_revision': self.initial_state['revision'],
             'ops': [{
                 'op': 'insertRowCol',
                 'id': 'pe-log-main',
-                'value': {'type': 'row', 'index': 1, 'count': 1, 'direction': 'rightbottom', 'id': 'pe-log-main'},
+                'value': {'type': 'row', 'index': insert_index, 'count': 1, 'direction': 'rightbottom', 'id': 'pe-log-main'},
             }],
             'snapshot': snapshot,
             'client_id': 'client-one',
         }, format='json')
 
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.data['conflicts'][0]['conflict_type'], 'structural')
+        self.assertEqual(response.status_code, 200)
+        state = PeLogSheetState.objects.get(singleton_key='main')
+        self.assertEqual(state.workbook_data[0]['row'], original_row_count + 1)
+        self.assertIsNone(get_cell_payload(state.workbook_data, 'pe-log-main', insert_index, 0))
+        self.assertEqual(get_cell_payload(state.workbook_data, 'pe-log-main', insert_index + 1, 0), original_value)
+
+    def test_structural_row_delete_succeeds_on_same_revision(self):
+        snapshot = self._make_base_snapshot()
+        sheet = snapshot[0]
+        deleted_value = get_cell_payload(self.initial_state['workbook_data'], 'pe-log-main', 1, 0)
+        next_value = get_cell_payload(self.initial_state['workbook_data'], 'pe-log-main', 2, 0)
+        del sheet['data'][1]
+        sheet['row'] -= 1
+
+        self._auth(self.token_one)
+        response = self.client.post('/api/pe-log-sheet/ops/', {
+            'base_revision': self.initial_state['revision'],
+            'ops': [{
+                'op': 'deleteRowCol',
+                'id': 'pe-log-main',
+                'value': {'type': 'row', 'start': 1, 'end': 1, 'id': 'pe-log-main'},
+            }],
+            'snapshot': snapshot,
+            'client_id': 'client-one',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        state = PeLogSheetState.objects.get(singleton_key='main')
+        self.assertNotEqual(get_cell_payload(state.workbook_data, 'pe-log-main', 1, 0), deleted_value)
+        self.assertEqual(get_cell_payload(state.workbook_data, 'pe-log-main', 1, 0), next_value)
+
+    def test_structural_column_delete_succeeds_on_same_revision(self):
+        snapshot = self._make_base_snapshot()
+        sheet = snapshot[0]
+        original_headers = [sheet['data'][0][index]['m'] for index in range(sheet['column'])]
+        deleted_header = original_headers[1]
+        expected_header = original_headers[2]
+        for row in sheet['data']:
+            del row[1]
+        sheet['column'] -= 1
+
+        self._auth(self.token_one)
+        response = self.client.post('/api/pe-log-sheet/ops/', {
+            'base_revision': self.initial_state['revision'],
+            'ops': [{
+                'op': 'deleteRowCol',
+                'id': 'pe-log-main',
+                'value': {'type': 'column', 'start': 1, 'end': 1, 'id': 'pe-log-main'},
+            }],
+            'snapshot': snapshot,
+            'client_id': 'client-one',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        state = PeLogSheetState.objects.get(singleton_key='main')
+        headers = [item['v']['m'] for item in state.workbook_data[0]['celldata'] if item['r'] == 0]
+        self.assertNotIn(deleted_header, headers)
+        self.assertEqual(headers[1], expected_header)
+        self.assertEqual(state.workbook_data[0]['column'], len(original_headers) - 1)
+
+    def test_stale_structural_op_returns_structural_conflict(self):
+        snapshot_one = self._make_base_snapshot()
+        snapshot_one[0]['data'][1][0] = make_text_cell('부서A')
+        ops_one = [{'op': 'replace', 'id': 'pe-log-main', 'path': ['data', 1, 0], 'value': make_text_cell('부서A')}]
+        self._auth(self.token_one)
+        response_one = self.client.post('/api/pe-log-sheet/ops/', {
+            'base_revision': self.initial_state['revision'],
+            'ops': ops_one,
+            'snapshot': snapshot_one,
+            'client_id': 'client-one',
+        }, format='json')
+        self.assertEqual(response_one.status_code, 200)
+
+        stale_snapshot = self._make_base_snapshot()
+        stale_snapshot[0]['data'].insert(1, [None for _ in range(stale_snapshot[0]['column'])])
+        stale_snapshot[0]['row'] += 1
+
+        self._auth(self.token_two)
+        response_two = self.client.post('/api/pe-log-sheet/ops/', {
+            'base_revision': self.initial_state['revision'],
+            'ops': [{
+                'op': 'insertRowCol',
+                'id': 'pe-log-main',
+                'value': {'type': 'row', 'index': 1, 'count': 1, 'direction': 'rightbottom', 'id': 'pe-log-main'},
+            }],
+            'snapshot': stale_snapshot,
+            'client_id': 'client-two',
+        }, format='json')
+
+        self.assertEqual(response_two.status_code, 409)
+        self.assertEqual(response_two.data['conflicts'][0]['conflict_type'], 'structural')
+
+    def test_same_revision_structural_ops_ignore_stale_snapshot_and_apply_ops(self):
+        stale_snapshot = self._make_base_snapshot()
+
+        self._auth(self.token_one)
+        response = self.client.post('/api/pe-log-sheet/ops/', {
+            'base_revision': self.initial_state['revision'],
+            'ops': [{
+                'op': 'deleteRowCol',
+                'id': 'pe-log-main',
+                'value': {'type': 'row', 'start': 1, 'end': 1, 'id': 'pe-log-main'},
+            }],
+            'snapshot': stale_snapshot,
+            'client_id': 'client-one',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        state = PeLogSheetState.objects.get(singleton_key='main')
+        self.assertEqual(state.revision, self.initial_state['revision'] + 1)
+        self.assertEqual(state.workbook_data[0]['row'], self.initial_state['workbook_data'][0]['row'] - 1)
 
 
 class PeLogSheetPresenceTests(TestCase):

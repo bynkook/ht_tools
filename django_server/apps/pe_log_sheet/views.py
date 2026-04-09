@@ -22,6 +22,7 @@ from .services.csv_loader import (
     compute_csv_checksum,
     csv_to_workbook,
     csv_upload_to_workbook,
+    has_structural_ops,
     is_workbook_schema_valid,
     normalize_workbook_data,
     workbook_to_csv_bytes,
@@ -104,30 +105,27 @@ class SheetOpsView(APIView):
                 state = _get_or_init_state()
                 state = PeLogSheetState.objects.select_for_update().get(singleton_key='main')
 
-            structural_conflict = detect_conflicts(state, state.revision, ops, snapshot)
-            if structural_conflict:
+            conflict_payload = detect_conflicts(state, base_revision, ops, snapshot)
+            logger.info(
+                '[SheetOpsView] base_revision=%s, state.revision=%s, ops_count=%s, has_structural=%s, conflict=%s',
+                base_revision,
+                state.revision,
+                len(ops) if ops else 0,
+                has_structural_ops(ops),
+                'yes' if conflict_payload else 'no',
+            )
+            if conflict_payload:
                 return Response(
                     {
                         'error': 'conflict',
-                        **structural_conflict,
+                        **conflict_payload,
                     },
                     status=status.HTTP_409_CONFLICT,
                 )
 
-            if state.revision != base_revision:
-                conflict_payload = detect_conflicts(state, base_revision, ops, snapshot)
-                if conflict_payload:
-                    return Response(
-                        {
-                            'error': 'conflict',
-                            **conflict_payload,
-                        },
-                        status=status.HTTP_409_CONFLICT,
-                    )
-
             new_revision = state.revision + 1
 
-            if state.revision == base_revision and snapshot:
+            if state.revision == base_revision and snapshot and not has_structural_ops(ops):
                 state.workbook_data = normalize_workbook_data(snapshot)
             elif ops:
                 state.workbook_data = merge_ops_into_workbook(state.workbook_data, ops)

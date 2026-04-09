@@ -5,27 +5,19 @@ import os
 from copy import deepcopy
 from typing import Optional
 
-HEADERS = [
+DEFAULT_HEADERS = [
     '요청부서_현장명', '요청자', '직무', '시스템', 'Web_App_구분', '요청일', '요청_주차',
     '유형', '문의내용', '시스템PE', '조치시작일', '조치완료일', '조치내용', '완료여부',
 ]
 
-COLUMN_WIDTHS = {
-    0: 140,   # 요청부서_현장명
-    1: 100,   # 요청자
-    2: 90,    # 직무
-    3: 120,   # 시스템
-    4: 100,   # Web_App_구분
-    5: 100,   # 요청일
-    6: 100,   # 요청_주차
-    7: 140,   # 유형
-    8: 320,   # 문의내용
-    9: 100,   # 시스템PE
-    10: 100,  # 조치시작일
-    11: 100,  # 조치완료일
-    12: 320,  # 조치내용
-    13: 80,   # 완료여부
-}
+DEFAULT_COLUMN_WIDTH = 73
+
+ROW_CONFIG_KEYS = {'rowlen', 'rowhidden', 'customHeight', 'rowReadOnly'}
+COLUMN_CONFIG_KEYS = {'columnlen', 'colhidden', 'customWidth', 'colReadOnly'}
+
+
+def has_structural_ops(ops: list[dict]) -> bool:
+    return any(op.get('op') in {'insertRowCol', 'deleteRowCol', 'addSheet', 'deleteSheet'} for op in (ops or []))
 
 
 def _text_cell(value: Optional[str], extra: dict = None) -> Optional[dict]:
@@ -38,7 +30,7 @@ def _text_cell(value: Optional[str], extra: dict = None) -> Optional[dict]:
         'ct': {'fa': '@', 't': 'inlineStr'},
         'ht': 0,
         'vt': 0,
-        'tb': '2',  # word wrap
+        'tb': '2',
     }
     if extra:
         cell.update(extra)
@@ -58,23 +50,47 @@ def _header_cell(value: str) -> dict:
     }
 
 
-def _build_workbook_from_rows(rows: list[dict]) -> list:
+def _normalize_header_value(value, index: int) -> str:
+    text = '' if value is None else str(value).strip()
+    return text or f'Column {index + 1}'
+
+
+def _normalize_headers(headers: list | None, target_width: int = 0) -> list[str]:
+    source = list(headers or [])
+    width = max(len(source), target_width, 0)
+    if width == 0:
+        return deepcopy(DEFAULT_HEADERS)
+    return [_normalize_header_value(source[idx] if idx < len(source) else None, idx) for idx in range(width)]
+
+
+def _default_column_width(index: int) -> int:
+    return DEFAULT_COLUMN_WIDTH
+
+
+def _default_column_config(column_count: int) -> dict:
+    return {str(index): _default_column_width(index) for index in range(column_count)}
+
+
+def _build_workbook_from_rows(headers: list | None, rows: list[list]) -> list:
+    max_width = max((len(row) for row in rows), default=0)
+    normalized_headers = _normalize_headers(headers, max_width)
+    column_count = max(len(normalized_headers), max_width, 1)
+    normalized_headers = _normalize_headers(normalized_headers, column_count)
+
     celldata = []
 
-    for c, header in enumerate(HEADERS):
-        celldata.append({'r': 0, 'c': c, 'v': _header_cell(header)})
+    for column, header in enumerate(normalized_headers):
+        celldata.append({'r': 0, 'c': column, 'v': _header_cell(header)})
 
-    row_idx = 1
-    for row in rows:
-        for c, col in enumerate(HEADERS):
-            raw = row.get(col, '')
-            val = raw.strip() if isinstance(raw, str) else raw
-            cell = _text_cell(val if val else None)
+    for row_index, row_values in enumerate(rows, start=1):
+        for column in range(column_count):
+            raw = row_values[column] if column < len(row_values) else ''
+            value = raw.strip() if isinstance(raw, str) else raw
+            cell = _text_cell(value if value else None)
             if cell is not None:
-                celldata.append({'r': row_idx, 'c': c, 'v': cell})
-        row_idx += 1
+                celldata.append({'r': row_index, 'c': column, 'v': cell})
 
-    total_rows = max(row_idx + 100, 400)
+    total_rows = max(len(rows) + 101, 400)
 
     sheet = {
         'id': 'pe-log-main',
@@ -82,14 +98,12 @@ def _build_workbook_from_rows(rows: list[dict]) -> list:
         'order': 0,
         'status': 1,
         'row': total_rows,
-        'column': len(HEADERS),
+        'column': column_count,
         'celldata': celldata,
         'showGridLines': 1,
         'defaultRowHeight': 22,
-        'defaultColWidth': 100,
-        'config': {
-            'columnlen': {str(c): w for c, w in COLUMN_WIDTHS.items()},
-        },
+        'defaultColWidth': DEFAULT_COLUMN_WIDTH,
+        'config': {},
         'frozen': {
             'type': 'row',
             'range': {'row_focus': 0, 'column_focus': 0},
@@ -99,25 +113,33 @@ def _build_workbook_from_rows(rows: list[dict]) -> list:
     return [sheet]
 
 
-def _read_csv_rows_from_text(csv_text: str) -> list[dict]:
-    reader = csv.DictReader(io.StringIO(csv_text))
-    if reader.fieldnames != HEADERS:
-        raise ValueError('CSV 헤더가 PE Log Sheet 형식과 일치하지 않습니다.')
-    return [row for row in reader]
+def _read_csv_rows_from_text(csv_text: str) -> tuple[list[str], list[list[str]]]:
+    parsed_rows = list(csv.reader(io.StringIO(csv_text)))
+    if not parsed_rows:
+        return deepcopy(DEFAULT_HEADERS), []
+
+    max_width = max((len(row) for row in parsed_rows), default=0)
+    headers = _normalize_headers(parsed_rows[0], max_width)
+    data_rows = []
+    for raw_row in parsed_rows[1:]:
+        padded = [raw_row[index] if index < len(raw_row) else '' for index in range(len(headers))]
+        data_rows.append(padded)
+    return headers, data_rows
 
 
 def csv_to_workbook(csv_path: str) -> list:
-    """Convert PE log CSV to FortuneSheet workbook_data (list of Sheet dicts)."""
     try:
-        with open(csv_path, encoding='utf-8-sig') as f:
-            return _build_workbook_from_rows(_read_csv_rows_from_text(f.read()))
+        with open(csv_path, encoding='utf-8-sig') as file:
+            headers, rows = _read_csv_rows_from_text(file.read())
+            return _build_workbook_from_rows(headers, rows)
     except FileNotFoundError:
-        return _build_workbook_from_rows([])
+        return _build_workbook_from_rows(DEFAULT_HEADERS, [])
 
 
 def csv_upload_to_workbook(uploaded_file) -> list:
     csv_text = uploaded_file.read().decode('utf-8-sig')
-    return _build_workbook_from_rows(_read_csv_rows_from_text(csv_text))
+    headers, rows = _read_csv_rows_from_text(csv_text)
+    return _build_workbook_from_rows(headers, rows)
 
 
 def _cell_display_value(cell: Optional[dict]) -> str:
@@ -166,6 +188,13 @@ def _sheet_to_row_matrix(sheet: dict) -> list[list[str]]:
     for row_idx in range(max_row + 1):
         rows.append([cell_map.get((row_idx, col_idx), '') for col_idx in range(max_col + 1)])
     return rows
+
+
+def get_sheet_headers(sheet: dict) -> list[str]:
+    rows = _sheet_to_row_matrix(sheet)
+    if not rows:
+        return _normalize_headers([], sheet.get('column') or 0)
+    return _normalize_headers(rows[0], sheet.get('column') or len(rows[0]))
 
 
 def _sheet_to_data_matrix(sheet: dict) -> list[list[dict | None]]:
@@ -292,7 +321,7 @@ def normalize_workbook_data(workbook_data: list) -> list:
             'celldata': celldata,
             'showGridLines': raw_sheet.get('showGridLines', 1),
             'defaultRowHeight': raw_sheet.get('defaultRowHeight', 22),
-            'defaultColWidth': raw_sheet.get('defaultColWidth', 100),
+            'defaultColWidth': raw_sheet.get('defaultColWidth', DEFAULT_COLUMN_WIDTH),
             'config': _sanitize_config(raw_sheet.get('config')),
         }
 
@@ -346,6 +375,17 @@ def _ensure_matrix_bounds(matrix: list, row: int, column: int):
             existing_row.append(None)
 
 
+def _ensure_minimum_matrix_shape(matrix: list, min_rows: int = 1, min_columns: int = 1):
+    target_columns = max(max((len(item) for item in matrix if isinstance(item, list)), default=0), min_columns, 1)
+    while len(matrix) < max(min_rows, 1):
+        matrix.append([None for _ in range(target_columns)])
+    for existing_row in matrix:
+        if not isinstance(existing_row, list):
+            continue
+        while len(existing_row) < target_columns:
+            existing_row.append(None)
+
+
 def _set_nested_value(target: dict, path: list, value, remove: bool = False):
     current = target
     for key in path[:-1]:
@@ -360,26 +400,142 @@ def _set_nested_value(target: dict, path: list, value, remove: bool = False):
         current[final_key] = deepcopy(value)
 
 
+def _shift_indexed_config_map(config: dict, key: str, start_index: int, delta: int, delete_count: int = 0):
+    value = config.get(key)
+    if not isinstance(value, dict):
+        return
+
+    shifted = {}
+    for raw_index, entry in value.items():
+        try:
+            index = int(raw_index)
+        except (TypeError, ValueError):
+            shifted[raw_index] = deepcopy(entry)
+            continue
+
+        if delta < 0 and start_index <= index < start_index + delete_count:
+            continue
+        if index >= start_index:
+            index += delta
+        shifted[str(index)] = deepcopy(entry)
+    config[key] = shifted
+
+
+def _apply_insert_row(sheet: dict, index: int, count: int):
+    data = sheet['data']
+    column_count = max(sheet.get('column') or 0, max((len(row) for row in data if isinstance(row, list)), default=0), 1)
+    insert_at = max(0, min(index, len(data)))
+    for _ in range(count):
+        data.insert(insert_at, [None for _ in range(column_count)])
+    for key in ROW_CONFIG_KEYS:
+        _shift_indexed_config_map(sheet['config'], key, insert_at, count)
+    sheet['row'] = len(data)
+
+
+def _apply_delete_row(sheet: dict, index: int, count: int):
+    data = sheet['data']
+    if not data:
+        _ensure_minimum_matrix_shape(data)
+    delete_at = max(0, min(index, len(data) - 1))
+    del data[delete_at:delete_at + count]
+    _ensure_minimum_matrix_shape(data)
+    for key in ROW_CONFIG_KEYS:
+        _shift_indexed_config_map(sheet['config'], key, delete_at, -count, delete_count=count)
+    sheet['row'] = len(data)
+
+
+def _apply_insert_column(sheet: dict, index: int, count: int):
+    data = sheet['data']
+    _ensure_minimum_matrix_shape(data)
+    current_columns = max(sheet.get('column') or 0, max((len(row) for row in data if isinstance(row, list)), default=0), 1)
+    insert_at = max(0, min(index, current_columns))
+    for row in data:
+        if not isinstance(row, list):
+            continue
+        for _ in range(count):
+            row.insert(insert_at, None)
+    for key in COLUMN_CONFIG_KEYS:
+        _shift_indexed_config_map(sheet['config'], key, insert_at, count)
+    columnlen = sheet['config'].setdefault('columnlen', {})
+    for offset in range(count):
+        columnlen[str(insert_at + offset)] = _default_column_width(insert_at + offset)
+    sheet['column'] = max((len(row) for row in data if isinstance(row, list)), default=current_columns + count)
+
+
+def _apply_delete_column(sheet: dict, index: int, count: int):
+    data = sheet['data']
+    _ensure_minimum_matrix_shape(data)
+    current_columns = max(sheet.get('column') or 0, max((len(row) for row in data if isinstance(row, list)), default=0), 1)
+    delete_at = max(0, min(index, current_columns - 1))
+    for row in data:
+        if not isinstance(row, list):
+            continue
+        del row[delete_at:delete_at + count]
+        if not row:
+            row.append(None)
+    for key in COLUMN_CONFIG_KEYS:
+        _shift_indexed_config_map(sheet['config'], key, delete_at, -count, delete_count=count)
+    _ensure_minimum_matrix_shape(data)
+    sheet['column'] = max((len(row) for row in data if isinstance(row, list)), default=1)
+
+
+def _apply_structural_op(sheet: dict, op: dict):
+    value = op.get('value') or {}
+    if not isinstance(value, dict):
+        raise ValueError(f'Invalid structural op payload: {op}')
+
+    operation_type = value.get('type')
+
+    if op.get('op') == 'insertRowCol':
+        index = int(value.get('index', 0))
+        count = max(int(value.get('count', 1)), 1)
+        if operation_type == 'row':
+            _apply_insert_row(sheet, index, count)
+            return
+        if operation_type == 'column':
+            _apply_insert_column(sheet, index, count)
+            return
+    elif op.get('op') == 'deleteRowCol':
+        start = int(value.get('start', value.get('index', 0)))
+        end = int(value.get('end', start + max(int(value.get('count', 1)), 1) - 1))
+        count = max(end - start + 1, 1)
+        if operation_type == 'row':
+            _apply_delete_row(sheet, start, count)
+            return
+        if operation_type == 'column':
+            _apply_delete_column(sheet, start, count)
+            return
+
+    raise ValueError(f'Unsupported structural op: {op}')
+
+
 def apply_ops_to_workbook_data(workbook_data: list, ops: list[dict]) -> list:
     runtime_sheets = []
     for sheet in normalize_workbook_data(workbook_data):
         runtime_sheet = deepcopy(sheet)
         runtime_sheet['data'] = _sheet_to_data_matrix(sheet)
         runtime_sheet.pop('celldata', None)
+        runtime_sheet['config'] = deepcopy(runtime_sheet.get('config') or {})
+        _ensure_minimum_matrix_shape(runtime_sheet['data'])
         runtime_sheets.append(runtime_sheet)
 
     sheet_index = {(sheet.get('id') or f'pe-log-sheet-{idx}'): idx for idx, sheet in enumerate(runtime_sheets)}
 
     for op in ops or []:
         op_name = op.get('op')
-        if op_name in {'insertRowCol', 'deleteRowCol', 'addSheet', 'deleteSheet'}:
+        sheet_id = op.get('id') or 'pe-log-main'
+
+        if op_name in {'addSheet', 'deleteSheet'}:
             raise ValueError(f'Unsupported structural op: {op_name}')
 
-        sheet_id = op.get('id') or 'pe-log-main'
         if sheet_id not in sheet_index:
             raise ValueError(f'Unknown sheet id: {sheet_id}')
         sheet = runtime_sheets[sheet_index[sheet_id]]
         path = op.get('path') or []
+
+        if op_name in {'insertRowCol', 'deleteRowCol'}:
+            _apply_structural_op(sheet, op)
+            continue
 
         if len(path) >= 3 and path[0] == 'data' and isinstance(path[1], int) and isinstance(path[2], int):
             row = path[1]
@@ -422,41 +578,39 @@ def apply_ops_to_workbook_data(workbook_data: list, ops: list[dict]) -> list:
 
 
 def is_workbook_schema_valid(workbook_data: list) -> bool:
-    if not workbook_data:
+    normalized = normalize_workbook_data(workbook_data)
+    if not normalized:
         return False
-    sheet = normalize_workbook_data(workbook_data)[0] if normalize_workbook_data(workbook_data) else {}
-    if sheet.get('column') != len(HEADERS):
-        return False
-    rows = _sheet_to_row_matrix(sheet)
-    if not rows:
-        return False
-    header_row = rows[0]
-    return header_row[:len(HEADERS)] == HEADERS
+    sheet = normalized[0]
+    return (sheet.get('row') or 0) >= 1 and (sheet.get('column') or 0) >= 1
 
 
 def workbook_to_csv_bytes(workbook_data: list) -> bytes:
     sheet = workbook_data[0] if workbook_data else {}
+    headers = get_sheet_headers(sheet)
+    rows = _sheet_to_row_matrix(sheet)
+
     output = io.StringIO(newline='')
     writer = csv.writer(output, quoting=csv.QUOTE_ALL, lineterminator='\r\n')
-    writer.writerow(HEADERS)
+    writer.writerow(headers)
 
-    rows = _sheet_to_row_matrix(sheet)
+    header_width = len(headers)
     for row in rows[1:]:
-        row = [(row[col_idx] if col_idx < len(row) else '') for col_idx in range(len(HEADERS))]
-        if any(str(value).strip() for value in row):
-            writer.writerow(row)
+        normalized_row = [(row[col_idx] if col_idx < len(row) else '') for col_idx in range(header_width)]
+        if any(str(value).strip() for value in normalized_row):
+            writer.writerow(normalized_row)
 
     return output.getvalue().encode('utf-8-sig')
 
 
 def write_workbook_csv(csv_path: str, workbook_data: list) -> None:
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-    with open(csv_path, 'wb') as f:
-        f.write(workbook_to_csv_bytes(workbook_data))
+    with open(csv_path, 'wb') as file:
+        file.write(workbook_to_csv_bytes(workbook_data))
 
 
 def compute_csv_checksum(csv_path: str) -> str:
     if not os.path.exists(csv_path):
         return ''
-    with open(csv_path, 'rb') as f:
-        return hashlib.md5(f.read()).hexdigest()
+    with open(csv_path, 'rb') as file:
+        return hashlib.md5(file.read()).hexdigest()

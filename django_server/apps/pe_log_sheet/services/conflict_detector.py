@@ -75,12 +75,14 @@ def detect_conflicts(state, base_revision: int, incoming_ops: list[dict], incomi
     )
     incoming = _extract_touched_cells(incoming_ops)
 
+    # Same-revision: no intervening changes, so no conflict possible
+    if not revisions:
+        return None
+
+    # Revision gap exists: structural ops become non-mergeable
     if incoming['structural_ops']:
         first = incoming['structural_ops'][0]
         return _build_structural_conflict(state.revision, state.workbook_data, first['operation'])
-
-    if not revisions:
-        return None
 
     for revision in revisions:
         server = _extract_touched_cells(revision.ops)

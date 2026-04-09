@@ -6,13 +6,16 @@ import HelpModal from './components/HelpModal';
 import ConflictBanner from './components/ConflictBanner';
 import ConflictResolutionModal from './components/ConflictResolutionModal';
 import { usePeLogSheet } from './hooks/usePeLogSheet';
+import { useWorkbookNavigation } from './hooks/useWorkbookNavigation';
 
 export default function PeLogSheetPage() {
   const workbookRef = useRef(null);
+  const workbookContainerRef = useRef(null);
   const [showHelp, setShowHelp] = useState(false);
 
   const {
     workbookData,
+    workbookRenderKey,
     revision,
     syncStatus,
     activeUsers,
@@ -26,6 +29,15 @@ export default function PeLogSheetPage() {
     uploadCsv,
     downloadCsv,
   } = usePeLogSheet(workbookRef);
+  const {
+    handleKeyDownCapture,
+    handleFocusCapture,
+    handleMouseDownCapture,
+    workbookHooks,
+  } = useWorkbookNavigation(
+    workbookRef,
+    workbookContainerRef,
+  );
 
   const onOp = useCallback((ops) => {
     handleOp(ops);
@@ -59,14 +71,22 @@ export default function PeLogSheetPage() {
         </div>
       )}
 
-      <div className="flex-1 overflow-hidden">
+      <div
+        ref={workbookContainerRef}
+        className="flex-1 overflow-hidden"
+        onFocusCapture={handleFocusCapture}
+        onMouseDownCapture={handleMouseDownCapture}
+        onKeyDownCapture={handleKeyDownCapture}
+      >
         <Workbook
+          key={workbookRenderKey}
           ref={workbookRef}
           data={workbookData}
           showToolbar={true}
           showFormulaBar={true}
           showSheetTabs={false}
           allowEdit={true}
+          hooks={workbookHooks}
           onChange={handleChange}
           onOp={onOp}
         />

@@ -16,6 +16,7 @@ const CLIENT_ID = `client_${Math.random().toString(36).slice(2, 10)}`;
  */
 export function usePeLogSheet(workbookRef) {
   const [workbookData, setWorkbookData] = useState(null);
+  const [workbookRenderKey, setWorkbookRenderKey] = useState(0);
   const [revision, setRevision] = useState(0);
   const [syncStatus, setSyncStatus] = useState('idle'); // idle | saving | conflict | error
   const [conflictMessage, setConflictMessage] = useState(null);
@@ -30,14 +31,29 @@ export function usePeLogSheet(workbookRef) {
     revisionRef.current = rev;
   }, []);
 
-  const applyWorkbookData = useCallback((nextWorkbookData) => {
-    setWorkbookData(nextWorkbookData);
-    workbookDataRef.current = nextWorkbookData;
-  }, []);
+  const replaceWorkbookData = useCallback((nextWorkbookData) => {
+    // Deep clone to avoid Immer proxy conflicts inside FortuneSheet
+    const cloned = structuredClone(nextWorkbookData);
+    setWorkbookData(cloned);
+    workbookDataRef.current = cloned;
+
+    if (workbookRef.current?.updateSheet) {
+      try {
+        workbookRef.current.updateSheet(cloned);
+        return;
+      } catch (err) {
+        console.warn('[peLogSheet] updateSheet failed, remounting workbook', err);
+      }
+    }
+
+    setWorkbookRenderKey((currentKey) => currentKey + 1);
+  }, [workbookRef]);
 
   const handleChange = useCallback((nextWorkbookData) => {
-    setWorkbookData(nextWorkbookData);
-    workbookDataRef.current = nextWorkbookData;
+    // Deep clone to avoid Immer proxy leaking into our state
+    const cloned = structuredClone(nextWorkbookData);
+    setWorkbookData(cloned);
+    workbookDataRef.current = cloned;
   }, []);
 
   const updateActiveUsers = useCallback((users) => {
@@ -48,14 +64,14 @@ export function usePeLogSheet(workbookRef) {
   const loadState = useCallback(async () => {
     try {
       const data = await peLogSheetApi.getState();
-      applyWorkbookData(data.workbook_data);
+      replaceWorkbookData(data.workbook_data);
       updateRevision(data.revision);
       return data;
     } catch (err) {
       console.error('[peLogSheet] loadState failed', err);
       return null;
     }
-  }, [applyWorkbookData, updateRevision]);
+  }, [replaceWorkbookData, updateRevision]);
 
   useEffect(() => {
     loadState();
@@ -156,6 +172,13 @@ export function usePeLogSheet(workbookRef) {
     setSyncStatus('saving');
 
     const snapshot = workbookDataRef.current ?? undefined;
+    const hasStructural = ops.some((op) => ['insertRowCol', 'deleteRowCol', 'addSheet', 'deleteSheet'].includes(op.op));
+    console.log('[peLogSheet] commitOps:', {
+      base_revision: revisionRef.current,
+      ops_count: ops.length,
+      has_structural: hasStructural,
+      op_types: [...new Set(ops.map((o) => o.op))],
+    });
 
     try {
       const result = await peLogSheetApi.submitOps({
@@ -164,12 +187,15 @@ export function usePeLogSheet(workbookRef) {
         snapshot,
         client_id: CLIENT_ID,
       });
+      console.log('[peLogSheet] commitOps success:', { new_revision: result.new_revision });
       updateRevision(result.new_revision);
       setSyncStatus('idle');
       setConflictMessage(null);
       setConflictState(null);
     } catch (err) {
+      console.error('[peLogSheet] commitOps error:', err.response?.status, err.response?.data);
       if (err.response?.status === 409) {
+        batcherRef.current?.cancel();
         const {
           revision: serverRev,
           workbook_data: serverSheet,
@@ -177,26 +203,30 @@ export function usePeLogSheet(workbookRef) {
         } = err.response.data;
         updateRevision(serverRev);
         setSyncStatus('conflict');
-        const isPasteConflict = conflicts.length > 1;
+        const hasStructuralConflict = conflicts.some((conflict) => conflict?.conflict_type === 'structural');
+        const isPasteConflict = !hasStructuralConflict && conflicts.length > 1;
         setConflictMessage(
-          isPasteConflict
-            ? `동시 편집 충돌로 붙여넣기 작업이 취소되었습니다. 충돌 셀 ${conflicts.length}개를 확인하세요.`
-            : '다른 사용자가 같은 셀을 먼저 수정했습니다. 최신 버전으로 복원되었습니다.'
+          hasStructuralConflict
+            ? '다른 사용자가 시트 구조를 먼저 변경했습니다. 최신 구조로 복원되었습니다.'
+            : isPasteConflict
+              ? `동시 편집 충돌로 붙여넣기 작업이 취소되었습니다. 충돌 셀 ${conflicts.length}개를 확인하세요.`
+              : '다른 사용자가 같은 셀을 먼저 수정했습니다. 최신 버전으로 복원되었습니다.'
         );
         setConflictState({
           conflicts,
+          hasStructuralConflict,
           isPasteConflict,
-          canRetry: conflicts.length === 1 && conflicts[0]?.conflict_type === 'cell-edit' && !isPasteConflict,
+          canRetry: !hasStructuralConflict && conflicts.length === 1 && conflicts[0]?.conflict_type === 'cell-edit' && !isPasteConflict,
         });
         if (serverSheet) {
-          applyWorkbookData(serverSheet);
+          replaceWorkbookData(serverSheet);
         }
       } else {
         setSyncStatus('error');
         console.error('[peLogSheet] submitOps failed', err);
       }
     }
-  }, [applyWorkbookData, updateRevision, workbookRef]);
+  }, [replaceWorkbookData, updateRevision]);
 
   useEffect(() => {
     batcherRef.current = new OpBatcher({
@@ -210,7 +240,11 @@ export function usePeLogSheet(workbookRef) {
     batcherRef.current?.cancel();
     try {
       const result = await peLogSheetApi.uploadCsv(file);
-      applyWorkbookData(result.workbook_data);
+      // Force full remount to clear FortuneSheet internal state (column widths, etc.)
+      const cloned = structuredClone(result.workbook_data);
+      setWorkbookData(cloned);
+      workbookDataRef.current = cloned;
+      setWorkbookRenderKey((k) => k + 1);
       updateRevision(result.revision);
       setSyncStatus('idle');
       setConflictMessage(null);
@@ -220,7 +254,7 @@ export function usePeLogSheet(workbookRef) {
       console.error('[peLogSheet] uploadCsv failed', err);
       throw err;
     }
-  }, [applyWorkbookData, updateRevision]);
+  }, [updateRevision]);
 
   const downloadCsv = useCallback(async () => {
     try {
@@ -241,6 +275,7 @@ export function usePeLogSheet(workbookRef) {
 
   return {
     workbookData,
+    workbookRenderKey,
     revision,
     syncStatus,
     activeUsers,
