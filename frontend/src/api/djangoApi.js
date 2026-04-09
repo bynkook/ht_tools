@@ -533,6 +533,21 @@ export const peLogSheetApi = {
     return response.data;
   },
 
+  joinPresence: async (client_id) => {
+    const response = await djangoClient.post('/api/pe-log-sheet/presence/join/', { client_id });
+    return response.data;
+  },
+
+  heartbeatPresence: async (client_id) => {
+    const response = await djangoClient.post('/api/pe-log-sheet/presence/heartbeat/', { client_id });
+    return response.data;
+  },
+
+  leavePresence: async (client_id) => {
+    const response = await djangoClient.post('/api/pe-log-sheet/presence/leave/', { client_id });
+    return response.data;
+  },
+
   getStreamUrl: () => {
     const protocol = window.location.protocol;
     const hostname = window.location.hostname;

@@ -12,15 +12,18 @@ const CLIENT_ID = `client_${Math.random().toString(36).slice(2, 10)}`;
  *  - Initial state load
  *  - SSE subscription for remote edits
  *  - Op batching + server commit
- *  - Conflict detection → full reload via workbookRef.updateSheet
+ *  - Conflict detection → authoritative state reload
  */
 export function usePeLogSheet(workbookRef) {
   const [workbookData, setWorkbookData] = useState(null);
   const [revision, setRevision] = useState(0);
   const [syncStatus, setSyncStatus] = useState('idle'); // idle | saving | conflict | error
   const [conflictMessage, setConflictMessage] = useState(null);
+  const [conflictState, setConflictState] = useState(null);
+  const [activeUsers, setActiveUsers] = useState([]);
 
   const revisionRef = useRef(0);
+  const workbookDataRef = useRef(null);
 
   const updateRevision = useCallback((rev) => {
     setRevision(rev);
@@ -29,10 +32,17 @@ export function usePeLogSheet(workbookRef) {
 
   const applyWorkbookData = useCallback((nextWorkbookData) => {
     setWorkbookData(nextWorkbookData);
-    if (workbookRef.current && nextWorkbookData) {
-      workbookRef.current.updateSheet(nextWorkbookData);
-    }
-  }, [workbookRef]);
+    workbookDataRef.current = nextWorkbookData;
+  }, []);
+
+  const handleChange = useCallback((nextWorkbookData) => {
+    setWorkbookData(nextWorkbookData);
+    workbookDataRef.current = nextWorkbookData;
+  }, []);
+
+  const updateActiveUsers = useCallback((users) => {
+    setActiveUsers(Array.isArray(users) ? users : []);
+  }, []);
 
   // ── Initial load ──────────────────────────────────────────────────
   const loadState = useCallback(async () => {
@@ -84,6 +94,8 @@ export function usePeLogSheet(workbookRef) {
             } else if (msg.type === 'reset') {
               loadState();
               updateRevision(msg.revision);
+            } else if (msg.type === 'presence_snapshot') {
+              updateActiveUsers(msg.active_users);
             }
           },
           onerror(err) {
@@ -98,7 +110,38 @@ export function usePeLogSheet(workbookRef) {
     })();
 
     return () => ctrl.abort();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loadState, updateActiveUsers, workbookRef]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const token = sessionStorage.getItem('authToken');
+    if (!token) return;
+
+    let heartbeatId = null;
+
+    const join = async () => {
+      try {
+        const result = await peLogSheetApi.joinPresence(CLIENT_ID);
+        updateActiveUsers(result.active_users);
+      } catch (err) {
+        console.error('[peLogSheet] presence join failed', err);
+      }
+    };
+
+    join();
+
+    heartbeatId = window.setInterval(() => {
+      peLogSheetApi.heartbeatPresence(CLIENT_ID).catch((err) => {
+        console.warn('[peLogSheet] presence heartbeat failed', err);
+      });
+    }, 15000);
+
+    return () => {
+      if (heartbeatId) {
+        window.clearInterval(heartbeatId);
+      }
+      peLogSheetApi.leavePresence(CLIENT_ID).catch(() => {});
+    };
+  }, [updateActiveUsers]);
 
   // ── Op batcher ────────────────────────────────────────────────────
   const batcherRef = useRef(null);
@@ -112,7 +155,7 @@ export function usePeLogSheet(workbookRef) {
     if (!ops.length) return;
     setSyncStatus('saving');
 
-    const snapshot = workbookRef.current?.getAllSheets?.() ?? undefined;
+    const snapshot = workbookDataRef.current ?? undefined;
 
     try {
       const result = await peLogSheetApi.submitOps({
@@ -124,12 +167,27 @@ export function usePeLogSheet(workbookRef) {
       updateRevision(result.new_revision);
       setSyncStatus('idle');
       setConflictMessage(null);
+      setConflictState(null);
     } catch (err) {
       if (err.response?.status === 409) {
-        const { revision: serverRev, workbook_data: serverSheet } = err.response.data;
+        const {
+          revision: serverRev,
+          workbook_data: serverSheet,
+          conflicts = [],
+        } = err.response.data;
         updateRevision(serverRev);
         setSyncStatus('conflict');
-        setConflictMessage('다른 사용자가 동시에 편집했습니다. 최신 버전으로 복원되었습니다.');
+        const isPasteConflict = conflicts.length > 1;
+        setConflictMessage(
+          isPasteConflict
+            ? `동시 편집 충돌로 붙여넣기 작업이 취소되었습니다. 충돌 셀 ${conflicts.length}개를 확인하세요.`
+            : '다른 사용자가 같은 셀을 먼저 수정했습니다. 최신 버전으로 복원되었습니다.'
+        );
+        setConflictState({
+          conflicts,
+          isPasteConflict,
+          canRetry: conflicts.length === 1 && conflicts[0]?.conflict_type === 'cell-edit' && !isPasteConflict,
+        });
         if (serverSheet) {
           applyWorkbookData(serverSheet);
         }
@@ -185,8 +243,35 @@ export function usePeLogSheet(workbookRef) {
     workbookData,
     revision,
     syncStatus,
+    activeUsers,
     conflictMessage,
-    dismissConflict: () => { setSyncStatus('idle'); setConflictMessage(null); },
+    conflictState,
+    dismissConflict: () => {
+      setSyncStatus('idle');
+      setConflictMessage(null);
+      setConflictState(null);
+    },
+    keepServerConflictResolution: () => {
+      setSyncStatus('idle');
+      setConflictMessage(null);
+      setConflictState(null);
+    },
+    retryClientConflictValue: () => {
+      const conflict = conflictState?.conflicts?.[0];
+      if (!conflict || !conflictState?.canRetry || !workbookRef.current) {
+        return;
+      }
+      setSyncStatus('idle');
+      setConflictMessage(null);
+      setConflictState(null);
+      workbookRef.current.setCellValue(
+        conflict.row,
+        conflict.column,
+        conflict.client_cell,
+        { id: conflict.sheet_id },
+      );
+    },
+    handleChange,
     handleOp,
     uploadCsv,
     downloadCsv,

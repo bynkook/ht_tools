@@ -2,10 +2,12 @@ import React, { useRef } from 'react';
 import { Download, HelpCircle, Home, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import SyncStatusBadge from './SyncStatusBadge';
+import ActiveUsersBadge from './ActiveUsersBadge';
 
 export default function SheetHeader({
   syncStatus,
   revision,
+  activeUsers,
   onHelpOpen,
   onCsvUpload,
   onCsvDownload,
@@ -55,6 +57,10 @@ export default function SheetHeader({
       </span>
 
       <div className="flex-1" />
+
+      <ActiveUsersBadge activeUsers={activeUsers} />
+
+      <div className="w-px h-5 bg-gray-200" />
 
       <SyncStatusBadge status={syncStatus} revision={revision} />
 

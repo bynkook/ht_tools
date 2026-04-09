@@ -4,6 +4,7 @@ import '@fortune-sheet/react/dist/index.css';
 import SheetHeader from './components/SheetHeader';
 import HelpModal from './components/HelpModal';
 import ConflictBanner from './components/ConflictBanner';
+import ConflictResolutionModal from './components/ConflictResolutionModal';
 import { usePeLogSheet } from './hooks/usePeLogSheet';
 
 export default function PeLogSheetPage() {
@@ -14,8 +15,13 @@ export default function PeLogSheetPage() {
     workbookData,
     revision,
     syncStatus,
+    activeUsers,
     conflictMessage,
+    conflictState,
     dismissConflict,
+    keepServerConflictResolution,
+    retryClientConflictValue,
+    handleChange,
     handleOp,
     uploadCsv,
     downloadCsv,
@@ -38,12 +44,13 @@ export default function PeLogSheetPage() {
 
   return (
     <div className="flex flex-col h-screen bg-white overflow-hidden">
-      <SheetHeader
-        syncStatus={syncStatus}
-        revision={revision}
-        onHelpOpen={() => setShowHelp(true)}
-        onCsvUpload={uploadCsv}
-        onCsvDownload={downloadCsv}
+        <SheetHeader
+          syncStatus={syncStatus}
+          revision={revision}
+          activeUsers={activeUsers}
+          onHelpOpen={() => setShowHelp(true)}
+          onCsvUpload={uploadCsv}
+          onCsvDownload={downloadCsv}
       />
 
       {conflictMessage && (
@@ -60,11 +67,18 @@ export default function PeLogSheetPage() {
           showFormulaBar={true}
           showSheetTabs={false}
           allowEdit={true}
+          onChange={handleChange}
           onOp={onOp}
         />
       </div>
 
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      <ConflictResolutionModal
+        conflictState={conflictState}
+        onClose={dismissConflict}
+        onKeepServer={keepServerConflictResolution}
+        onRetryClientValue={retryClientConflictValue}
+      />
     </div>
   );
 }
