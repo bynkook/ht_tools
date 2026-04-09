@@ -179,6 +179,11 @@ run_server.bat
 2. file encoding is 'utf-8' without BOM.
 3. always use 'REM' to add non-code comments. never use '::'.
 
+> **⚠️ Agent shell safety**: The `> nul` redirect is a Windows CMD construct.
+> **NEVER execute `.bat` file contents directly in bash/shell commands.**
+> Running `chcp 65001 > nul` in bash creates a literal file named `nul` in the working directory.
+> To read or verify a `.bat` file, use the Read tool only. To run it, use `cmd /c <file>.bat`.
+
 ### Python (Django/FastAPI)
 
 **Imports ordering:**
