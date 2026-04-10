@@ -1,3 +1,38 @@
+/**
+ * Persist policy per system message phase.
+ * - 'always'    : always saved to DB (backend-driven events, conversation flow)
+ * - 'test_only' : saved only in test mode (command results, memory ops)
+ * - 'never'     : UI-only, never saved (transient errors, model-selection warnings)
+ *
+ * Adding a new command phase: add one line here. No other changes needed.
+ *
+ * IMPORTANT: Unknown phases fall back to 'always' (saved by default).
+ * If a new phase must NOT be saved, explicitly add it with 'never' or 'test_only'.
+ */
+const PHASE_PERSIST_POLICY = {
+  runtime: 'always',
+  conversation: 'always',
+  persistence: 'always',
+  command: 'test_only',
+  command_error: 'never',
+  memory: 'test_only',
+};
+
+/**
+ * Resolve whether a system message should be persisted to DB.
+ *
+ * @param {string} phase - The message phase (key in PHASE_PERSIST_POLICY)
+ * @param {boolean|undefined} isTestMode - Whether the current session is in test mode.
+ *   If undefined (runtimeConfig not yet loaded), 'test_only' phases return false (safe default).
+ * @returns {boolean}
+ */
+export const resolvePersist = (phase, isTestMode) => {
+  const policy = PHASE_PERSIST_POLICY[phase] ?? 'always';
+  if (policy === 'never') return false;
+  if (policy === 'test_only') return isTestMode === true;
+  return true; // 'always'
+};
+
 export const buildSystemMetadata = (metadata = {}) => ({
   kind: 'system_log',
   level: 'info',
