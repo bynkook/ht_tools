@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def _csv_path() -> str:
-    path = os.path.join(settings.BASE_DIR, '..', 'data', 'pe_log', 'seed.csv')
+    path = os.path.join(settings.BASE_DIR, "..", "data", "pe_log", "seed.csv")
     return os.path.normpath(path)
 
 
@@ -49,12 +49,16 @@ def _seed_checksum() -> str:
 def _get_or_init_state() -> PeLogSheetState:
     """Return singleton state, auto-initialising from CSV on first access."""
     state, created = PeLogSheetState.objects.get_or_create(
-        singleton_key='main',
-        defaults={'workbook_data': [], 'revision': 0},
+        singleton_key="main",
+        defaults={"workbook_data": [], "revision": 0},
     )
-    if created or not state.workbook_data or not is_workbook_schema_valid(state.workbook_data):
+    if (
+        created
+        or not state.workbook_data
+        or not is_workbook_schema_valid(state.workbook_data)
+    ):
         if state.workbook_data and not is_workbook_schema_valid(state.workbook_data):
-            logger.warning('Resetting stale PE Log Sheet state due to schema mismatch.')
+            logger.warning("Resetting stale PE Log Sheet state due to schema mismatch.")
             state.revision += 1
         state.workbook_data = _load_seed_workbook()
         state.source_checksum = _seed_checksum()
@@ -62,9 +66,9 @@ def _get_or_init_state() -> PeLogSheetState:
     else:
         normalized = normalize_workbook_data(state.workbook_data)
         if normalized != state.workbook_data:
-            logger.info('Normalizing persisted PE Log Sheet workbook state.')
+            logger.info("Normalizing persisted PE Log Sheet workbook state.")
             state.workbook_data = normalized
-            state.save(update_fields=['workbook_data', 'updated_at'])
+            state.save(update_fields=["workbook_data", "updated_at"])
     return state
 
 
@@ -75,12 +79,18 @@ class SheetStateView(APIView):
 
     def get(self, request):
         state = _get_or_init_state()
-        return Response({
-            'revision': state.revision,
-            'workbook_data': state.workbook_data,
-            'last_editor': state.last_editor.username if state.last_editor else None,
-            'updated_at': state.updated_at.isoformat() if state.updated_at else None,
-        })
+        return Response(
+            {
+                "revision": state.revision,
+                "workbook_data": state.workbook_data,
+                "last_editor": state.last_editor.username
+                if state.last_editor
+                else None,
+                "updated_at": state.updated_at.isoformat()
+                if state.updated_at
+                else None,
+            }
+        )
 
 
 class SheetOpsView(APIView):
@@ -93,31 +103,35 @@ class SheetOpsView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        base_revision = serializer.validated_data['base_revision']
-        ops = serializer.validated_data['ops']
-        snapshot = serializer.validated_data.get('snapshot')
-        client_id = serializer.validated_data.get('client_id', '')
+        base_revision = serializer.validated_data["base_revision"]
+        ops = serializer.validated_data["ops"]
+        snapshot = serializer.validated_data.get("snapshot")
+        client_id = serializer.validated_data.get("client_id", "")
 
         with transaction.atomic():
             try:
-                state = PeLogSheetState.objects.select_for_update().get(singleton_key='main')
+                state = PeLogSheetState.objects.select_for_update().get(
+                    singleton_key="main"
+                )
             except PeLogSheetState.DoesNotExist:
                 state = _get_or_init_state()
-                state = PeLogSheetState.objects.select_for_update().get(singleton_key='main')
+                state = PeLogSheetState.objects.select_for_update().get(
+                    singleton_key="main"
+                )
 
             conflict_payload = detect_conflicts(state, base_revision, ops, snapshot)
             logger.info(
-                '[SheetOpsView] base_revision=%s, state.revision=%s, ops_count=%s, has_structural=%s, conflict=%s',
+                "[SheetOpsView] base_revision=%s, state.revision=%s, ops_count=%s, has_structural=%s, conflict=%s",
                 base_revision,
                 state.revision,
                 len(ops) if ops else 0,
                 has_structural_ops(ops),
-                'yes' if conflict_payload else 'no',
+                "yes" if conflict_payload else "no",
             )
             if conflict_payload:
                 return Response(
                     {
-                        'error': 'conflict',
+                        "error": "conflict",
                         **conflict_payload,
                     },
                     status=status.HTTP_409_CONFLICT,
@@ -125,7 +139,11 @@ class SheetOpsView(APIView):
 
             new_revision = state.revision + 1
 
-            if state.revision == base_revision and snapshot and not has_structural_ops(ops):
+            if (
+                state.revision == base_revision
+                and snapshot
+                and not has_structural_ops(ops)
+            ):
                 state.workbook_data = normalize_workbook_data(snapshot)
             elif ops:
                 state.workbook_data = merge_ops_into_workbook(state.workbook_data, ops)
@@ -141,22 +159,24 @@ class SheetOpsView(APIView):
                 editor=request.user,
             )
 
-        get_hub().broadcast({
-            'type': 'op_committed',
-            'revision': new_revision,
-            'ops': ops,
-            'client_id': client_id,
-            'editor': request.user.username,
-        })
+        get_hub().broadcast(
+            {
+                "type": "op_committed",
+                "revision": new_revision,
+                "ops": ops,
+                "client_id": client_id,
+                "editor": request.user.username,
+            }
+        )
 
-        return Response({'new_revision': new_revision})
+        return Response({"new_revision": new_revision})
 
 
 def _presence_payload(event_type: str, active_users: list[dict]) -> dict:
     return {
-        'type': event_type,
-        'document_id': DEFAULT_DOCUMENT_ID,
-        'active_users': active_users,
+        "type": event_type,
+        "document_id": DEFAULT_DOCUMENT_ID,
+        "active_users": active_users,
     }
 
 
@@ -167,13 +187,24 @@ class SheetPresenceJoinView(APIView):
         serializer = PeLogSheetPresenceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        # Join is the primary visibility trigger. The request response applies the
+        # authoritative local presence result immediately, and SSE snapshots fan
+        # that state out to other subscribers.
         active_users = get_presence_registry().join(
             DEFAULT_DOCUMENT_ID,
-            serializer.validated_data['client_id'],
+            serializer.validated_data["client_id"],
             request.user,
         )
-        get_hub().broadcast(_presence_payload('presence_snapshot', active_users))
-        return Response({'active_users': active_users})
+        get_hub().broadcast(_presence_payload("presence_snapshot", active_users))
+        return Response(
+            {
+                "active_users": active_users,
+                "joined_user": {
+                    "username": request.user.username,
+                    "display_name": request.user.username,
+                },
+            }
+        )
 
 
 class SheetPresenceHeartbeatView(APIView):
@@ -183,14 +214,16 @@ class SheetPresenceHeartbeatView(APIView):
         serializer = PeLogSheetPresenceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        # Heartbeat is TTL refresh only. It does not recreate missing presence
+        # entries after an abrupt disconnect expiry; a fresh join is required.
         active_users, changed = get_presence_registry().heartbeat(
             DEFAULT_DOCUMENT_ID,
-            serializer.validated_data['client_id'],
+            serializer.validated_data["client_id"],
             request.user,
         )
         if changed:
-            get_hub().broadcast(_presence_payload('presence_snapshot', active_users))
-        return Response({'active_users': active_users})
+            get_hub().broadcast(_presence_payload("presence_snapshot", active_users))
+        return Response({"active_users": active_users})
 
 
 class SheetPresenceLeaveView(APIView):
@@ -202,18 +235,18 @@ class SheetPresenceLeaveView(APIView):
 
         active_users = get_presence_registry().leave(
             DEFAULT_DOCUMENT_ID,
-            serializer.validated_data['client_id'],
+            serializer.validated_data["client_id"],
         )
-        get_hub().broadcast(_presence_payload('presence_snapshot', active_users))
-        return Response({'active_users': active_users})
+        get_hub().broadcast(_presence_payload("presence_snapshot", active_users))
+        return Response({"active_users": active_users})
 
 
 def _authenticate_stream_request(request):
-    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-    if not auth_header.startswith('Token '):
+    auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+    if not auth_header.startswith("Token "):
         return None
 
-    token_key = auth_header.split(' ', 1)[1].strip()
+    token_key = auth_header.split(" ", 1)[1].strip()
     if not token_key:
         return None
 
@@ -230,11 +263,13 @@ def _authenticate_stream_request(request):
 class SheetStreamSseView(View):
     """GET — token-authenticated SSE endpoint without DRF content negotiation."""
 
-    http_method_names = ['get']
+    http_method_names = ["get"]
 
     def dispatch(self, request, *args, **kwargs):
         if _authenticate_stream_request(request) is None:
-            return JsonResponse({'detail': 'Authentication credentials were not provided.'}, status=401)
+            return JsonResponse(
+                {"detail": "Authentication credentials were not provided."}, status=401
+            )
         return super().dispatch(request, *args, **kwargs)
 
     def get(self, request):
@@ -259,10 +294,10 @@ class SheetStreamSseView(View):
 
         response = StreamingHttpResponse(
             event_generator(),
-            content_type='text/event-stream',
+            content_type="text/event-stream",
         )
-        response['Cache-Control'] = 'no-cache'
-        response['X-Accel-Buffering'] = 'no'
+        response["Cache-Control"] = "no-cache"
+        response["X-Accel-Buffering"] = "no"
         return response
 
 
@@ -276,7 +311,7 @@ class SheetResetView(APIView):
 
         with transaction.atomic():
             state, _ = PeLogSheetState.objects.select_for_update().get_or_create(
-                singleton_key='main',
+                singleton_key="main",
             )
             state.workbook_data = normalize_workbook_data(csv_to_workbook(csv_file))
             state.revision = state.revision + 1
@@ -284,15 +319,19 @@ class SheetResetView(APIView):
             state.last_editor = request.user
             state.save()
 
-        get_hub().broadcast({
-            'type': 'reset',
-            'revision': state.revision,
-        })
+        get_hub().broadcast(
+            {
+                "type": "reset",
+                "revision": state.revision,
+            }
+        )
 
-        return Response({
-            'revision': state.revision,
-            'message': 'CSV 기준으로 시트가 재초기화되었습니다.',
-        })
+        return Response(
+            {
+                "revision": state.revision,
+                "message": "CSV 기준으로 시트가 재초기화되었습니다.",
+            }
+        )
 
 
 class SheetCsvUploadView(APIView):
@@ -300,37 +339,46 @@ class SheetCsvUploadView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
-        uploaded_file = request.FILES.get('file')
+        uploaded_file = request.FILES.get("file")
         if uploaded_file is None:
-            return Response({'error': 'CSV 파일이 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
-        if not uploaded_file.name.lower().endswith('.csv'):
-            return Response({'error': 'CSV 파일만 업로드할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "CSV 파일이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if not uploaded_file.name.lower().endswith(".csv"):
+            return Response(
+                {"error": "CSV 파일만 업로드할 수 있습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             workbook_data = csv_upload_to_workbook(uploaded_file)
         except (UnicodeDecodeError, ValueError) as exc:
-            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             state, _ = PeLogSheetState.objects.select_for_update().get_or_create(
-                singleton_key='main',
+                singleton_key="main",
             )
             state.workbook_data = normalize_workbook_data(workbook_data)
             state.revision = state.revision + 1
-            state.source_checksum = ''
+            state.source_checksum = ""
             state.last_editor = request.user
             state.save()
 
-        get_hub().broadcast({
-            'type': 'reset',
-            'revision': state.revision,
-        })
+        get_hub().broadcast(
+            {
+                "type": "reset",
+                "revision": state.revision,
+            }
+        )
 
-        return Response({
-            'revision': state.revision,
-            'workbook_data': state.workbook_data,
-            'message': 'CSV 업로드가 완료되었습니다.',
-        })
+        return Response(
+            {
+                "revision": state.revision,
+                "workbook_data": state.workbook_data,
+                "message": "CSV 업로드가 완료되었습니다.",
+            }
+        )
 
 
 class SheetCsvDownloadView(APIView):
@@ -339,6 +387,6 @@ class SheetCsvDownloadView(APIView):
     def get(self, request):
         state = _get_or_init_state()
         csv_bytes = workbook_to_csv_bytes(state.workbook_data)
-        response = HttpResponse(csv_bytes, content_type='text/csv; charset=utf-8')
-        response['Content-Disposition'] = 'attachment; filename="pe_log_sheet.csv"'
+        response = HttpResponse(csv_bytes, content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="pe_log_sheet.csv"'
         return response

@@ -4,6 +4,7 @@ import { peLogSheetApi } from '../../../api/djangoApi';
 import { OpBatcher } from '../utils/opBatcher';
 
 const CLIENT_ID = `client_${Math.random().toString(36).slice(2, 10)}`;
+const PRESENCE_HEARTBEAT_INTERVAL_MS = 3000;
 
 /**
  * usePeLogSheet
@@ -25,6 +26,77 @@ export function usePeLogSheet(workbookRef) {
 
   const revisionRef = useRef(0);
   const workbookDataRef = useRef(null);
+  const activeUsersRef = useRef([]);
+  const pendingJoinedUserRef = useRef(null);
+
+  const normalizePresenceUsers = useCallback((users) => {
+    if (!Array.isArray(users)) {
+      return [];
+    }
+
+    return users
+      .filter((user) => user?.username)
+      .map((user) => ({
+        username: user.username,
+        display_name: user.display_name ?? user.username,
+      }));
+  }, []);
+
+  const mergePresenceUsers = useCallback((users, joinedUser) => {
+    const normalizedUsers = normalizePresenceUsers(users);
+    if (!joinedUser?.username) {
+      return normalizedUsers;
+    }
+
+    const nextUsers = normalizedUsers.filter((user) => user.username !== joinedUser.username);
+    nextUsers.push(joinedUser);
+    return nextUsers;
+  }, [normalizePresenceUsers]);
+
+  const applyPresenceUsers = useCallback((users) => {
+    const normalizedUsers = normalizePresenceUsers(users);
+    activeUsersRef.current = normalizedUsers;
+    setActiveUsers(normalizedUsers);
+  }, [normalizePresenceUsers]);
+
+  const applyPresenceSnapshot = useCallback((users) => {
+    const normalizedUsers = normalizePresenceUsers(users);
+    const pendingJoinedUser = pendingJoinedUserRef.current;
+    if (!pendingJoinedUser) {
+      pendingJoinedUserRef.current = null;
+      applyPresenceUsers(normalizedUsers);
+      return;
+    }
+
+    const includesPendingUser = normalizedUsers.some(
+      (user) => user?.username === pendingJoinedUser.username,
+    );
+    if (includesPendingUser) {
+      pendingJoinedUserRef.current = null;
+      applyPresenceUsers(normalizedUsers);
+      return;
+    }
+
+    applyPresenceUsers(mergePresenceUsers(normalizedUsers, pendingJoinedUser));
+  }, [applyPresenceUsers, mergePresenceUsers, normalizePresenceUsers]);
+
+  const applyJoinPresence = useCallback((users, joinedUser) => {
+    const normalizedUsers = normalizePresenceUsers(users);
+    const normalizedJoinedUser = joinedUser && joinedUser.username
+      ? {
+          username: joinedUser.username,
+          display_name: joinedUser.display_name ?? joinedUser.username,
+        }
+      : null;
+
+    if (normalizedJoinedUser) {
+      pendingJoinedUserRef.current = normalizedJoinedUser;
+      applyPresenceUsers(mergePresenceUsers(normalizedUsers, normalizedJoinedUser));
+    } else {
+      pendingJoinedUserRef.current = null;
+      applyPresenceUsers(normalizedUsers);
+    }
+  }, [applyPresenceUsers, mergePresenceUsers, normalizePresenceUsers]);
 
   const updateRevision = useCallback((rev) => {
     setRevision(rev);
@@ -54,10 +126,6 @@ export function usePeLogSheet(workbookRef) {
     const cloned = structuredClone(nextWorkbookData);
     setWorkbookData(cloned);
     workbookDataRef.current = cloned;
-  }, []);
-
-  const updateActiveUsers = useCallback((users) => {
-    setActiveUsers(Array.isArray(users) ? users : []);
   }, []);
 
   // ── Initial load ──────────────────────────────────────────────────
@@ -111,7 +179,7 @@ export function usePeLogSheet(workbookRef) {
               loadState();
               updateRevision(msg.revision);
             } else if (msg.type === 'presence_snapshot') {
-              updateActiveUsers(msg.active_users);
+              applyPresenceSnapshot(msg.active_users);
             }
           },
           onerror(err) {
@@ -126,7 +194,7 @@ export function usePeLogSheet(workbookRef) {
     })();
 
     return () => ctrl.abort();
-  }, [loadState, updateActiveUsers, workbookRef]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [applyPresenceSnapshot, loadState, workbookRef]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const token = sessionStorage.getItem('authToken');
@@ -137,7 +205,7 @@ export function usePeLogSheet(workbookRef) {
     const join = async () => {
       try {
         const result = await peLogSheetApi.joinPresence(CLIENT_ID);
-        updateActiveUsers(result.active_users);
+        applyJoinPresence(result.active_users, result.joined_user);
       } catch (err) {
         console.error('[peLogSheet] presence join failed', err);
       }
@@ -149,15 +217,16 @@ export function usePeLogSheet(workbookRef) {
       peLogSheetApi.heartbeatPresence(CLIENT_ID).catch((err) => {
         console.warn('[peLogSheet] presence heartbeat failed', err);
       });
-    }, 15000);
+    }, PRESENCE_HEARTBEAT_INTERVAL_MS);
 
     return () => {
       if (heartbeatId) {
         window.clearInterval(heartbeatId);
       }
+      pendingJoinedUserRef.current = null;
       peLogSheetApi.leavePresence(CLIENT_ID).catch(() => {});
     };
-  }, [updateActiveUsers]);
+  }, [applyJoinPresence]);
 
   // ── Op batcher ────────────────────────────────────────────────────
   const batcherRef = useRef(null);

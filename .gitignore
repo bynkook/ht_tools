@@ -22,12 +22,24 @@ media/
 # gemini-cli
 GEMINI.md
 
+# agent
+AGENTS.md
+
 # gemini-cli settings
 .gemini/
 
 # opencode settings
-.opencode
+.opencode/
+.ruff_cache/
+.sisyphus/
 
 # GitHub App credentials
 gha-creds-*.json
 .github/
+
+# Windows reserved device names that bash may create as real files
+# (e.g. "chcp 65001 > nul" in .bat files run under Git Bash/WSL creates a literal file)
+/nul
+/con
+/prn
+/aux
