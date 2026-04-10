@@ -14,6 +14,7 @@ import {
   appendMessageBeforeAssistantPlaceholder,
   buildSystemMessage,
   getPendingTurnSystemMessages,
+  resolvePersist,
 } from './utils/systemMessageState';
 
 // 대화 이력 제한: 최근 5턴 (10개 메시지)
@@ -141,6 +142,7 @@ const ChatPage = () => {
     setMessages,
     currentSessionId,
     ensureSession,
+    runtimeConfig,
   });
 
   // Model 선택 이벤트 핸들러 (최상위 레벨에서 선언)
@@ -232,17 +234,19 @@ const ChatPage = () => {
     content,
     metadata = {},
     sessionId = null,
-    persist = false,
+    persist = null,
   }) => {
+    const phase = metadata.phase ?? 'conversation';
+    const shouldPersist = persist !== null ? persist : resolvePersist(phase, runtimeConfig?.isTestMode);
     const message = buildSystemMessage(content, {
       ...metadata,
-      persist,
+      persist: shouldPersist,
     });
     appendUiSystemMessage(message);
-    if (persist && sessionId) {
+    if (shouldPersist && sessionId) {
       await modelChatApi.saveMessage(sessionId, 'system', content, message.metadata);
     }
-  }, [appendUiSystemMessage]);
+  }, [appendUiSystemMessage, runtimeConfig]);
 
   const appendSystemMessage = useCallback((message) => {
     const normalizedMessage = buildSystemMessage(message.content, message.metadata || {});
@@ -417,7 +421,6 @@ const ChatPage = () => {
                 phase: 'persistence',
               },
               sessionId,
-              persist: true,
             });
           }
           abortControllerRef.current = null;
@@ -436,7 +439,6 @@ const ChatPage = () => {
               title: 'Rate limit',
             },
             sessionId: activeSessionIdRef.current,
-            persist: Boolean(activeSessionIdRef.current),
           });
         } else if (err.message?.startsWith('HTTP_ERROR:')) {
           const parts = err.message.split(':');
@@ -448,7 +450,6 @@ const ChatPage = () => {
               title: 'HTTP error',
             },
             sessionId: activeSessionIdRef.current,
-            persist: Boolean(activeSessionIdRef.current),
           });
         } else {
           await emitConversationSystemMessage({
@@ -458,7 +459,6 @@ const ChatPage = () => {
               title: 'Runtime error',
             },
             sessionId: activeSessionIdRef.current,
-            persist: Boolean(activeSessionIdRef.current),
           });
         }
           setMessages(removeEmptyAssistantPlaceholder);
@@ -524,7 +524,6 @@ const ChatPage = () => {
                phase: 'persistence',
              },
              sessionId: activeSessionIdRef.current,
-             persist: true,
            }));
        }
        abortControllerRef.current = null;

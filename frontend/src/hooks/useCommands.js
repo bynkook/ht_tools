@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 
 import { memoryApi, modelChatApi } from '../api/djangoApi';
 import { mcpCommandApi, mcpRagApi } from '../api/fastapiApi';
-import { buildSystemMessage } from '../features/chat/utils/systemMessageState';
+import { buildSystemMessage, resolvePersist } from '../features/chat/utils/systemMessageState';
 
 const DEFAULT_MCP_PROVIDER_ID = 'internal_docs';
 
@@ -222,6 +222,7 @@ export const useCommands = ({
   setMessages,
   currentSessionId,
   ensureSession,
+  runtimeConfig,
 }) => {
   const [isCommandLoading, setIsCommandLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState(null);
@@ -237,21 +238,24 @@ export const useCommands = ({
   }, []);
 
   const appendSystemHistory = useCallback(async (_sessionId, content, metadata = {}) => {
+    const phase = metadata.phase ?? 'command';
+    const shouldPersist = resolvePersist(phase, runtimeConfig?.isTestMode);
     const message = buildSystemMessage(content, {
       channel: 'command_result',
-      phase: 'command',
+      phase,
       raw: null,
       ...metadata,
+      persist: shouldPersist,
     });
     const messageMetadata = message.metadata;
     setMessages(prev => [
       ...prev,
       message,
     ]);
-    if (_sessionId) {
+    if (_sessionId && shouldPersist) {
       await modelChatApi.saveMessage(_sessionId, 'system', content, messageMetadata);
     }
-  }, [setMessages]);
+  }, [setMessages, runtimeConfig]);
 
   const emitCommandError = useCallback(async (sessionId, message) => {
     await appendSystemHistory(sessionId, `⚠️ ${message}`, {

@@ -8,7 +8,7 @@ const isAllowedFilterMessage = (message) => FILTER_PASS_MARKERS.some((marker) =>
 
 export const buildRuntimeSystemMessage = (content, metadata = {}) => buildSystemMessage(content, {
   phase: 'runtime',
-  persist: true,
+  persist: true, // runtime phase is always persisted (see PHASE_PERSIST_POLICY in systemMessageState.js)
   ...metadata,
 });
 

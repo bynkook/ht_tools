@@ -4,12 +4,14 @@ import { modelApi } from '../../../api/djangoApi';
 
 const DEFAULT_RUNTIME_CONFIG = {
   mode: 'normal',
+  isTestMode: false,
   requiresModelSelection: true,
   supportsExternalLlm: true,
 };
 
 const normalizeRuntimeConfig = (data = {}) => ({
   mode: data.mode || DEFAULT_RUNTIME_CONFIG.mode,
+  isTestMode: data.is_test_mode ?? DEFAULT_RUNTIME_CONFIG.isTestMode,
   requiresModelSelection: data.requires_model_selection ?? DEFAULT_RUNTIME_CONFIG.requiresModelSelection,
   supportsExternalLlm: data.supports_external_llm ?? DEFAULT_RUNTIME_CONFIG.supportsExternalLlm,
 });
