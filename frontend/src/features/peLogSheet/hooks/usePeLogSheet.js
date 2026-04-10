@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { peLogSheetApi } from '../../../api/djangoApi';
+import { useWorkbookNavigation } from './useWorkbookNavigation';
 import { OpBatcher } from '../utils/opBatcher';
 
 const CLIENT_ID = `client_${Math.random().toString(36).slice(2, 10)}`;
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 3000;
+// Phase-1 soft-lock contract placeholder: server-issued cell locks live for 30s,
+// and the active editor refreshes them every 8s while `.luckysheet-cell-input`
+// remains focused. These constants are documentation/integration anchors only in
+// this task; lock acquisition/release wiring lands in a later task.
+const CELL_LOCK_TTL_SECONDS = 30;
+const CELL_LOCK_HEARTBEAT_INTERVAL_MS = 8000;
+const CELL_LOCK_TTL_MS = CELL_LOCK_TTL_SECONDS * 1000;
 
 /**
  * usePeLogSheet
@@ -14,6 +22,25 @@ const PRESENCE_HEARTBEAT_INTERVAL_MS = 3000;
  *  - SSE subscription for remote edits
  *  - Op batching + server commit
  *  - Conflict detection → authoritative state reload
+ *
+ * Cell soft-lock policy contract for the PE log sheet feature:
+ *  - Only one active text-edit cell per client may hold a lock at a time.
+ *  - Lock ownership is tied to actual `.luckysheet-cell-input` focus, never to
+ *    bare selection state or `afterCellMouseDown`.
+ *  - Trailing users are allowed to type locally, but are blocked only when they
+ *    attempt to save/commit; edit-start itself does not warn or hard-block.
+ *  - The leading user never sees a warning for the cell they already own.
+ *  - A trailing user's temporary draft is cancelled/cleared by restoring the
+ *    authoritative server workbook after a save-time lock conflict.
+ *  - `conflict_type = "cell-lock"` is reserved for this save-time lock branch
+ *    and stays distinct from existing `"cell-edit"` and `"structural"`
+ *    revision-gap conflicts.
+ *  - FortuneSheet 1.0.4 exposes no reliable native edit-start hook, so phase-1
+ *    integrates conservatively via DOM/input focus boundaries without patching
+ *    or monkey-patching the library.
+ *  - Lock TTL is 60 seconds and the planned heartbeat interval is 15 seconds.
+ *  - Phase-1 scope is a single active text-edit cell only; multi-cell paste and
+ *    structural operations remain outside the lock system.
  */
 export function usePeLogSheet(workbookRef) {
   const [workbookData, setWorkbookData] = useState(null);
@@ -28,6 +55,9 @@ export function usePeLogSheet(workbookRef) {
   const workbookDataRef = useRef(null);
   const activeUsersRef = useRef([]);
   const pendingJoinedUserRef = useRef(null);
+  const activeCellLockRef = useRef(null);
+  const cellLockConflictOwnerRef = useRef(null);
+  const [activeCellLockVersion, setActiveCellLockVersion] = useState(0);
 
   const normalizePresenceUsers = useCallback((users) => {
     if (!Array.isArray(users)) {
@@ -102,6 +132,118 @@ export function usePeLogSheet(workbookRef) {
     setRevision(rev);
     revisionRef.current = rev;
   }, []);
+
+  const syncActiveCellLock = useCallback((nextLock) => {
+    activeCellLockRef.current = nextLock;
+    setActiveCellLockVersion((current) => current + 1);
+  }, []);
+
+  const clearActiveCellLock = useCallback(() => {
+    activeCellLockRef.current = null;
+    setActiveCellLockVersion((current) => current + 1);
+  }, []);
+
+  const releaseActiveCellLock = useCallback(async (lock = activeCellLockRef.current) => {
+    if (!lock) {
+      return;
+    }
+
+    try {
+      console.log('[peLogSheet] releasing cell lock', lock);
+      await peLogSheetApi.releaseCellLock({
+        client_id: CLIENT_ID,
+        ...lock,
+      });
+    } catch (err) {
+      console.warn('[peLogSheet] releaseCellLock failed', err);
+    } finally {
+      if (activeCellLockRef.current && activeCellLockRef.current.sheet_id === lock.sheet_id && activeCellLockRef.current.row === lock.row && activeCellLockRef.current.column === lock.column) {
+        clearActiveCellLock();
+      }
+    }
+  }, [clearActiveCellLock]);
+
+  const releaseActiveCellLockBeforeUnload = useCallback((lock = activeCellLockRef.current) => {
+    if (!lock) {
+      return;
+    }
+
+    try {
+      const releaseUrl = `${window.location.protocol}//${window.location.hostname}:8000/api/pe-log-sheet/cell-lock/release/`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', releaseUrl, false);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+
+      const token = sessionStorage.getItem('authToken');
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Token ${token}`);
+      }
+
+      xhr.send(JSON.stringify({
+        client_id: CLIENT_ID,
+        ...lock,
+      }));
+    } catch (err) {
+      console.warn('[peLogSheet] beforeunload cell lock release failed', err);
+    }
+  }, []);
+
+  const handleCellEditStart = useCallback(async (sheet_id, row, column) => {
+    const nextLock = { sheet_id, row, column };
+    const currentLock = activeCellLockRef.current;
+
+    if (currentLock && currentLock.sheet_id === sheet_id && currentLock.row === row && currentLock.column === column) {
+      console.log('[peLogSheet] cell lock already held for active edit', nextLock);
+      return;
+    }
+
+    if (currentLock) {
+      console.log('[peLogSheet] releasing previous cell lock before new edit', currentLock);
+      await releaseActiveCellLock(currentLock);
+    }
+
+    try {
+      console.log('[peLogSheet] acquiring cell lock', nextLock);
+      console.log('[peLogSheet] cell lock timing', {
+        ttlMs: CELL_LOCK_TTL_MS,
+        heartbeatMs: CELL_LOCK_HEARTBEAT_INTERVAL_MS,
+      });
+      const response = await peLogSheetApi.acquireCellLock({
+        client_id: CLIENT_ID,
+        sheet_id,
+        row,
+        column,
+      });
+
+      if (response?.is_new || response?.lock?.client_id === CLIENT_ID) {
+        syncActiveCellLock(nextLock);
+        cellLockConflictOwnerRef.current = null;
+        return;
+      }
+
+      if (response?.conflict_type === 'cell-lock') {
+        cellLockConflictOwnerRef.current = response.lock_owner ?? response.lock ?? null;
+        console.log('[peLogSheet] cell lock conflict captured for later UX', cellLockConflictOwnerRef.current);
+      }
+    } catch (err) {
+      console.warn('[peLogSheet] acquireCellLock failed', err);
+    }
+  }, [releaseActiveCellLock, syncActiveCellLock]);
+
+  const handleCellEditEnd = useCallback(async () => {
+    const currentLock = activeCellLockRef.current;
+    if (!currentLock) {
+      return;
+    }
+
+    clearActiveCellLock();
+    await releaseActiveCellLock(currentLock);
+  }, [clearActiveCellLock, releaseActiveCellLock]);
+
+  useWorkbookNavigation(workbookRef, null, {
+    onCellEditStart: handleCellEditStart,
+    onCellEditEnd: handleCellEditEnd,
+  });
 
   const replaceWorkbookData = useCallback((nextWorkbookData) => {
     // Deep clone to avoid Immer proxy conflicts inside FortuneSheet
@@ -263,32 +405,65 @@ export function usePeLogSheet(workbookRef) {
       setConflictState(null);
     } catch (err) {
       console.error('[peLogSheet] commitOps error:', err.response?.status, err.response?.data);
-      if (err.response?.status === 409) {
+if (err.response?.status === 409) {
         batcherRef.current?.cancel();
-        const {
-          revision: serverRev,
-          workbook_data: serverSheet,
-          conflicts = [],
-        } = err.response.data;
-        updateRevision(serverRev);
-        setSyncStatus('conflict');
-        const hasStructuralConflict = conflicts.some((conflict) => conflict?.conflict_type === 'structural');
-        const isPasteConflict = !hasStructuralConflict && conflicts.length > 1;
-        setConflictMessage(
-          hasStructuralConflict
-            ? '다른 사용자가 시트 구조를 먼저 변경했습니다. 최신 구조로 복원되었습니다.'
-            : isPasteConflict
-              ? `동시 편집 충돌로 붙여넣기 작업이 취소되었습니다. 충돌 셀 ${conflicts.length}개를 확인하세요.`
-              : '다른 사용자가 같은 셀을 먼저 수정했습니다. 최신 버전으로 복원되었습니다.'
-        );
-        setConflictState({
-          conflicts,
-          hasStructuralConflict,
-          isPasteConflict,
-          canRetry: !hasStructuralConflict && conflicts.length === 1 && conflicts[0]?.conflict_type === 'cell-edit' && !isPasteConflict,
-        });
-        if (serverSheet) {
-          replaceWorkbookData(serverSheet);
+        const conflictType = err.response.data?.conflict_type;
+
+        if (conflictType === 'cell-lock') {
+          // ── Cell-lock conflict (save-time lock collision) ──────────────
+          // Another user holds an active lock on the same cell.
+          // The trailing user's draft is cancelled/cleared by restoring
+          // the authoritative server workbook. Retry is disabled because
+          // the lock owner must finish first.
+          // ────────────────────────────────────────────────────────────────
+          const {
+            revision: serverRev,
+            workbook_data: serverSheet,
+            locked_cell,
+            lock_owner,
+          } = err.response.data;
+          updateRevision(serverRev);
+          setSyncStatus('conflict');
+          setConflictMessage('다른 사용자가 같은 셀을 편집 중입니다. 최신 버전으로 복원되었습니다.');
+          setConflictState({
+            conflicts: locked_cell
+              ? [{ ...locked_cell, conflict_type: 'cell-lock', lock_owner: lock_owner ?? null }]
+              : [],
+            hasStructuralConflict: false,
+            isPasteConflict: false,
+            canRetry: false,
+            isCellLockConflict: true,
+          });
+          if (serverSheet) {
+            replaceWorkbookData(serverSheet);
+          }
+        } else {
+          // ── Revision-gap conflict (cell-edit / structural) ─────────────
+          const {
+            revision: serverRev,
+            workbook_data: serverSheet,
+            conflicts = [],
+          } = err.response.data;
+          updateRevision(serverRev);
+          setSyncStatus('conflict');
+          const hasStructuralConflict = conflicts.some((conflict) => conflict?.conflict_type === 'structural');
+          const isPasteConflict = !hasStructuralConflict && conflicts.length > 1;
+          setConflictMessage(
+            hasStructuralConflict
+              ? '다른 사용자가 시트 구조를 먼저 변경했습니다. 최신 구조로 복원되었습니다.'
+              : isPasteConflict
+                ? `동시 편집 충돌로 붙여넣기 작업이 취소되었습니다. 충돌 셀 ${conflicts.length}개를 확인하세요.`
+                : '다른 사용자가 같은 셀을 먼저 수정했습니다. 최신 버전으로 복원되었습니다.'
+          );
+          setConflictState({
+            conflicts,
+            hasStructuralConflict,
+            isPasteConflict,
+            canRetry: !hasStructuralConflict && conflicts.length === 1 && conflicts[0]?.conflict_type === 'cell-edit' && !isPasteConflict,
+          });
+          if (serverSheet) {
+            replaceWorkbookData(serverSheet);
+          }
         }
       } else {
         setSyncStatus('error');
@@ -304,6 +479,52 @@ export function usePeLogSheet(workbookRef) {
     });
     return () => batcherRef.current?.cancel();
   }, [commitOps]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      releaseActiveCellLockBeforeUnload();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      void releaseActiveCellLock();
+    };
+  }, [releaseActiveCellLock, releaseActiveCellLockBeforeUnload]);
+
+  useEffect(() => {
+    const currentLock = activeCellLockRef.current;
+    if (!currentLock) {
+      return undefined;
+    }
+
+    const heartbeatId = window.setInterval(async () => {
+      const lock = activeCellLockRef.current;
+      if (!lock) {
+        return;
+      }
+
+      try {
+        console.log('[peLogSheet] cell lock heartbeat', lock);
+        const response = await peLogSheetApi.heartbeatCellLock({
+          client_id: CLIENT_ID,
+          ...lock,
+        });
+
+        if (response?.refreshed === false) {
+          console.log('[peLogSheet] cell lock heartbeat lost ownership', lock);
+          clearActiveCellLock();
+        }
+      } catch (err) {
+        console.warn('[peLogSheet] heartbeatCellLock failed', err);
+      }
+    }, CELL_LOCK_HEARTBEAT_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(heartbeatId);
+    };
+  }, [activeCellLockVersion, clearActiveCellLock]);
 
   const uploadCsv = useCallback(async (file) => {
     batcherRef.current?.cancel();

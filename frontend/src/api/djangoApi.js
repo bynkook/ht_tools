@@ -538,6 +538,36 @@ export const peLogSheetApi = {
     return response.data;
   },
 
+  acquireCellLock: async ({ client_id, sheet_id, row, column }) => {
+    const response = await djangoClient.post('/api/pe-log-sheet/cell-lock/acquire/', {
+      client_id,
+      sheet_id,
+      row,
+      column,
+    });
+    return response.data;
+  },
+
+  heartbeatCellLock: async ({ client_id, sheet_id, row, column }) => {
+    const response = await djangoClient.post('/api/pe-log-sheet/cell-lock/heartbeat/', {
+      client_id,
+      sheet_id,
+      row,
+      column,
+    });
+    return response.data;
+  },
+
+  releaseCellLock: async ({ client_id, sheet_id, row, column }) => {
+    const response = await djangoClient.post('/api/pe-log-sheet/cell-lock/release/', {
+      client_id,
+      sheet_id,
+      row,
+      column,
+    });
+    return response.data;
+  },
+
   heartbeatPresence: async (client_id) => {
     const response = await djangoClient.post('/api/pe-log-sheet/presence/heartbeat/', { client_id });
     return response.data;

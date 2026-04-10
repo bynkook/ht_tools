@@ -1,3 +1,6 @@
+# pyright: reportAttributeAccessIssue=false, reportOptionalSubscript=false, reportGeneralTypeIssues=false, reportIndexIssue=false, reportOptionalMemberAccess=false, reportArgumentType=false
+"""Views for PE log sheet collaboration APIs."""
+
 import json
 import logging
 import os
@@ -16,8 +19,19 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import PeLogSheetState, PeLogSheetRevision
-from .serializers import PeLogSheetOpsSerializer, PeLogSheetPresenceSerializer
-from .services.conflict_detector import detect_conflicts, merge_ops_into_workbook
+from .serializers import (
+    PeLogSheetCellLockSerializer,
+    PeLogSheetOpsSerializer,
+    PeLogSheetPresenceSerializer,
+)
+from .services.cell_lock import DEFAULT_DOCUMENT_ID as CELL_LOCK_DOCUMENT_ID
+from .services.cell_lock import get_cell_lock_registry
+from .services.conflict_detector import (
+    _cell_address,
+    _extract_touched_cells,
+    detect_conflicts,
+    merge_ops_into_workbook,
+)
 from .services.csv_loader import (
     compute_csv_checksum,
     csv_to_workbook,
@@ -118,6 +132,48 @@ class SheetOpsView(APIView):
                 state = PeLogSheetState.objects.select_for_update().get(
                     singleton_key="main"
                 )
+
+            # Cell-lock pre-check: if the ops resolve to exactly one cell-edit
+            # target (no structural ops, batch_size == 1), check whether that
+            # cell is locked by another client. If so, return 409 immediately
+            # with conflict_type "cell-lock" so the frontend can restore
+            # authoritative state. detect_conflicts() remains the second-line
+            # guard for revision-gap conflicts after this check passes.
+            touched = _extract_touched_cells(ops)
+            if not touched["structural_ops"] and touched["batch_size"] == 1:
+                (sheet_id, row, column), cell_info = next(
+                    iter(touched["cells"].items())
+                )
+                owner = get_cell_lock_registry().owner_for_cell(
+                    CELL_LOCK_DOCUMENT_ID, sheet_id, row, column
+                )
+                if owner is not None and owner["client_id"] != client_id:
+                    logger.info(
+                        "[SheetOpsView] cell-lock conflict: cell %s locked by %s, rejected %s",
+                        _cell_address(row, column),
+                        owner["client_id"],
+                        client_id,
+                    )
+                    return Response(
+                        {
+                            "error": "conflict",
+                            "conflict_type": "cell-lock",
+                            "locked_cell": {
+                                "sheet_id": sheet_id,
+                                "row": row,
+                                "column": column,
+                                "cell_address": _cell_address(row, column),
+                            },
+                            "lock_owner": {
+                                "username": owner["username"],
+                                "display_name": owner["display_name"],
+                                "client_id": owner["client_id"],
+                            },
+                            "revision": state.revision,
+                            "workbook_data": state.workbook_data,
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
 
             conflict_payload = detect_conflicts(state, base_revision, ops, snapshot)
             logger.info(
@@ -233,12 +289,101 @@ class SheetPresenceLeaveView(APIView):
         serializer = PeLogSheetPresenceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        # Disconnect cleanup boundary for the upcoming cell-lock registry:
+        # `SheetPresenceLeaveView` must also call
+        # `release_all(DEFAULT_DOCUMENT_ID, client_id)` so abrupt exits clear any
+        # active text-edit lock held by that client before presence is broadcast.
+        get_cell_lock_registry().release_all(
+            CELL_LOCK_DOCUMENT_ID,
+            serializer.validated_data["client_id"],
+        )
         active_users = get_presence_registry().leave(
             DEFAULT_DOCUMENT_ID,
             serializer.validated_data["client_id"],
         )
         get_hub().broadcast(_presence_payload("presence_snapshot", active_users))
         return Response({"active_users": active_users})
+
+
+class SheetCellLockAcquireView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = PeLogSheetCellLockSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        client_id = serializer.validated_data["client_id"]
+        sheet_id = serializer.validated_data["sheet_id"]
+        row = serializer.validated_data["row"]
+        column = serializer.validated_data["column"]
+
+        lock_info, is_new = get_cell_lock_registry().acquire(
+            CELL_LOCK_DOCUMENT_ID,
+            sheet_id,
+            row,
+            column,
+            client_id,
+            request.user,
+        )
+
+        if is_new or lock_info.get("client_id") == client_id:
+            return Response({"lock": lock_info, "is_new": is_new})
+
+        state = _get_or_init_state()
+        return Response(
+            {
+                "error": "conflict",
+                "conflict_type": "cell-lock",
+                "locked_cell": {
+                    "sheet_id": sheet_id,
+                    "row": row,
+                    "column": column,
+                    "cell_address": _cell_address(row, column),
+                },
+                "lock_owner": {
+                    "username": lock_info.get("username"),
+                    "display_name": lock_info.get("display_name"),
+                    "client_id": lock_info.get("client_id"),
+                },
+                "revision": state.revision,
+                "workbook_data": state.workbook_data,
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+
+class SheetCellLockHeartbeatView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = PeLogSheetCellLockSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        lock_info, refreshed = get_cell_lock_registry().heartbeat(
+            CELL_LOCK_DOCUMENT_ID,
+            serializer.validated_data["client_id"],
+            serializer.validated_data["sheet_id"],
+            serializer.validated_data["row"],
+            serializer.validated_data["column"],
+        )
+        return Response({"lock": lock_info, "refreshed": refreshed})
+
+
+class SheetCellLockReleaseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = PeLogSheetCellLockSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        get_cell_lock_registry().release(
+            CELL_LOCK_DOCUMENT_ID,
+            serializer.validated_data["client_id"],
+            serializer.validated_data["sheet_id"],
+            serializer.validated_data["row"],
+            serializer.validated_data["column"],
+        )
+        return Response({"released": True})
 
 
 def _authenticate_stream_request(request):

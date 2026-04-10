@@ -1,10 +1,15 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 const DEFAULT_ROW_HEIGHT = 22;
 const MIN_PAGE_ROWS = 5;
 const MAX_ROW_SAMPLE_SIZE = 120;
 const VIEWPORT_PADDING = 120;
 const DATA_START_ROW = 1;
+// Integration boundary for PE log sheet cell soft-locking:
+// `.luckysheet-cell-input` focus/blur is the phase-1 entry point for lock
+// lifecycle because FortuneSheet 1.0.4 does not provide a reliable native
+// edit-start hook. Selection hooks still matter for navigation, but not for
+// lock ownership.
 const SHEET_AREA_SELECTOR = '.fortune-sheet-overlay, .fortune-sheet-container, .fortune-sheet-canvas, .luckysheet-cell-input';
 const NON_SHEET_AREA_SELECTOR = '.fortune-toolbar, .fortune-fx-input-container, .fortune-fx-input';
 
@@ -53,6 +58,17 @@ function getSelectionState(workbookApi) {
   };
 }
 
+function getActiveCellSelection(workbookApi) {
+  const selectionState = getSelectionState(workbookApi);
+  const sheet = selectionState.sheet;
+
+  return {
+    sheet_id: sheet?.id ?? sheet?.sheetId ?? sheet?.sheet_id ?? null,
+    row: Number.isFinite(selectionState.rowFocus) ? selectionState.rowFocus : selectionState.row?.[0] ?? 0,
+    column: Number.isFinite(selectionState.columnFocus) ? selectionState.columnFocus : selectionState.column?.[0] ?? 0,
+  };
+}
+
 function getEffectiveRowCount(sheet, selectionEnd) {
   return Math.max(
     Number.isFinite(sheet?.row) ? sheet.row : 0,
@@ -78,8 +94,53 @@ function getFocusZone(target) {
   return null;
 }
 
-export function useWorkbookNavigation(workbookRef, workbookContainerRef) {
+export function useWorkbookNavigation(workbookRef, workbookContainerRef, { onCellEditStart, onCellEditEnd } = {}) {
   const sheetFocusRef = useRef(false);
+  const cellInputPresentRef = useRef(false);
+
+  const getContainerRoot = useCallback(() => {
+    const container = workbookContainerRef?.current;
+
+    if (container instanceof HTMLElement) {
+      return container;
+    }
+
+    if (document.body instanceof HTMLElement) {
+      return document.body;
+    }
+
+    return null;
+  }, [workbookContainerRef]);
+
+  const syncCellEditState = useCallback((rootNode) => {
+    if (!(rootNode instanceof HTMLElement)) {
+      return;
+    }
+
+    const hasCellInput = Boolean(rootNode.querySelector('.luckysheet-cell-input'));
+
+    if (hasCellInput && !cellInputPresentRef.current) {
+      cellInputPresentRef.current = true;
+      sheetFocusRef.current = true;
+
+      if (typeof onCellEditStart === 'function') {
+        const selection = getActiveCellSelection(workbookRef.current);
+        if (selection.sheet_id != null) {
+          onCellEditStart(selection.sheet_id, selection.row, selection.column);
+        }
+      }
+      return;
+    }
+
+    if (!hasCellInput && cellInputPresentRef.current) {
+      cellInputPresentRef.current = false;
+      sheetFocusRef.current = false;
+
+      if (typeof onCellEditEnd === 'function') {
+        onCellEditEnd();
+      }
+    }
+  }, [onCellEditEnd, onCellEditStart, workbookRef]);
 
   const markFocusFromTarget = useCallback((target) => {
     const zone = getFocusZone(target);
@@ -193,10 +254,74 @@ export function useWorkbookNavigation(workbookRef, workbookContainerRef) {
     markFocusFromTarget(event.target);
   }, [markFocusFromTarget]);
 
+  useEffect(() => {
+    const rootNode = getContainerRoot();
+    if (!(rootNode instanceof HTMLElement)) {
+      return undefined;
+    }
+
+    const handleFocusIn = (event) => {
+      if (!(event.target instanceof HTMLElement) || !event.target.closest('.luckysheet-cell-input')) {
+        return;
+      }
+
+      syncCellEditState(rootNode);
+    };
+
+    const handleFocusOut = (event) => {
+      if (!(event.target instanceof HTMLElement) || !event.target.closest('.luckysheet-cell-input')) {
+        return;
+      }
+
+      const relatedTarget = event.relatedTarget;
+      if (relatedTarget instanceof HTMLElement && relatedTarget.closest('.luckysheet-cell-input')) {
+        return;
+      }
+
+      syncCellEditState(rootNode);
+    };
+
+    const observer = new MutationObserver(() => {
+      syncCellEditState(rootNode);
+    });
+
+    rootNode.addEventListener('focusin', handleFocusIn);
+    rootNode.addEventListener('focusout', handleFocusOut);
+    observer.observe(rootNode, {
+      childList: true,
+      subtree: true,
+    });
+
+    syncCellEditState(rootNode);
+
+    return () => {
+      observer.disconnect();
+      rootNode.removeEventListener('focusin', handleFocusIn);
+      rootNode.removeEventListener('focusout', handleFocusOut);
+
+      if (cellInputPresentRef.current) {
+        cellInputPresentRef.current = false;
+        sheetFocusRef.current = false;
+
+        if (typeof onCellEditEnd === 'function') {
+          onCellEditEnd();
+        }
+      }
+    };
+  }, [getContainerRoot, onCellEditEnd, syncCellEditState]);
+
   const workbookHooks = useRef({
+    // `afterCellMouseDown` fires for selection changes, so it is useful for
+    // keyboard-navigation focus bookkeeping only. It is NOT sufficient for
+    // cell-lock acquisition because selection alone must never imply edit
+    // ownership.
     afterCellMouseDown: () => {
       sheetFocusRef.current = true;
     },
+    // Phase-1 cell-lock boundary: FortuneSheet's commit-time `beforeUpdateCell`
+    // hook is where trailing-user saves will eventually be cancelled by
+    // returning false after the lock check. This file documents the boundary
+    // only; functional lock enforcement is intentionally deferred.
   }).current;
 
   return {

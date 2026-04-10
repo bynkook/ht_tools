@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, RefreshCcw, X } from 'lucide-react';
+import { AlertTriangle, Lock, RefreshCcw, X } from 'lucide-react';
 
 export default function ConflictResolutionModal({
   conflictState,
@@ -13,7 +13,72 @@ export default function ConflictResolutionModal({
   const visibleConflicts = conflicts.slice(0, 10);
   const remainingCount = Math.max(conflicts.length - visibleConflicts.length, 0);
   const hasStructuralConflict = conflictState.hasStructuralConflict;
+  const isCellLockConflict = conflictState.isCellLockConflict;
 
+  // ── Cell-lock conflict variant ────────────────────────────────────
+  // Another user holds an active lock on the same cell. The trailing
+  // user's draft has been cancelled/cleared by restoring the server
+  // workbook. Retry is disabled because the lock owner must finish first.
+  // ──────────────────────────────────────────────────────────────────
+  if (isCellLockConflict) {
+    const lockConflict = conflicts[0];
+    const lockOwner = lockConflict?.lock_owner;
+    const ownerName = lockOwner?.display_name ?? lockOwner?.username;
+    const cellAddress = lockConflict?.cell_address;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+        <div className="w-full max-w-md rounded-xl bg-white shadow-2xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-200 bg-amber-50">
+            <Lock size={18} className="text-amber-600 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-semibold text-gray-900">셀 편집 충돌</h2>
+              <p className="text-xs text-gray-600 mt-0.5">
+                다른 사용자가 같은 셀을 편집 중입니다.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+              aria-label="닫기"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="px-5 py-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="font-medium">최신 버전으로 복원되었습니다.</div>
+              <div className="mt-1 text-amber-800">
+                {ownerName
+                  ? `${ownerName} 사용자가 ${cellAddress ? `셀 ${cellAddress}을(를)` : '해당 셀을'} 편집 중입니다. 편집이 완료된 후 다시 시도할 수 있습니다.`
+                  : `다른 사용자가 ${cellAddress ? `셀 ${cellAddress}을(를)` : '해당 셀을'} 편집 중입니다. 편집이 완료된 후 다시 시도할 수 있습니다.`}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-200 bg-gray-50">
+            <button
+              onClick={onKeepServer}
+              className="px-3 py-2 rounded-md text-sm bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              최신 값 유지
+            </button>
+            <button
+              onClick={onRetryClientValue}
+              disabled={true}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm bg-blue-300 text-white cursor-not-allowed"
+            >
+              <RefreshCcw size={14} />
+              내 값으로 다시 적용
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Revision-gap conflict variant (cell-edit / structural) ────────
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
       <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl border border-gray-200 overflow-hidden">
