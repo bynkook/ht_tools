@@ -112,3 +112,35 @@ def test_combined_activation_catalog_prefers_provider_hint_when_rules_overlap():
         matches = combined.match("품질 검색", provider_hint="legal_cases")
 
     assert [match.provider_id for match in matches] == ["legal_cases", "internal_docs"]
+
+
+def test_regex_keyword_matches_article_number():
+    """regex: prefix keyword correctly matches via re.search."""
+    catalog = require_activation_catalog("lexguard.default")
+
+    matches = catalog.match("근로기준법 제35조 내용 알려줘")
+
+    rule_ids = [m.rule_id for m in matches]
+    assert "law_article_lookup" in rule_ids
+    law_article = next(m for m in matches if m.rule_id == "law_article_lookup")
+    assert any(kw.startswith("regex:") for kw in law_article.matched_keywords)
+
+
+def test_regex_keyword_requires_both_groups():
+    """law_article_lookup must NOT fire when law_name group is absent."""
+    catalog = require_activation_catalog("lexguard.default")
+
+    matches = catalog.match("제35조가 뭔지 알려줘")
+
+    rule_ids = [m.rule_id for m in matches]
+    assert "law_article_lookup" not in rule_ids
+
+
+def test_regex_keyword_matches_extended_article_number():
+    """regex: pattern covers article numbers not in the old hardcoded list (e.g., 제105조)."""
+    catalog = require_activation_catalog("lexguard.default")
+
+    matches = catalog.match("민법 제105조 적용되나요")
+
+    rule_ids = [m.rule_id for m in matches]
+    assert "law_article_lookup" in rule_ids

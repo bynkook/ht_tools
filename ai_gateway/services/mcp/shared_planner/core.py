@@ -312,8 +312,9 @@ class SharedPlannerCore:
         - document_issue_tool: requires "document_text" (full contract/document text),
           injected via result chaining from read_doc — must never be called standalone.
         - law_article_tool: requires "law_name" (statute name like "근로기준법")
+        - law_comparison_tool: requires "law_name" (statute name for comparison)
         - read_doc: requires "filename" (document filename extracted from query)
-        - Most other tools: accept "query"
+        - Most other tools (legal_qa_tool etc.): accept "query"
         """
         result = dict(params)
 
@@ -330,11 +331,11 @@ class SharedPlannerCore:
                 )
             return result
 
-        # Tools that require law_name instead of query (not used via activation rules currently)
-        if action == "law_article_tool":
+        # Tools that require law_name instead of query.
+        if action in ("law_article_tool", "law_comparison_tool"):
             if "law_name" not in result:
-                # law_article_tool expects a specific statute name.
-                # The activation rule should be using legal_qa_tool instead for general queries.
+                # These tools expect a specific statute name.
+                # Activation rules should target them only when a law name is clearly stated.
                 result["law_name"] = user_query
             return result
 

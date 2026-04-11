@@ -27,18 +27,11 @@ DEFAULT_LEXGUARD_SERVER_URL = "http://127.0.0.1:9099/mcp"
 DEFAULT_LEXGUARD_ACTIVATION_RULE_REF = "lexguard.default"
 
 # Tool name constants (matched to lexguard-mcp server tool definitions)
+# Only the 4 tools actively routed by lexguard.default.json rules are listed here.
 LEGAL_QA_TOOL = "legal_qa_tool"
 LAW_ARTICLE_TOOL = "law_article_tool"
-PRECEDENT_LOOKUP_TOOL = "precedent_lookup_tool"
-DOCUMENT_ISSUE_TOOL = "document_issue_tool"
 LAW_COMPARISON_TOOL = "law_comparison_tool"
-INTERPRETATION_TOOL = "interpretation_tool"
-ADMINISTRATIVE_APPEAL_TOOL = "administrative_appeal_tool"
-CONSTITUTIONAL_DECISION_TOOL = "constitutional_decision_tool"
-COMMITTEE_DECISION_TOOL = "committee_decision_tool"
-SPECIAL_ADMINISTRATIVE_APPEAL_TOOL = "special_administrative_appeal_tool"
-LOCAL_ORDINANCE_TOOL = "local_ordinance_tool"
-ADMINISTRATIVE_RULE_TOOL = "administrative_rule_tool"
+DOCUMENT_ISSUE_TOOL = "document_issue_tool"
 
 # Normalizer and policy references
 LEXGUARD_NORMALIZER_REF = "legal_qa_context"
@@ -124,17 +117,6 @@ class LexguardProvider:
         if law_name:
             tool_args["law_name"] = law_name
         return await self.call_tool(LAW_ARTICLE_TOOL, tool_args)
-
-    async def precedent_lookup(
-        self,
-        query: str,
-        court: str | None = None,
-    ) -> Any:
-        """Search for court precedents / case law."""
-        tool_args: dict[str, Any] = {"query": query}
-        if court:
-            tool_args["court"] = court
-        return await self.call_tool(PRECEDENT_LOOKUP_TOOL, tool_args)
 
     async def document_issue(
         self,

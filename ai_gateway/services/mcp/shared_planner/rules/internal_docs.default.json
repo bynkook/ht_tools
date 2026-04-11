@@ -8,6 +8,7 @@
       "intent_label": "category_listing",
       "action": "list_categories_detail",
       "description": "Category/listing keywords matched a documentation catalog request.",
+      "priority": 30,
       "keyword_groups": {
         "category_listing": [
           "카테고리",
