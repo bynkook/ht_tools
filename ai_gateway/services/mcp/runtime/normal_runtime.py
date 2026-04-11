@@ -59,27 +59,49 @@ class NormalChatRuntime(BaseChatRuntime):
         upstream: AsyncIterator[str],
         resolution,
     ) -> AsyncIterator[str]:
-        # Emit a single "MCP activated" system event before the upstream stream
-        # when MCP successfully contributed context (success-only, no partial info).
+        # Emit one "MCP activated" system event per unique activated provider,
+        # only when MCP successfully contributed context (success-only, no debug detail).
         if resolution is not None and resolution.activated:
             request_id = datetime.now(timezone.utc).strftime("normal-%Y%m%d-%H%M%S-%f")
-            provider_id = (
-                resolution.decision.plans[0].provider
-                if resolution.decision and resolution.decision.plans
-                else None
-            )
-            event = self._event_emitter.info(
-                phase="mcp_activated",
-                title="MCP context applied",
-                content=f"route={resolution.route}",
-                request_id=request_id,
-                provider=provider_id,
-                provider_id=provider_id,
-            )
-            yield f"data: {json.dumps(event.to_sse_payload(), ensure_ascii=False)}\n\n"
+            activated_providers = self._collect_activated_providers(resolution)
+            for provider_id in activated_providers:
+                display_name = self._provider_display_name(provider_id)
+                event = self._event_emitter.info(
+                    phase="mcp_activated",
+                    title="MCP 활성화됨",
+                    content=f"[MCP] {display_name} 활성화됨",
+                    request_id=request_id,
+                    provider=provider_id,
+                    provider_id=provider_id,
+                    provider_display_name=display_name,
+                )
+                yield f"data: {json.dumps(event.to_sse_payload(), ensure_ascii=False)}\n\n"
 
         async for chunk in upstream:
             yield chunk
+
+    def _collect_activated_providers(self, resolution) -> list[str]:
+        """Return unique provider IDs that participated in the resolution, in plan order."""
+        if resolution.decision is None or not resolution.decision.plans:
+            return []
+        seen: set[str] = set()
+        providers: list[str] = []
+        for plan in resolution.decision.plans:
+            if plan.provider and plan.provider not in seen:
+                seen.add(plan.provider)
+                providers.append(plan.provider)
+        return providers
+
+    def _provider_display_name(self, provider_id: str) -> str:
+        """Resolve provider_id to its configured display_name, falling back to provider_id."""
+        settings = getattr(self.mcp_host, "settings", None)
+        if settings is None or not hasattr(settings, "require_provider"):
+            return provider_id
+        try:
+            provider_config = settings.require_provider(provider_id)
+        except ValueError:
+            return provider_id
+        return provider_config.display_name
 
 
 __all__ = ["NormalChatRuntime"]
