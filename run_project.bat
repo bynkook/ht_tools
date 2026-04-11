@@ -6,6 +6,8 @@ set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_PATH=%~f0"
 set "DJANGO_DIR=%SCRIPT_DIR%django_server"
 set "FRONTEND_DIR=%SCRIPT_DIR%frontend"
+set "FASTMCP_DIR=%SCRIPT_DIR%..\fastmcp"
+set "LEXGUARD_DIR=%SCRIPT_DIR%..\lexguard-mcp"
 set "LAUNCHER_TITLE=FabriX Dev Launcher"
 set "USE_WINDOWS_TERMINAL=0"
 
@@ -14,10 +16,10 @@ cd /d "%SCRIPT_DIR%"
 if /I "%~1"=="--role" goto role
 if /I "%~1"=="--wt-child" goto launcher
 
-REM 1. Windows Terminal 탭으로 재실행
+REM 1. 새 Windows Terminal 윈도우로 재실행
 where wt.exe >nul 2>&1
 if not errorlevel 1 (
-    wt.exe -w 0 nt --title "%LAUNCHER_TITLE%" cmd.exe /k call "%SCRIPT_PATH%" --wt-child
+    wt.exe -w new --title "%LAUNCHER_TITLE%" cmd.exe /k call "%SCRIPT_PATH%" --wt-child
     exit /b %errorlevel%
 )
 
@@ -53,27 +55,37 @@ if not exist "django_server\db.sqlite3" (
 )
 
 REM 4. Django Server (Port 8000)
-echo [1/3] Django 서버 시작 (127.0.0.1:8000)...
+echo [1/5] Django 서버 시작 (127.0.0.1:8000)...
 call :launch_role "Django Server" django
 
-REM 5. FastAPI Gateway (Port 8001) - 단일 워커 (Windows 호환)
-echo [2/3] AI 게이트웨이 시작 (127.0.0.1:8001)...
+REM 5. FastAPI Gateway (Port 8001)
+echo [2/5] AI 게이트웨이 시작 (127.0.0.1:8001)...
 call :launch_role "FastAPI Gateway" fastapi
 
 REM 6. React Frontend (Localhost)
-echo [3/3] React 클라이언트 시작...
+echo [3/5] React 클라이언트 시작...
 call :launch_role "React Frontend" react
+
+REM 7. FastMCP Doc Server (Port 8002)
+echo [4/5] FastMCP Doc 서버 시작 (127.0.0.1:8002)...
+call :launch_role "FastMCP Doc Server" fastmcp
+
+REM 8. LexGuard MCP Server (Port 9099)
+echo [5/5] LexGuard MCP 서버 시작 (127.0.0.1:9099)...
+call :launch_role "LexGuard MCP" lexguard
 
 echo.
 echo   모든 서비스가 시작되었습니다.
-echo   - Django Backend: http://127.0.0.1:8000
-echo   - FastAPI Gateway: http://127.0.0.1:8001
+echo   - Django Backend:    http://127.0.0.1:8000
+echo   - FastAPI Gateway:   http://127.0.0.1:8001
+echo   - FastMCP Doc:       http://127.0.0.1:8002/mcp
+echo   - LexGuard MCP:      http://127.0.0.1:9099/mcp
 echo.
 echo   접속 주소:
-echo   * Chat 앱: http://localhost:5173/chat
+echo   * Chat 앱:            http://localhost:5173/chat
 echo   * Image Inspector 앱: http://localhost:5173/image-compare
-echo   * Data Explorer 앱: http://localhost:5173/data-explorer
-echo   * 앱 선택화면: http://localhost:5173
+echo   * Data Explorer 앱:   http://localhost:5173/data-explorer
+echo   * 앱 선택화면:         http://localhost:5173
 echo ========================================================
 pause
 exit /b 0
@@ -82,7 +94,7 @@ exit /b 0
 set "TAB_TITLE=%~1"
 set "SERVICE_ROLE=%~2"
 if "%USE_WINDOWS_TERMINAL%"=="1" (
-    wt.exe -w 0 nt --title "%TAB_TITLE%" cmd.exe /k call "%SCRIPT_PATH%" --role %SERVICE_ROLE%
+    wt.exe -w new nt --title "%TAB_TITLE%" cmd.exe /k call "%SCRIPT_PATH%" --role %SERVICE_ROLE%
 ) else (
     start "%TAB_TITLE%" cmd.exe /k call "%SCRIPT_PATH%" --role %SERVICE_ROLE%
 )
@@ -90,9 +102,11 @@ exit /b %errorlevel%
 
 :role
 set "SERVICE_ROLE=%~2"
-if /I "%SERVICE_ROLE%"=="django" goto run_django
-if /I "%SERVICE_ROLE%"=="fastapi" goto run_fastapi
-if /I "%SERVICE_ROLE%"=="react" goto run_react
+if /I "%SERVICE_ROLE%"=="django"   goto run_django
+if /I "%SERVICE_ROLE%"=="fastapi"  goto run_fastapi
+if /I "%SERVICE_ROLE%"=="react"    goto run_react
+if /I "%SERVICE_ROLE%"=="fastmcp"  goto run_fastmcp
+if /I "%SERVICE_ROLE%"=="lexguard" goto run_lexguard
 echo [Error] 알 수 없는 서비스 역할입니다: %SERVICE_ROLE%
 exit /b 1
 
@@ -117,4 +131,20 @@ if not exist "%FRONTEND_DIR%\package.json" (
 pushd "%FRONTEND_DIR%"
 call npm.cmd run dev
 popd
+exit /b %errorlevel%
+
+:run_fastmcp
+if not exist "%FASTMCP_DIR%\run_server.bat" (
+    echo [Error] FastMCP 서버 스크립트를 찾을 수 없습니다: %FASTMCP_DIR%\run_server.bat
+    exit /b 1
+)
+call "%FASTMCP_DIR%\run_server.bat" --serve
+exit /b %errorlevel%
+
+:run_lexguard
+if not exist "%LEXGUARD_DIR%\run_lexguard.bat" (
+    echo [Error] LexGuard 서버 스크립트를 찾을 수 없습니다: %LEXGUARD_DIR%\run_lexguard.bat
+    exit /b 1
+)
+call "%LEXGUARD_DIR%\run_lexguard.bat"
 exit /b %errorlevel%
