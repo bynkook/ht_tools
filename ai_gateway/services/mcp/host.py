@@ -21,7 +21,11 @@ from .doc_search_policy import (
     normalize_doc_search_rag_params,
 )
 from .providers import get_provider_manifest, require_provider_manifest
-from .rag_context import build_rag_response
+from .rag_context import (
+    LEXGUARD_LEGAL_ACTIONS,
+    build_legal_context_system_prompt,
+    build_rag_response,
+)
 from .registry import connect_provider
 from .result_normalizer import tool_result_to_dict
 from .shared_planner.core import SharedPlannerCore
@@ -131,6 +135,33 @@ def normalize_context_result(
         )
 
     raw_result_dict = _coerce_result_dict(raw_result)
+
+    # lexguard legal tools: convert structured result into a system_prompt string
+    if action in LEXGUARD_LEGAL_ACTIONS:
+        system_prompt = build_legal_context_system_prompt(action, raw_result_dict)
+        return {
+            "action": action,
+            "arguments": resolved_arguments,
+            "query": resolved_arguments.get("query"),
+            "category": resolved_arguments.get("category"),
+            "raw_result": raw_result_dict,
+            "system_prompt": system_prompt,
+        }
+
+    # read_doc: wrap full content for downstream chaining (document_issue_tool).
+    # system_prompt is intentionally None — the content is consumed by chaining, not injected
+    # into the chat context directly.
+    if action == "read_doc":
+        return {
+            "action": action,
+            "arguments": resolved_arguments,
+            "query": resolved_arguments.get("query"),
+            "category": resolved_arguments.get("category"),
+            "filename": resolved_arguments.get("filename"),
+            "raw_result": raw_result_dict,
+            "system_prompt": None,
+        }
+
     return {
         "action": action,
         "arguments": resolved_arguments,

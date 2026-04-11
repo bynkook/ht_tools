@@ -2,6 +2,7 @@
 Shared planner core for normalization and provider/tool decision building.
 """
 
+import re
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
@@ -263,6 +264,20 @@ class SharedPlannerCore:
                 continue
             selected_matches.append(match)
             seen_providers.add(match.provider_id)
+
+        # Ensure read_doc (doc fetch) precedes document_issue_tool (lexguard) for chaining.
+        # The catalog sort puts lower priority values first, which may place document_issue_tool
+        # (priority 55) before read_doc (priority 70). Reorder so the fetch always runs first.
+        actions = [m.action for m in selected_matches]
+        if "read_doc" in actions and "document_issue_tool" in actions:
+            read_idx = actions.index("read_doc")
+            issue_idx = actions.index("document_issue_tool")
+            if issue_idx < read_idx:
+                selected_matches[read_idx], selected_matches[issue_idx] = (
+                    selected_matches[issue_idx],
+                    selected_matches[read_idx],
+                )
+
         return tuple(selected_matches)
 
     def _build_rag_params(
@@ -292,6 +307,7 @@ class SharedPlannerCore:
         Different MCP tools expect different parameter names:
         - document_issue_tool: requires "document_text" (contract/document full text)
         - law_article_tool: requires "law_name" (statute name like "근로기준법")
+        - read_doc: requires "filename" (document filename extracted from query)
         - Most other tools: accept "query"
 
         When doc search results are available, document_text should be populated
@@ -316,11 +332,33 @@ class SharedPlannerCore:
                 result["law_name"] = user_query
             return result
 
+        # read_doc: extract filename from query text (looks for "name.ext" patterns)
+        if action == "read_doc":
+            if "filename" not in result:
+                filename = self._extract_filename_from_query(user_query)
+                if filename:
+                    result["filename"] = filename
+            return result
+
         # Default: most tools accept "query"
         if "query" not in result:
             result["query"] = user_query
 
         return result
+
+    _FILENAME_PATTERN = re.compile(
+        r"\b([\w가-힣\-]+\.(?:md|txt|pdf|docx|hwp|xlsx|csv|json))\b",
+        re.IGNORECASE,
+    )
+
+    def _extract_filename_from_query(self, user_query: str) -> str | None:
+        """Extract a filename (with extension) from the user query string.
+
+        Looks for patterns like "표준계약서.md", "계약서test.md", etc.
+        Returns the first match, or None if not found.
+        """
+        match = self._FILENAME_PATTERN.search(user_query)
+        return match.group(1) if match else None
 
     def _build_provenance(
         self,

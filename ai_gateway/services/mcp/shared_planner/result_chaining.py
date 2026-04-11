@@ -124,17 +124,29 @@ def is_legal_query(query: str) -> bool:
 
 
 def extract_document_text_from_result(result: dict[str, Any]) -> str | None:
-    """Extract document text from a doc_search (search_docs_rag) result.
+    """Extract document text from a doc_search (search_docs_rag) or read_doc result.
 
-    The raw_result from search_docs_rag contains:
-    - files: list of matching files
-    - snippets: list of {filename, snippet, start, end, ...}
+    For search_docs_rag:
+      raw_result contains:
+        - files: list of matching files
+        - snippets: list of {filename, snippet, start, end, ...}
 
-    Returns concatenated snippet texts, or None if no content found.
+    For read_doc:
+      raw_result contains:
+        - content: full document text string
+        - filename: document filename
+        - category: optional category name
+
+    Returns the full document text (or concatenated snippet texts), or None if empty.
     """
     raw_result = result.get("raw_result", {})
 
-    # Try snippets first (most common case)
+    # read_doc returns full content directly
+    content = raw_result.get("content", "")
+    if content and isinstance(content, str):
+        return content.strip() or None
+
+    # Try snippets first (search_docs_rag common case)
     snippets = raw_result.get("snippets", [])
     if snippets:
         texts = []
@@ -163,16 +175,16 @@ def should_chain_doc_to_lexguard(
     current_action: str,
     next_action: str,
 ) -> bool:
-    """Determine if result chaining should occur from doc_search to lexguard.
+    """Determine if result chaining should occur from doc_search/read_doc to lexguard.
 
     Chaining conditions:
-    1. Current action is doc_search (search_docs_rag)
+    1. Current action is doc_search (search_docs_rag) or full-document read (read_doc)
     2. Next action requires document_text (document_issue_tool)
 
     Note: Legal-relatedness is NOT checked here. That's determined by the
     original user query at planning time, not at execution time.
     """
-    if current_action != "search_docs_rag":
+    if current_action not in {"search_docs_rag", "read_doc"}:
         return False
 
     if next_action != "document_issue_tool":
