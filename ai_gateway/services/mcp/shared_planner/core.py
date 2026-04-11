@@ -6,8 +6,17 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 from ..config import DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF, DOC_SEARCH_PROVIDER_ID
-from ..doc_search_policy import DEFAULT_DOC_SEARCH_SETTINGS, McpDocSearchSettings, normalize_doc_search_rag_params
-from .catalog import CombinedActivationCatalog, CompiledActivationCatalog, build_combined_activation_catalog, require_activation_catalog
+from ..doc_search_policy import (
+    DEFAULT_DOC_SEARCH_SETTINGS,
+    McpDocSearchSettings,
+    normalize_doc_search_rag_params,
+)
+from .catalog import (
+    CombinedActivationCatalog,
+    CompiledActivationCatalog,
+    build_combined_activation_catalog,
+    require_activation_catalog,
+)
 from .models import PlannerDecision, PlannerDecisionProvenance, PlannerToolPlan
 from .normalization import parse_at_mentions, split_mention_target, strip_at_mentions
 
@@ -22,15 +31,20 @@ class SharedPlannerCore:
         default_provider_id: str = DOC_SEARCH_PROVIDER_ID,
         activation_rule_ref: str = DEFAULT_INTERNAL_DOCS_ACTIVATION_RULE_REF,
         activation_rule_refs: Iterable[str] | None = None,
-        activation_catalog: CompiledActivationCatalog | CombinedActivationCatalog | None = None,
+        activation_catalog: CompiledActivationCatalog
+        | CombinedActivationCatalog
+        | None = None,
         doc_search_settings: McpDocSearchSettings | None = None,
     ):
         self._default_provider_id = default_provider_id
         self._activation_rule_ref = activation_rule_ref
         self._doc_search_settings = doc_search_settings or DEFAULT_DOC_SEARCH_SETTINGS
-        self._activation_catalog = activation_catalog or self._resolve_activation_catalog(
-            activation_rule_ref=activation_rule_ref,
-            activation_rule_refs=activation_rule_refs,
+        self._activation_catalog = (
+            activation_catalog
+            or self._resolve_activation_catalog(
+                activation_rule_ref=activation_rule_ref,
+                activation_rule_refs=activation_rule_refs,
+            )
         )
 
     def plan(
@@ -50,12 +64,16 @@ class SharedPlannerCore:
 
         mentions = parse_at_mentions(user_text)
         if mentions:
-            return self._build_manual_mentions_decision(user_text, mentions, active_category, provider_hint)
+            return self._build_manual_mentions_decision(
+                user_text, mentions, active_category, provider_hint
+            )
 
         if enable_scenarios and scenario_loader is not None:
             scenario = scenario_loader.match(user_text)
             if scenario is not None:
-                return self._build_scenario_decision(stripped_text, active_category, scenario)
+                return self._build_scenario_decision(
+                    stripped_text, active_category, scenario
+                )
 
         matches = self._activation_catalog.match(
             user_text,
@@ -103,7 +121,9 @@ class SharedPlannerCore:
         selected_provider = provider_hint or self._default_provider_id
         candidate_summary = (f"{selected_provider}.search_docs_rag",)
         for raw_target in mentions:
-            category, filename_filter = split_mention_target(raw_target, active_category)
+            category, filename_filter = split_mention_target(
+                raw_target, active_category
+            )
             params = normalize_doc_search_rag_params(
                 query=clean_query or raw_target,
                 category=category,
@@ -123,7 +143,7 @@ class SharedPlannerCore:
                         active_category=category,
                         mentions=tuple(mentions),
                         provider_candidates=candidate_summary,
-                        reason='`@...` mention syntax routed the query to targeted document search.',
+                        reason="`@...` mention syntax routed the query to targeted document search.",
                     ),
                 )
             )
@@ -142,16 +162,22 @@ class SharedPlannerCore:
     ) -> CompiledActivationCatalog | CombinedActivationCatalog:
         if activation_rule_refs is None:
             return require_activation_catalog(activation_rule_ref)
-        normalized_rule_refs = tuple(rule_ref for rule_ref in activation_rule_refs if rule_ref)
+        normalized_rule_refs = tuple(
+            rule_ref for rule_ref in activation_rule_refs if rule_ref
+        )
         if not normalized_rule_refs:
             return require_activation_catalog(activation_rule_ref)
         if len(normalized_rule_refs) == 1:
             return require_activation_catalog(normalized_rule_refs[0])
         return build_combined_activation_catalog(normalized_rule_refs)
 
-    def _build_scenario_decision(self, stripped_text: str, active_category: str | None, scenario: Any) -> PlannerDecision:
+    def _build_scenario_decision(
+        self, stripped_text: str, active_category: str | None, scenario: Any
+    ) -> PlannerDecision:
         scenario_plans = scenario.to_tool_plans(active_category=active_category)
-        candidate_summary = tuple(f"{plan.provider}.{plan.action}" for plan in scenario_plans)
+        candidate_summary = tuple(
+            f"{plan.provider}.{plan.action}" for plan in scenario_plans
+        )
         plans = tuple(
             PlannerToolPlan(
                 provider=plan.provider,
@@ -173,7 +199,8 @@ class SharedPlannerCore:
                     matched_rule=f"scenario:{scenario.scenario_id}",
                     active_category=active_category,
                     provider_candidates=candidate_summary,
-                    reason=scenario.description or "Scenario rule matched the user prompt.",
+                    reason=scenario.description
+                    or "Scenario rule matched the user prompt.",
                     scenario_id=scenario.scenario_id,
                     scenario_description=scenario.description,
                 ),
@@ -182,12 +209,18 @@ class SharedPlannerCore:
         )
         return PlannerDecision(route="scenario", clean_query=stripped_text, plans=plans)
 
-    def _build_catalog_decision(self, stripped_text: str, active_category: str | None, matches: tuple[Any, ...]) -> PlannerDecision:
-        candidate_summary = tuple(f"{match.provider_id}.{match.action}" for match in matches)
+    def _build_catalog_decision(
+        self, stripped_text: str, active_category: str | None, matches: tuple[Any, ...]
+    ) -> PlannerDecision:
+        candidate_summary = tuple(
+            f"{match.provider_id}.{match.action}" for match in matches
+        )
         plans: list[PlannerToolPlan] = []
         for selected in self._select_catalog_matches(matches):
             params = dict(selected.params)
-            resolved_category = active_category if selected.use_active_category else None
+            resolved_category = (
+                active_category if selected.use_active_category else None
+            )
             if resolved_category is None and len(selected.matched_categories) == 1:
                 resolved_category = selected.matched_categories[0]
             if selected.action == "search_docs_rag":
@@ -196,6 +229,10 @@ class SharedPlannerCore:
                     resolved_category,
                     **params,
                 )
+            else:
+                # Non-RAG actions: map user query to tool-specific parameter names.
+                # document_issue_tool requires "document_text", not "query".
+                params = self._map_tool_params(selected.action, stripped_text, params)
             plans.append(
                 PlannerToolPlan(
                     provider=selected.provider_id,
@@ -214,7 +251,9 @@ class SharedPlannerCore:
                     ),
                 )
             )
-        return PlannerDecision(route="catalog_match", clean_query=stripped_text, plans=tuple(plans))
+        return PlannerDecision(
+            route="catalog_match", clean_query=stripped_text, plans=tuple(plans)
+        )
 
     def _select_catalog_matches(self, matches: tuple[Any, ...]) -> tuple[Any, ...]:
         selected_matches: list[Any] = []
@@ -241,6 +280,47 @@ class SharedPlannerCore:
             filename_filter=filename_filter,
             settings=self._doc_search_settings,
         )
+
+    def _map_tool_params(
+        self,
+        action: str,
+        user_query: str,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Map user query to tool-specific parameter names.
+
+        Different MCP tools expect different parameter names:
+        - document_issue_tool: requires "document_text" (contract/document full text)
+        - law_article_tool: requires "law_name" (statute name like "근로기준법")
+        - Most other tools: accept "query"
+
+        When doc search results are available, document_text should be populated
+        from those results. For now, we pass the user query as a placeholder
+        and log a warning — the full pipeline requires doc search → lexguard chaining.
+        """
+        result = dict(params)
+
+        # Tools that require document_text instead of query
+        if action == "document_issue_tool":
+            if "document_text" not in result:
+                # TODO: In the full pipeline, this should come from doc search results.
+                # For now, pass user query as placeholder so the tool at least receives input.
+                result["document_text"] = user_query
+            return result
+
+        # Tools that require law_name instead of query (not used via activation rules currently)
+        if action == "law_article_tool":
+            if "law_name" not in result:
+                # law_article_tool expects a specific statute name.
+                # The activation rule should be using legal_qa_tool instead for general queries.
+                result["law_name"] = user_query
+            return result
+
+        # Default: most tools accept "query"
+        if "query" not in result:
+            result["query"] = user_query
+
+        return result
 
     def _build_provenance(
         self,

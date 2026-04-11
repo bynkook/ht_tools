@@ -25,7 +25,11 @@ from .rag_context import build_rag_response
 from .registry import connect_provider
 from .result_normalizer import tool_result_to_dict
 from .shared_planner.core import SharedPlannerCore
-from .shared_planner.models import PlannerDecision
+from .shared_planner.models import PlannerDecision, PlannerToolPlan
+from .shared_planner.result_chaining import (
+    chain_document_text,
+    should_chain_doc_to_lexguard,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -778,10 +782,27 @@ class GenericMcpHost:
             )
 
         system_prompt = None
-        for plan in decision.plans:
+        results: list[dict[str, Any]] = []
+        plans_list = list(decision.plans)
+
+        for index, plan in enumerate(plans_list):
+            # Apply result chaining: inject doc search results into lexguard params
+            if index > 0 and results:
+                prev_plan = plans_list[index - 1]
+                prev_result = results[-1]
+                if should_chain_doc_to_lexguard(prev_plan.action, plan.action):
+                    chained_params = chain_document_text(plan.params, prev_result)
+                    plan = PlannerToolPlan(
+                        provider=plan.provider,
+                        action=plan.action,
+                        params=chained_params,
+                        provenance=plan.provenance,
+                    )
+
             context_result = await self._execute_context_plan(
                 plan, default_query=decision.clean_query
             )
+            results.append(context_result)
             system_prompt = merge_system_prompts(
                 system_prompt, context_result.get("system_prompt")
             )

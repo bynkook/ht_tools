@@ -6,7 +6,7 @@
     {
       "id": "legal_qa_primary",
       "intent_label": "legal_qa",
-      "action": "legal_qa",
+      "action": "legal_qa_tool",
       "description": "Core legal terminology matched a direct legal QA request.",
       "priority": 50,
       "keyword_groups": {
@@ -45,7 +45,7 @@
     {
       "id": "precedent_search",
       "intent_label": "precedent_search",
-      "action": "precedent_search",
+      "action": "precedent_lookup_tool",
       "description": "Court precedent / case law keywords matched a precedent search request.",
       "priority": 45,
       "keyword_groups": {
@@ -73,8 +73,8 @@
     {
       "id": "law_article_lookup",
       "intent_label": "law_article_lookup",
-      "action": "law_article_search",
-      "description": "Statutory article / regulation keywords matched a law article lookup request.",
+      "action": "legal_qa_tool",
+      "description": "Statutory article / regulation keywords matched a legal QA request (uses integrated legal_qa_tool which accepts query).",
       "priority": 40,
       "keyword_groups": {
         "labor": [
@@ -134,7 +134,7 @@
     {
       "id": "document_analysis",
       "intent_label": "document_analysis",
-      "action": "contract_issue_check",
+      "action": "document_issue_tool",
       "description": "Contract or agreement analysis keywords matched a document issue check request.",
       "priority": 55,
       "keyword_groups": {
