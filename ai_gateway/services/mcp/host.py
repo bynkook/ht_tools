@@ -45,6 +45,9 @@ class McpChatResolution:
     system_prompt: str | None
     missing_mentions: list[str]
     decision: PlannerDecision | None = None
+    # True when MCP actually contributed context (route != "chat_only" and system_prompt produced).
+    # Used by NormalChatRuntime to emit a single "MCP activated" system event on success.
+    activated: bool = False
 
 
 def _coerce_result_dict(raw_result: Any) -> dict[str, Any]:
@@ -802,6 +805,7 @@ class GenericMcpHost:
                 system_prompt=system_prompt,
                 missing_mentions=missing_mentions,
                 decision=decision,
+                activated=bool(system_prompt),
             )
 
         if not decision.plans:
@@ -842,6 +846,7 @@ class GenericMcpHost:
             system_prompt=system_prompt,
             missing_mentions=[],
             decision=decision,
+            activated=bool(system_prompt),
         )
 
     async def execute_manual_command(

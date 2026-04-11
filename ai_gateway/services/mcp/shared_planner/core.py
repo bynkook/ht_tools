@@ -305,23 +305,25 @@ class SharedPlannerCore:
         """Map user query to tool-specific parameter names.
 
         Different MCP tools expect different parameter names:
-        - document_issue_tool: requires "document_text" (contract/document full text)
+        - document_issue_tool: requires "document_text" (full contract/document text),
+          injected via result chaining from read_doc — must never be called standalone.
         - law_article_tool: requires "law_name" (statute name like "근로기준법")
         - read_doc: requires "filename" (document filename extracted from query)
         - Most other tools: accept "query"
-
-        When doc search results are available, document_text should be populated
-        from those results. For now, we pass the user query as a placeholder
-        and log a warning — the full pipeline requires doc search → lexguard chaining.
         """
         result = dict(params)
 
-        # Tools that require document_text instead of query
+        # Tools that require document_text instead of query.
+        # document_text must be populated via result chaining (read_doc → document_issue_tool).
+        # A standalone document_issue_tool plan without prior read_doc is a planner configuration
+        # error — the activation rules must always pair them.
         if action == "document_issue_tool":
             if "document_text" not in result:
-                # TODO: In the full pipeline, this should come from doc search results.
-                # For now, pass user query as placeholder so the tool at least receives input.
-                result["document_text"] = user_query
+                raise ValueError(
+                    "document_issue_tool requires 'document_text' but it was not provided. "
+                    "The activation rule must chain read_doc before document_issue_tool so the "
+                    "document content is available for result chaining."
+                )
             return result
 
         # Tools that require law_name instead of query (not used via activation rules currently)

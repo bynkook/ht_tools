@@ -2,7 +2,9 @@ export const getSystemMessageLabel = (metadata = {}) => {
   const level = (metadata.level || '').toLowerCase();
   if (level === 'error') return 'ERROR';
   if (level === 'warn') return 'WARNING';
-  if ((metadata.channel || '').toLowerCase() === 'mcp_test') return 'MCP-TEST';
+  const channel = (metadata.channel || '').toLowerCase();
+  if (channel === 'mcp_test') return 'MCP-TEST';
+  if (channel === 'mcp') return 'MCP';
   if (metadata.kind === 'system_log') return 'SYSTEM';
   return 'SYSTEM';
 };
