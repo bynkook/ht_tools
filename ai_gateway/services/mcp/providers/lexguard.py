@@ -100,6 +100,7 @@ class LexguardProvider:
                 "provider_id": self.config.provider_id,
                 "base_url": self.config.base_url,
                 "error": str(exc),
+                "error_type": type(exc).__name__,
             }
 
     async def legal_qa(
@@ -145,17 +146,6 @@ class LexguardProvider:
         if document_type:
             tool_args["document_type"] = document_type
         return await self.call_tool(DOCUMENT_ISSUE_TOOL, tool_args)
-
-    async def legal_summary(
-        self,
-        query: str,
-        domain: str | None = None,
-    ) -> Any:
-        """Generate a legal summary for a given topic or question."""
-        tool_args: dict[str, Any] = {"query": query}
-        if domain:
-            tool_args["domain"] = domain
-        return await self.call_tool("legal_qa_tool", tool_args)
 
     def _result_to_text(self, result: Any) -> str:
         return tool_result_to_text(result)

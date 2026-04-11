@@ -43,13 +43,13 @@ uvicorn ai_gateway.main:app --host 127.0.0.1 --port 8001 --reload
 ## Test Commands
 
 ```bash
-# Python tests (pytest)
-pytest test/test_contents_validation.py -v                    # Run specific test file
-pytest test/test_contents_validation.py::TestContentsValidation::test_01_single_valid_element -v  # Single test
-pytest test/ -v                                               # Run all tests
+# Python tests (pytest) — all tests live under ai_gateway/tests/
+pytest ai_gateway/tests/test_shared_planner_core.py -v        # Run specific test file
+pytest ai_gateway/tests/test_shared_planner_core.py::TestClass::test_method -v  # Single test
+pytest ai_gateway/tests/ -v                                   # Run all tests
 
-# Frontend tests (if configured)
-cd frontend && npm run test
+# Frontend tests (Vitest)
+cd frontend && npm run test   # runs: vitest run
 ```
 
 ## Architecture
@@ -76,13 +76,20 @@ React (5173) ----+--> Django (8000)   : Auth, History, DB, Data Explorer API
   - `image_inspector/`: Image comparison logic
   - `user_settings/`: User preferences
   - `core/`: Shared utilities
+  - `doc_uploader/`: Document upload + conversion jobs
+  - `esc_calculator/`: ESC calculator feature
+  - `board/`: Board feature
 - `frontend/src/`: React application
+  - `api/axiosConfig.js`: Axios base config + URL helpers
   - `api/djangoApi.js`: Django API client
   - `api/fastapiApi.js`: FastAPI API client
-  - `features/`: Feature-based components
+  - `features/`: Feature-based components (agentChat, auth, board, chat, dataExplorer, docUploader, escCalculator, imageCompare, profile, settings, …)
 - `ai_gateway/`: FastAPI application
-  - `routers/`: API endpoints
-  - `services/`: Business logic (rate limiter, image processor)
+  - `routers/`: API endpoints (chat, agent_chat, health, image, doc_search, doc_upload)
+  - `services/`: Business logic
+    - `rate_limiter_v2.py`: Rate limiter (active)
+    - `image_processor.py`, `pdf2img.py`, `doc_converter.py`: Media processing
+    - `mcp/`: Generic MCP host core (providers, shared_planner, runtime, …)
 
 ## Phase 1 MCP Host Worktree Rules
 
@@ -172,7 +179,7 @@ cd ..\fastmcp
 run_server.bat
 ```
 
-**2. lexguard-mcp legal QA (Phase 4)**
+**2. lexguard-mcp legal QA (구현 완료)**
 - Local legal QA MCP server: `C:\Users\BgKing\mycode\lexguard-mcp` (외부 폴더, 별도 venv)
 - Default endpoint: `http://127.0.0.1:9099/mcp`
 - Remote endpoint: `https://lexguard-mcp.onrender.com/mcp`
@@ -375,6 +382,8 @@ const finishReason = parsed.finish_reason ?? parsed.finishReason;
 - `/chat-messages`: model chat streaming gateway + model list/rate-limit status
 - `/agent-messages`: agent chat streaming gateway + agent list/file upload/rate-limit status
 - `/image-compare`: image compare processing + preview
+- `/mcp-command`: MCP manual command dispatch (doc search, RAG search, category validation)
+- `/doc-converter`: document upload + background conversion jobs
 
 ### HTTP Client (FastAPI)
 - ALWAYS use shared client: `request.app.state.http_client`
@@ -505,13 +514,13 @@ The `contents` array format for FabriX APIs:
 
 For detailed implementation:
 - `.github/copilot-instructions.md` - Canonical development guide
+- `.github/instructions` - development plan documentations
 - `README.md` - General overview
 - `GEMINI.md` - Extended documentation
 - `doc.md/` - Feature-specific docs
-- `doc.md/phase1_fabrix_generic_mcp_host_plan.md` - Canonical Phase 1 MCP host migration plan
 - MCP architecture docs - Official host/client/server model and protocol layering
 - Official MCP SDK docs - Python SDK first for backend/client implementation guidance
 - `mark3labs/mcphost` - Host registry/configuration reference
 - `OpenAgentPlatform/Dive` - Host UX/reference product comparison
 
-Last updated: 2026-04-07 (Phase 1 MCP host standards, reference hosts, skill strategy, and tool reliability rules added)
+Last updated: 2026-04-11 (Phase 1 MCP host standards, reference hosts, skill strategy, and tool reliability rules added)

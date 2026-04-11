@@ -20,6 +20,7 @@ def test_internal_docs_activation_catalog_loads_successfully():
     assert catalog.catalog.provider_id == "internal_docs"
     assert [rule.rule_id for rule in catalog.catalog.rules] == [
         "category_listing_keywords",
+        "doc_read_full",
         "doc_search_target + search_action",
     ]
 
@@ -40,7 +41,11 @@ def test_internal_docs_activation_catalog_matches_doc_search_query():
 
     matches = catalog.match("위약금 관련 내용을 검색")
 
-    doc_search = next(match for match in matches if match.rule_id == "doc_search_target + search_action")
+    doc_search = next(
+        match
+        for match in matches
+        if match.rule_id == "doc_search_target + search_action"
+    )
     assert doc_search.action == "search_docs_rag"
     assert doc_search.params == {}
     assert "관련" in doc_search.matched_keywords
@@ -53,7 +58,11 @@ def test_internal_docs_activation_catalog_uses_active_category_context_hint():
 
     matches = catalog.match("위약금 관련 내용을 검색", active_category="test문서")
 
-    doc_search = next(match for match in matches if match.rule_id == "doc_search_target + search_action")
+    doc_search = next(
+        match
+        for match in matches
+        if match.rule_id == "doc_search_target + search_action"
+    )
     assert doc_search.use_active_category is True
     assert "관련" in doc_search.matched_keywords
     assert "검색" in doc_search.matched_keywords
