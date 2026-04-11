@@ -213,6 +213,7 @@ def build_context_debug_payload(
 class GenericMcpHost:
     def __init__(self, settings: McpSettings, planner: SharedPlannerCore | None = None):
         self.settings = settings
+        self._test_mode = settings.host.test_mode
         enabled_providers = settings.enabled_provider_configs()
         self.default_provider_id = (
             enabled_providers[0].provider_id
@@ -696,7 +697,7 @@ class GenericMcpHost:
         )
 
     async def _execute_context_plan(
-        self, plan, *, default_query: str
+        self, plan: PlannerToolPlan, *, default_query: str
     ) -> dict[str, Any]:
         if plan.action == "search_docs_rag":
             resolved_params = self._resolve_doc_search_plan_params(
@@ -721,6 +722,7 @@ class GenericMcpHost:
             arguments=plan.params,
             raw_result=raw_result,
             doc_search_settings=self.settings.host.doc_search,
+            test_mode=self._test_mode,
         )
 
     async def build_chat_resolution(
@@ -825,12 +827,13 @@ class GenericMcpHost:
 
         for index, plan in enumerate(plans_list):
             # Apply result chaining: inject doc search results into lexguard params
+            effective_plan = plan
             if index > 0 and results:
                 prev_plan = plans_list[index - 1]
                 prev_result = results[-1]
                 if should_chain_doc_to_lexguard(prev_plan.action, plan.action):
                     chained_params = chain_document_text(plan.params, prev_result)
-                    plan = PlannerToolPlan(
+                    effective_plan = PlannerToolPlan(
                         provider=plan.provider,
                         action=plan.action,
                         params=chained_params,
@@ -838,7 +841,7 @@ class GenericMcpHost:
                     )
 
             context_result = await self._execute_context_plan(
-                plan, default_query=decision.clean_query
+                effective_plan, default_query=decision.clean_query
             )
             results.append(context_result)
             system_prompt = merge_system_prompts(

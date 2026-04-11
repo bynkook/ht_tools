@@ -77,8 +77,21 @@ class NormalChatRuntime(BaseChatRuntime):
                 )
                 yield f"data: {json.dumps(event.to_sse_payload(), ensure_ascii=False)}\n\n"
 
-        async for chunk in upstream:
-            yield chunk
+        try:
+            async for chunk in upstream:
+                yield chunk
+        except Exception as error:
+            # Emit SSE error event so clients see the failure before stream closes
+            error_event = self._event_emitter.error(
+                phase="upstream_stream",
+                title="스트리밍 오류",
+                content=f"[MCP] 업스트림 스트리밍 중 오류 발생: {error}",
+                request_id=datetime.now(timezone.utc).strftime(
+                    "error-%Y%m%d-%H%M%S-%f"
+                ),
+            )
+            yield f"data: {json.dumps(error_event.to_sse_payload(), ensure_ascii=False)}\n\n"
+            raise
 
     def _collect_activated_providers(self, resolution) -> list[str]:
         """Return unique provider IDs that participated in the resolution, in plan order."""

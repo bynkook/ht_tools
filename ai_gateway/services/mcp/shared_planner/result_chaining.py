@@ -9,8 +9,11 @@ Key insight: Legal-relatedness is determined by the ORIGINAL USER QUERY, not the
 Doc search results are passed as data (document_text) to lexguard, but don't determine whether to call lexguard.
 """
 
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Legal content detection keywords (extracted from lexguard-mcp SmartSearchService)
 LEGAL_KEYWORDS = frozenset(
@@ -110,6 +113,7 @@ def is_legal_query(query: str) -> bool:
         return False
 
     # Check for keyword matches
+    # .lower() for potential future English keywords; harmless for Korean
     query_lower = query.lower()
     for keyword in LEGAL_KEYWORDS:
         if keyword in query_lower:
@@ -139,7 +143,9 @@ def extract_document_text_from_result(result: dict[str, Any]) -> str | None:
 
     Returns the full document text (or concatenated snippet texts), or None if empty.
     """
-    raw_result = result.get("raw_result", {})
+    raw_result = result.get("raw_result")
+    if not isinstance(raw_result, dict):
+        return None
 
     # read_doc returns full content directly
     content = raw_result.get("content", "")
@@ -203,6 +209,10 @@ def chain_document_text(
     """
     document_text = extract_document_text_from_result(result)
     if document_text is None:
+        logger.debug(
+            "chain_document_text: no document_text extracted from result; "
+            "returning original params"
+        )
         return next_plan_params
 
     updated_params = dict(next_plan_params)

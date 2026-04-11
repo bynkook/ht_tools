@@ -272,7 +272,11 @@ class SharedPlannerCore:
         if "read_doc" in actions and "document_issue_tool" in actions:
             read_idx = actions.index("read_doc")
             issue_idx = actions.index("document_issue_tool")
-            if issue_idx < read_idx:
+            if (
+                issue_idx < read_idx
+                and read_idx < len(selected_matches)
+                and issue_idx < len(selected_matches)
+            ):
                 selected_matches[read_idx], selected_matches[issue_idx] = (
                     selected_matches[issue_idx],
                     selected_matches[read_idx],
@@ -358,6 +362,9 @@ class SharedPlannerCore:
 
         Looks for patterns like "표준계약서.md", "계약서test.md", etc.
         Returns the first match, or None if not found.
+
+        Limitation: Filenames with spaces are not matched by this pattern.
+        Use quoted @-mention syntax for such files: @"파일 이름.md"
         """
         match = self._FILENAME_PATTERN.search(user_query)
         return match.group(1) if match else None

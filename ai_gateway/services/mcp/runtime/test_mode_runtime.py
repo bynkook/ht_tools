@@ -12,7 +12,7 @@ from ..config import McpEventPolicy, McpHostSettings
 from ..event_emitter import SystemEventEmitter
 from ..event_guard import SystemEventGuard
 from ..host import GenericMcpHost, build_context_debug_payload, normalize_context_result
-from ..shared_planner.models import PlannerDecision
+from ..shared_planner.models import PlannerDecision, PlannerToolPlan
 from ..shared_planner.result_chaining import (
     chain_document_text,
     should_chain_doc_to_lexguard,
@@ -189,31 +189,30 @@ class TestModeChatRuntime(BaseChatRuntime):
 
                 # Result chaining: if previous plan was doc_search and current needs document_text,
                 # inject the document text from previous result.
+                effective_plan = plan
                 if index > 1 and results:
                     prev_plan = plans[index - 2]  # index is 1-based, plans is 0-based
                     prev_result = results[-1]
                     if should_chain_doc_to_lexguard(prev_plan.action, plan.action):
                         chained_params = chain_document_text(plan.params, prev_result)
                         # Create updated plan with chained params (PlannerToolPlan is frozen)
-                        from ..shared_planner.models import PlannerToolPlan
-
-                        plan = PlannerToolPlan(
+                        effective_plan = PlannerToolPlan(
                             provider=plan.provider,
                             action=plan.action,
                             params=chained_params,
                             provenance=plan.provenance,
                         )
-                        current_plan = plan
+                        current_plan = effective_plan
 
                 plan_event_details = self._build_plan_event_details(
-                    plan, selection_rank=index
+                    effective_plan, selection_rank=index
                 )
                 for payload in self._serialize_guarded_event(
                     guard,
                     recorder.tool_decision(
-                        content=f"Selected {plan.provider}.{plan.action} via {plan.provenance.decision_source}.",
-                        raw=plan.provenance.to_payload(),
-                        provider=plan.provider,
+                        content=f"Selected {effective_plan.provider}.{effective_plan.action} via {effective_plan.provenance.decision_source}.",
+                        raw=effective_plan.provenance.to_payload(),
+                        provider=effective_plan.provider,
                         event_details=plan_event_details,
                     ),
                 ):
@@ -221,21 +220,21 @@ class TestModeChatRuntime(BaseChatRuntime):
                 for payload in self._serialize_guarded_event(
                     guard,
                     recorder.before_tool_call(
-                        tool=plan.action,
-                        raw={"arguments": plan.params},
-                        provider=plan.provider,
+                        tool=effective_plan.action,
+                        raw={"arguments": effective_plan.params},
+                        provider=effective_plan.provider,
                         event_details=plan_event_details,
                     ),
                 ):
                     yield payload
-                result = await self._execute_plan(plan)
+                result = await self._execute_plan(effective_plan)
                 results.append(result)
                 for payload in self._serialize_guarded_event(
                     guard,
                     recorder.after_tool_call(
-                        tool=plan.action,
+                        tool=effective_plan.action,
                         raw=result["raw_result"],
-                        provider=plan.provider,
+                        provider=effective_plan.provider,
                         event_details=plan_event_details,
                     ),
                 ):
