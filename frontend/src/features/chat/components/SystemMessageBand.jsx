@@ -10,32 +10,32 @@ const SystemMessageBand = ({ message }) => {
 
   return (
     <div className="animate-fade-in-up">
-      <div className="border-y border-[var(--border-color)] bg-[var(--bg-secondary)]/55 px-5 py-4">
+      <div className="border-y border-[var(--border-color)] bg-[var(--bg-secondary)]/55 px-5 py-2.5">
         <SystemMessageMeta message={message} />
-        <div className="max-w-none text-xs leading-relaxed text-[var(--text-primary)]">
+        <div className="max-w-none text-xs leading-snug text-[var(--text-primary)]">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
               table({ children }) {
                 return (
-                  <div className="my-4 overflow-x-auto rounded-lg border border-[var(--border-color)]">
+                  <div className="my-2 overflow-x-auto rounded-lg border border-[var(--border-color)]">
                     <table className="min-w-full divide-y divide-[var(--border-color)]">{children}</table>
                   </div>
                 );
               },
               th({ children }) {
                 return (
-                  <th className="px-4 py-2 bg-[var(--bg-tertiary)] text-left text-xs font-semibold text-[var(--text-primary)]">
+                  <th className="px-3 py-1.5 bg-[var(--bg-tertiary)] text-left text-xs font-semibold text-[var(--text-primary)]">
                     {children}
                   </th>
                 );
               },
               td({ children }) {
-                return <td className="px-4 py-2 text-xs border-t border-[var(--border-color)]">{children}</td>;
+                return <td className="px-3 py-1.5 text-xs border-t border-[var(--border-color)]">{children}</td>;
               },
               pre({ children }) {
                 return (
-                  <pre className="my-4 overflow-x-auto rounded-lg bg-[var(--bg-tertiary)] px-3 py-3 text-[11px]">
+                  <pre className="my-2 overflow-x-auto rounded-lg bg-[var(--bg-tertiary)] px-3 py-2 text-[11px]">
                     {children}
                   </pre>
                 );
@@ -48,7 +48,7 @@ const SystemMessageBand = ({ message }) => {
                 );
               },
               p({ children }) {
-                return <p className="mb-3 last:mb-0">{children}</p>;
+                return <p className="mb-1.5 last:mb-0">{children}</p>;
               },
             }}
           >

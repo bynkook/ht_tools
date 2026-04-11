@@ -10,7 +10,7 @@ const SystemMessageRaw = ({ raw }) => {
   const rawText = typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2);
 
   return (
-    <div className="mt-3 border-t border-[var(--border-color)] pt-3">
+    <div className="mt-2 border-t border-[var(--border-color)] pt-2">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}

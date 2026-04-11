@@ -342,6 +342,7 @@ class TestModeChatRuntime(BaseChatRuntime):
                 arguments=plan.params,
                 raw_result=raw_result,
                 doc_search_settings=self._settings.doc_search,
+                test_mode=True,
             ),
         }
 

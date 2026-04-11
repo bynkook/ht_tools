@@ -9,7 +9,7 @@ const SystemMessageMeta = ({ message }) => {
   const metaLine = getSystemMessageMetaLine(message);
 
   return (
-    <div className="flex flex-col gap-1 mb-3">
+    <div className="flex flex-col gap-0.5 mb-2">
       <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-[var(--text-secondary)]">
         <span className="font-semibold">{label}</span>
         {metadata.repeatCount > 1 && (

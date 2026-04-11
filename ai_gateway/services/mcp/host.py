@@ -126,6 +126,7 @@ def normalize_context_result(
     arguments: dict[str, Any] | None,
     raw_result: Any,
     doc_search_settings=None,
+    test_mode: bool = False,
 ) -> dict[str, Any]:
     resolved_arguments = dict(arguments or {})
     if action == "search_docs_rag":
@@ -141,7 +142,9 @@ def normalize_context_result(
 
     # lexguard legal tools: convert structured result into a system_prompt string
     if action in LEXGUARD_LEGAL_ACTIONS:
-        system_prompt = build_legal_context_system_prompt(action, raw_result_dict)
+        system_prompt = build_legal_context_system_prompt(
+            action, raw_result_dict, test_mode=test_mode
+        )
         return {
             "action": action,
             "arguments": resolved_arguments,
