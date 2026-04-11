@@ -1,0 +1,170 @@
+{
+  "rule_ref": "lexguard.default",
+  "provider_id": "lexguard",
+  "description": "Default keyword activation rules for the lexguard legal QA provider.",
+  "rules": [
+    {
+      "id": "legal_qa_primary",
+      "intent_label": "legal_qa",
+      "action": "legal_qa",
+      "description": "Core legal terminology matched a direct legal QA request.",
+      "priority": 50,
+      "keyword_groups": {
+        "legal_core": [
+          "법률",
+          "법령",
+          "법",
+          "조문",
+          "조항",
+          "시행령",
+          "시행규칙",
+          "법조항"
+        ],
+        "legal_action": [
+          "알려",
+          "찾",
+          "검색",
+          "조회",
+          "확인",
+          "설명",
+          "해석",
+          "적용",
+          "위반",
+          "해당"
+        ]
+      },
+      "match": {
+        "all_of_groups": [
+          "legal_action"
+        ],
+        "any_of_groups": [
+          "legal_core"
+        ]
+      }
+    },
+    {
+      "id": "precedent_search",
+      "intent_label": "precedent_search",
+      "action": "precedent_search",
+      "description": "Court precedent / case law keywords matched a precedent search request.",
+      "priority": 45,
+      "keyword_groups": {
+        "precedent": [
+          "판례",
+          "대법원",
+          "판결",
+          "선고",
+          "사건",
+          "재판",
+          "법원",
+          "고등법원",
+          "지방법원",
+          "헌법재판소",
+          "헌재",
+          "결정문"
+        ]
+      },
+      "match": {
+        "any_of_groups": [
+          "precedent"
+        ]
+      }
+    },
+    {
+      "id": "law_article_lookup",
+      "intent_label": "law_article_lookup",
+      "action": "law_article_search",
+      "description": "Statutory article / regulation keywords matched a law article lookup request.",
+      "priority": 40,
+      "keyword_groups": {
+        "labor": [
+          "근로자성",
+          "해고",
+          "부당해고",
+          "정리해고",
+          "임금",
+          "퇴직금",
+          "체불",
+          "프리랜서",
+          "근로기준법",
+          "산재"
+        ],
+        "civil": [
+          "손해배상",
+          "계약",
+          "계약위반",
+          "위약금",
+          "재산분할",
+          "상속",
+          "양육권",
+          "위자료",
+          "불법행위"
+        ],
+        "administrative": [
+          "행정심판",
+          "행정소송",
+          "위헌",
+          "위원회",
+          "행정처분",
+          "과태료",
+          "허가"
+        ],
+        "special_domains": [
+          "개인정보",
+          "세금",
+          "부동산",
+          "임대차",
+          "전세",
+          "소비자",
+          "금융",
+          "보험",
+          "저작권",
+          "특허"
+        ]
+      },
+      "match": {
+        "any_of_groups": [
+          "labor",
+          "civil",
+          "administrative",
+          "special_domains"
+        ]
+      }
+    },
+    {
+      "id": "document_analysis",
+      "intent_label": "document_analysis",
+      "action": "contract_issue_check",
+      "description": "Contract or agreement analysis keywords matched a document issue check request.",
+      "priority": 55,
+      "keyword_groups": {
+        "contract_doc": [
+          "계약서",
+          "약관",
+          "협약서",
+          "각서",
+          "합의서",
+          "근로계약서",
+          "임대차계약서"
+        ],
+        "analysis_action": [
+          "분석",
+          "검토",
+          "문제",
+          "독소조항",
+          "불공정",
+          "위험",
+          "주의"
+        ]
+      },
+      "match": {
+        "all_of_groups": [
+          "analysis_action"
+        ],
+        "any_of_groups": [
+          "contract_doc"
+        ]
+      }
+    }
+  ]
+}
