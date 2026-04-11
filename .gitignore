@@ -27,6 +27,8 @@ GEMINI.md
 
 # opencode settings
 .opencode
+.ruff_cache/
+.sisyphus/
 
 # GitHub App credentials
 gha-creds-*.json
