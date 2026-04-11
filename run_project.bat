@@ -9,6 +9,7 @@ set "FRONTEND_DIR=%SCRIPT_DIR%frontend"
 set "FASTMCP_DIR=%SCRIPT_DIR%..\fastmcp"
 set "LEXGUARD_DIR=%SCRIPT_DIR%..\lexguard-mcp"
 set "LAUNCHER_TITLE=FabriX Dev Launcher"
+set "WT_WINDOW_NAME=FabriXDev"
 set "USE_WINDOWS_TERMINAL=0"
 
 cd /d "%SCRIPT_DIR%"
@@ -16,10 +17,10 @@ cd /d "%SCRIPT_DIR%"
 if /I "%~1"=="--role" goto role
 if /I "%~1"=="--wt-child" goto launcher
 
-REM 1. 새 Windows Terminal 윈도우로 재실행
+REM 1. 새 Windows Terminal 윈도우로 재실행 (명명된 창)
 where wt.exe >nul 2>&1
 if not errorlevel 1 (
-    wt.exe -w new --title "%LAUNCHER_TITLE%" cmd.exe /k call "%SCRIPT_PATH%" --wt-child
+    wt.exe -w %WT_WINDOW_NAME% new-tab --title "%LAUNCHER_TITLE%" cmd.exe /k call "%SCRIPT_PATH%" --wt-child
     exit /b %errorlevel%
 )
 
@@ -94,7 +95,7 @@ exit /b 0
 set "TAB_TITLE=%~1"
 set "SERVICE_ROLE=%~2"
 if "%USE_WINDOWS_TERMINAL%"=="1" (
-    wt.exe -w new nt --title "%TAB_TITLE%" cmd.exe /k call "%SCRIPT_PATH%" --role %SERVICE_ROLE%
+    wt.exe -w %WT_WINDOW_NAME% new-tab --title "%TAB_TITLE%" cmd.exe /k call "%SCRIPT_PATH%" --role %SERVICE_ROLE%
 ) else (
     start "%TAB_TITLE%" cmd.exe /k call "%SCRIPT_PATH%" --role %SERVICE_ROLE%
 )
