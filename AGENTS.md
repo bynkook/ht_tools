@@ -160,8 +160,9 @@ Recommended workflow:
 
 ### External MCP Provider Reference
 
-Current first provider for Phase 1:
+Current providers for Phase 1–4:
 
+**1. fastmcp doc-search (Phase 1)**
 - Local doc-search MCP server: `C:\Users\BgKing\mycode\fastmcp`
 - Default endpoint: `http://127.0.0.1:8002/mcp`
 - Typical start command:
@@ -170,6 +171,22 @@ Current first provider for Phase 1:
 cd ..\fastmcp
 run_server.bat
 ```
+
+**2. lexguard-mcp legal QA (Phase 4)**
+- Local legal QA MCP server: `C:\Users\BgKing\mycode\lexguard-mcp` (외부 폴더, 별도 venv)
+- Default endpoint: `http://127.0.0.1:9099/mcp`
+- Remote endpoint: `https://lexguard-mcp.onrender.com/mcp`
+- Typical start command (local):
+
+```bash
+cd ..\lexguard-mcp
+.venv\Scripts\activate
+python -m src.main
+```
+
+> Adding a new MCP provider only requires: (1) a new `[mcp.providers.<id>]` entry in `secrets.toml`,
+> (2) a new adapter in `ai_gateway/services/mcp/providers/`, (3) a manifest entry in `providers/__init__.py`,
+> and (4) an activation rules JSON in `shared_planner/rules/`. No changes to chat router or UI needed.
 
 ## Code Style Guidelines
 
