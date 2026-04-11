@@ -1,130 +1,17 @@
 """
 Result chaining utilities for sequential MCP pipeline execution.
 
-Design principle (from user requirements):
-1. Query → no doc search needed → if query is legal-related → call lexguard
-2. Query → doc search needed → execute doc search → if ORIGINAL QUERY is legal-related → call lexguard with doc search results as document_text
-
-Key insight: Legal-relatedness is determined by the ORIGINAL USER QUERY, not the doc search results.
-Doc search results are passed as data (document_text) to lexguard, but don't determine whether to call lexguard.
+Design principle:
+- Whether to call lexguard is decided at planning time by the activation catalog
+  (lexguard.default.json keyword rules), not at execution time.
+- Result chaining passes doc_search/read_doc output as document_text to the
+  next tool (document_issue_tool) when the planner has already scheduled both.
 """
 
 import logging
-import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-# Legal content detection keywords (extracted from lexguard-mcp SmartSearchService)
-LEGAL_KEYWORDS = frozenset(
-    [
-        # Law-related
-        "법령",
-        "법",
-        "조문",
-        "조항",
-        "법률",
-        "시행령",
-        "시행규칙",
-        # Precedent-related
-        "판례",
-        "대법원",
-        "판결",
-        "선고",
-        "사건",
-        "재판",
-        "법원",
-        "헌법재판소",
-        "헌재",
-        # Labor-related
-        "근로자성",
-        "해고",
-        "부당해고",
-        "정리해고",
-        "임금",
-        "퇴직금",
-        "체불",
-        "프리랜서",
-        "근로기준법",
-        "산재",
-        "4대보험",
-        # Civil-related
-        "손해배상",
-        "계약위반",
-        "위약금",
-        "재산분할",
-        "상속",
-        "양육권",
-        "위자료",
-        "불법행위",
-        # Contract-related (document analysis triggers)
-        "계약서",
-        "약관",
-        "협약서",
-        "각서",
-        "합의서",
-        "근로계약서",
-        "임대차계약서",
-        "독소조항",
-        "불공정",
-        "검토",
-        "분석",
-        # Administrative
-        "행정심판",
-        "행정소송",
-        "위헌",
-        "행정처분",
-        "과태료",
-        # Interpretation
-        "법령해석",
-        "해석례",
-        "법제처",
-        # Special domains
-        "개인정보",
-        "세금",
-        "부동산",
-        "임대차",
-        "전세",
-        "소비자",
-        "금융",
-        "보험",
-        "저작권",
-        "특허",
-    ]
-)
-
-# Regex patterns for legal content detection
-LEGAL_PATTERNS = [
-    re.compile(r"법\s*제?\s*\d+조"),  # 법 제1조, 법제1조
-    re.compile(r"\w+법\s*제?\s*\d+조"),  # 근로기준법 제1조
-    re.compile(r"대법원\s*\d+"),  # 대법원 판결번호
-    re.compile(r"\d{4}[가나다라마바사아자차카타파하도]\d+"),  # 사건번호
-    re.compile(r"(?:대법원|고등법원|지방법원)\s*\d{4}"),  # 법원 연도
-]
-
-
-def is_legal_query(query: str) -> bool:
-    """Detect if the user query is legal-related.
-
-    This determines WHETHER to call lexguard.
-    Uses keyword matching and regex patterns extracted from lexguard-mcp.
-    """
-    if not query:
-        return False
-
-    # Check for keyword matches
-    # .lower() for potential future English keywords; harmless for Korean
-    query_lower = query.lower()
-    for keyword in LEGAL_KEYWORDS:
-        if keyword in query_lower:
-            return True
-
-    # Check for pattern matches
-    for pattern in LEGAL_PATTERNS:
-        if pattern.search(query):
-            return True
-
-    return False
 
 
 def extract_document_text_from_result(result: dict[str, Any]) -> str | None:
@@ -223,6 +110,5 @@ def chain_document_text(
 __all__ = [
     "chain_document_text",
     "extract_document_text_from_result",
-    "is_legal_query",
     "should_chain_doc_to_lexguard",
 ]
