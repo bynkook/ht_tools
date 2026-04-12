@@ -29,7 +29,7 @@ from .rag_context import (
     render_legal_context_system_prompt,
 )
 from .registry import connect_provider
-from .result_normalizer import tool_result_to_dict
+from .result_normalizer import tool_result_to_content_text, tool_result_to_dict
 from .shared_planner.core import SharedPlannerCore
 from .shared_planner.models import PlannerDecision, PlannerToolPlan
 
@@ -80,8 +80,10 @@ def render_context_result_system_prompt(
     if action in LEXGUARD_LEGAL_ACTIONS:
         structured_result = context_result.get("structured_result")
         if isinstance(structured_result, dict):
+            instruction_text = context_result.get("instruction_text")
             return render_legal_context_system_prompt(
                 structured_result,
+                instruction_text=instruction_text,
                 test_mode=test_mode,
             )
 
@@ -165,6 +167,15 @@ def normalize_context_result(
     # lexguard legal tools: preserve structured results and defer prompt rendering
     # until the final normal-mode LLM boundary.
     if action in LEXGUARD_LEGAL_ACTIONS:
+        # Extract writing instruction text from content[] separately.
+        # _coerce_result_dict() only returns structuredContent, discarding the
+        # instruction text that lexguard places in content[0].text.
+        # raw_result is the original CallToolResult object here (not yet coerced).
+        instruction_text = (
+            tool_result_to_content_text(raw_result)
+            if not isinstance(raw_result, dict)
+            else None
+        )
         return {
             "action": action,
             "arguments": resolved_arguments,
@@ -173,6 +184,7 @@ def normalize_context_result(
             "raw_result": raw_result_dict,
             "system_prompt": None,
             "structured_result": raw_result_dict,
+            "instruction_text": instruction_text,
         }
 
     # read_doc: wrap full content for downstream chaining (document_issue_tool).

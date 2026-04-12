@@ -182,6 +182,7 @@ def build_rag_response(
 def render_legal_context_system_prompt(
     raw_result: dict[str, Any],
     *,
+    instruction_text: str | None = None,
     test_mode: bool = False,
 ) -> str | None:
     """Render a lexguard tool result dict into a system prompt string.
@@ -190,6 +191,12 @@ def render_legal_context_system_prompt(
     - Transport/API failures  → raw_result contains "error_code" field → return None
     - Tool-level failures     → raw_result has success=False (regardless of "error" field) → return None
     - All other responses     → pass raw_result as-is via json.dumps to the LLM
+
+    instruction_text:
+    - Writing instruction extracted from MCP content[] array (content[0].text).
+    - If provided, prepended to the system prompt so the LLM receives both the
+      response format guide and the structured result in a single system message.
+    - Sourced from tool_result_to_content_text(); None for non-lexguard tools.
 
     test_mode=True:
     - All responses (including errors) are serialized and returned so that
@@ -222,19 +229,25 @@ def render_legal_context_system_prompt(
         if raw_result.get("success") is False:
             return None
 
-        return (
+        base_prompt = (
             "당신은 법률 전문가 어시스턴트입니다.\n"
             "아래 법률 검색 결과(JSON)를 바탕으로 사용자의 질문에 정확하게 답하세요.\n"
             "검색 결과에 없는 내용은 '제공된 정보에서 찾을 수 없습니다'라고 솔직하게 답하세요.\n\n"
             f"=== 법률 검색 결과 ===\n\n{raw_json}\n\n===================="
         )
+        if instruction_text:
+            return f"{instruction_text}\n\n{base_prompt}"
+        return base_prompt
 
     # test_mode: always show full response including errors
     is_error = bool(raw_result.get("error_code")) or raw_result.get("success") is False
     section_header = (
         "[TEST] 법률 MCP 오류 응답" if is_error else "[TEST] 법률 검색 결과"
     )
-    return f"=== {section_header} ===\n\n{raw_json}\n\n===================="
+    base_prompt = f"=== {section_header} ===\n\n{raw_json}\n\n===================="
+    if instruction_text:
+        return f"{instruction_text}\n\n{base_prompt}"
+    return base_prompt
 
 
 def build_legal_context_system_prompt(
