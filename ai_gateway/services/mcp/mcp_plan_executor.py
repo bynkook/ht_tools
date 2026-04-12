@@ -111,6 +111,10 @@ class McpPlanExecutor:
                             index,
                         )
                         skipped_result: dict[str, Any] = {
+                            "raw_result": {
+                                "skipped": True,
+                                "reason": "search_docs_rag returned no results — document_text is empty",
+                            },
                             "action": "document_issue_tool",
                             "skipped": True,
                             "reason": "search_docs_rag returned no results — document_text is empty",
