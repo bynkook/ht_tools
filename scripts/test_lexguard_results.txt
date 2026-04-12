@@ -1,0 +1,1290 @@
+
+========================================================================
+  lexguard-mcp 전체 tool 응답 구조 검증
+========================================================================
+  endpoint : https://lexguard-mcp.onrender.com/mcp
+  timeout  : 60.0s
+  cases    : 27
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] health / 서버 상태 확인
+------------------------------------------------------------------------
+  tool : health
+  args : {}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['status', 'environment', 'message', 'note', 'server', '_meta']
+
+  [raw_result 전체]
+{
+  "status": "ok",
+  "environment": {
+    "law_api_key": {
+      "configured": true,
+      "length": 11,
+      "preview": "LexG****dKey",
+      "source": ".env 파일에서 로드됨",
+      "usage": "국가법령정보센터 API의 OC 파라미터로 사용됩니다."
+    },
+    "env_file": {
+      "exists": false,
+      "path": ".env",
+      "loaded": false
+    },
+    "env_vars": {
+      "LAW_API_KEY": {
+        "exists": true,
+        "has_value": true,
+        "length": 11,
+        "preview": "LexG****dKey"
+      },
+      "LOG_LEVEL": {
+        "exists": true,
+        "value": "INFO"
+      },
+      "PORT": {
+        "exists": true,
+        "value": "8099"
+      }
+    },
+    "api_ready": true,
+    "api_status": "ready",
+    "api_status_message": "API 키가 설정되어 있어 검색 기능을 사용할 수 있습니다."
+  },
+  "message": "한국 법령 MCP 서버가 정상적으로 실행 중입니다.",
+  "note": "LAW_API_KEY가 설정되어 있으면 모든 API 요청의 OC 파라미터에 자동으로 포함됩니다.",
+  "server": "active",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] legal_qa_tool / 정상: 연장근로 한도 질문
+------------------------------------------------------------------------
+  tool : legal_qa_tool
+  args : {"query": "연장근로 한도가 얼마나 되나요?", "max_results_per_type": 2}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = True
+    success_transport          = True
+    success_search             = True
+    has_legal_basis            = True
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['success', 'success_transport', 'success_search', 'has_legal_basis', 'query', 'domain', 'detected_intent', 'results', 'sources_count', 'total_sources', 'missing_reason', 'elapsed_seconds', 'pipeline_version', '_meta']
+  results 하위 keys              = ['laws']
+
+  [raw_result 전체]
+{
+  "success": true,
+  "success_transport": true,
+  "success_search": true,
+  "has_legal_basis": true,
+  "query": "연장근로 한도가 얼마나 되나요?",
+  "domain": "labor",
+  "detected_intent": "law",
+  "results": {
+    "laws": [
+      {
+        "law_name": "근로기준법",
+        "law_id": "265959",
+        "detail": "{\n  \"법령\": {\n    \"개정문\": {\n      \"개정문내용\": [\n        [\n          \"국회에서 의결된 근로기준법 일부개정법률을 이에 공포한다.\",\n          \"          대통령        윤석열 (인)\",\n          \"    2024년 10월 22일\",\n          \"          국무총리        한덕수\",\n          \"          국무위원 고용노동부 장관        김문수\",\n          \"⊙법률 제20520호\",\n          \"근로기준법 일부개정법률\",\n          \"근로기준법 일부를 다음과 같이 개정한다.\",\n          \"제37조제1항 중 \\\"제36조에 따라 지급하여야 하는 임금 및 「근로자퇴직급여 보장법」 제2조제5호에 따른 급여(일시금만 해당된다)의 전부 또는 일부를 그 지급 사유가 발생한 날부터 14일 이내에\\\"를 \\\"다음 각 호의 어느 하나에 해당하는 임금의 전부 또는 일부를 각 호에 따른 날까지\\\"로 하고, 같은 항에 각 호를 다음과 같이 신설한다.\",\n          \"  1. 제36조에 따라 지급하여야 하는 임금 및 「근로자퇴직급여 보장법」 제2조제5호에 따른 급여(일시금만 해당된다): 지급 사유가 발생한 날부터 14일이 되는 날\",\n          \"  2. 제43조에 따라 지급하여야 하는 임금: 제43조제2항에 따라 정하는 날\",\n          \"제37조제2항을 제3항으로 하고, 같은 조에 제2항을 다음과 같이 신설한다.\",\n          \"  ② 사용자가 제1항제2호에 따른 임금을 지급하지 아니하여 지연이자를 지급할 의무가 발생한 이후 근로자가 사망 또는 퇴직한 경우 해당 임금에 대한 지연이자는 제1항제2호에 따른 날을 기준으로 산정한다.\",\n          \"제43조의2제1항 본문 중 \\\"수당, 그 밖의 모든 금품\\\"을 \\\"수당, 「근로자퇴직급여 보장법」 제12조제1항에 따른 퇴직급여등, 그 밖의 모든 금품\\\"으로 한다.\",\n          \"제43조의2제3항 전단 중 \\\"공개 여부를\\\"을 \\\"공개 여부 및 제43조의4에 따른 상습체불사업주에 관한 사항을\\\"로, \\\"이하 이 조에서\\\"를 \\\"이하 이 조 및 제43조의4에서\\\"로 한다.\",\n          \"제43조의2제4항을 제5항으로 하며, 같은 조에 제4항을 다음과 같이 신설한다.\",\n          \"  ④ 위원회 위원 중 공무원이 아닌 사람은 「형법」 제127조 및 제129조부터 제132조까지를 적용할 때에는 공무원으로 본다.\",\n          \"제43조의3제1항 본문 중 \\\"임금등 체불자료 제공일 이전 3년 이내 임금등을 체불하여 2회 이상 유죄가 확정된 자로서 임금등 체불자료 제공일 이전 1년 이내 임금등의 체불총액이 2천만원 이상인\\\"을 \\\"다음 각 호의 어느 하나에 해당하는\\\"으로 하고, 같은 항에 각 호를 다음과 같이 신설한다.\",\n          \"  1. 임금등 체불자료 제공일 이전 3년 이내 임금등을 체불하여 2회 이상 유죄가 확정된 자로서 임금등 체불자료 제공일 이전 1년 이내 임금등의 체불총액이 2천만원 이상인 체불사업주\",\n          \"  2. 제43조의4에 따른 상습체불사업주\",\n          \"제43조의4부터 제43조의8까지를 각각 다음과 같이 신설한다.\",\n          \"제43조의4(상습체불사업주에 대한 보조ㆍ지원 제한 등) ① 고용노동부장관은 위원회의 심의를 거쳐 다음 각 호의 어느 하나에 해당하는 자(법인인 경우에는 그 대표자를 포함한다)를 상습체불사업주(이하 \\\"상습체불사업주\\\"라 한다)로 정할 수 있다.\",\n          \"  1. 임금등 체불자료 제공일이 속하는 연도의 직전 연도 1년간 근로자에게 임금등(「근로자퇴직급여 보장법」 제12조제1항에 따른 퇴직급여등은 제외한다)을 3개월분 임금 이상 체불한 사업주\",\n          \"  2. 임금등 체불자료 제공일이 속하는 연도의 직전 연도 1년간 근로자에게 5회 이상 임금등을 체불하고, 체불총액이 3천만원 이",
+        "api_url": "https://www.law.go.kr/DRF/lawService.do?target=law&type=JSON&MST=265959&OC=LexGuardKey",
+        "note": "전체 내용은 API URL에서 확인하세요."
+      },
+      {
+        "law_name": "고용보험법",
+        "law_id": "284449",
+        "detail": "{\n  \"법령\": {\n    \"개정문\": {\n      \"개정문내용\": [\n        [\n          \"국회에서 의결된 고용보험법 일부개정법률을 이에 공포한다. \",\n          \"          대통령        이재명 (인)\",\n          \"    2026년 3월 17일 \",\n          \"          국무총리        김민석\",\n          \"          국무위원 고용노동부 장관        김영훈\",\n          \"⊙법률 제21473호\",\n          \"고용보험법 일
+  ... (총 5451 chars, truncated)
+
+------------------------------------------------------------------------
+  [FAILURE 유도] legal_qa_tool / 실패 유도: 검색 결과 0건 (무의미 질문)
+------------------------------------------------------------------------
+  tool : legal_qa_tool
+  args : {"query": "xyzqwerty_절대없는키워드_99999", "max_results_per_type": 1}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = True
+    success_transport          = True
+    success_search             = False
+    has_legal_basis            = False
+    missing_reason             = 'NO_MATCH'
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['success', 'success_transport', 'success_search', 'has_legal_basis', 'query', 'domain', 'detected_intent', 'results', 'sources_count', 'total_sources', 'missing_reason', 'elapsed_seconds', 'pipeline_version', '_meta']
+  results 하위 keys              = []
+
+  [raw_result 전체]
+{
+  "success": true,
+  "success_transport": true,
+  "success_search": false,
+  "has_legal_basis": false,
+  "query": "xyzqwerty_절대없는키워드_99999",
+  "domain": "general",
+  "detected_intent": "law",
+  "results": {},
+  "sources_count": {
+    "law": 0
+  },
+  "total_sources": 0,
+  "missing_reason": "NO_MATCH",
+  "elapsed_seconds": 0.1442,
+  "pipeline_version": "v2_parallel",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "success_transport",
+      "success_search",
+      "has_legal_basis",
+      "query",
+      "domain",
+      "detected_intent",
+      "results",
+      "sources_count",
+      "total_sources",
+      "missing_reason"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] law_article_tool / 정상: 근로기준법 제50조
+------------------------------------------------------------------------
+  tool : law_article_tool
+  args : {"law_name": "근로기준법", "article_number": "50"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['law_id', 'article_number', 'hang', 'ho', 'mok', 'title', 'content', 'api_url', 'note', 'raw_data', '_meta']
+
+  [raw_result 전체]
+{
+  "law_id": "265959",
+  "article_number": "50",
+  "hang": null,
+  "ho": null,
+  "mok": null,
+  "title": "50",
+  "content": "조문 내용을 찾을 수 없습니다.",
+  "api_url": "https://www.law.go.kr/DRF/lawService.do?target=eflawjosub&type=JSON&MST=265959&efYd=20260411&JO=000050&OC=LexGuardKey",
+  "note": "조문 내용이 비어있거나 찾을 수 없습니다. API 응답을 확인하세요.",
+  "raw_data": "{'Law': '일치하는 법령이 없습니다. 법령명을 확인하여 주십시오.'}",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] law_article_tool / 정상: 법령명만 (조문번호 생략 → 개요 반환)
+------------------------------------------------------------------------
+  tool : law_article_tool
+  args : {"law_name": "민법"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['law_name', 'law_id', 'detail', 'api_url', 'note', '_meta']
+
+  [raw_result 전체]
+{
+  "law_name": "민법",
+  "law_id": "284415",
+  "detail": "{\n  \"법령\": {\n    \"개정문\": {\n      \"개정문내용\": [\n        [\n          \"국회에서 의결된 민법 일부개정법률을 이에 공포한다. \",\n          \"          대통령        이재명 (인)\",\n          \"    2026년 3월 17일\",\n          \"          국무총리        김민석\",\n          \"          국무위원 법무부 장관        정성호\",\n          \"⊙법률 제21454호\",\n          \"민법 일부개정법률\",\n          \"민법 일부를 다음과 같이 개정한다.\",\n          \"제1001조를 다음과 같이 한다.\",\n          \"제1001조(대습상속) 전조제1항제1호와 제3호에 의하여 상속인이 될 직계비속 또는 형제자매가 상속개시전에 사망하거나 제1004조 또는 제1004조의2에 따라 상속인이 되지 못한 때에는 그 직계비속이 사망하거나 상속인이 되지 못한 사람의 순위에 갈음하여 상속인이 된다.\",\n          \"제1003조제2항 중 \\\"사망 또는 결격된 자의 배우자\\\"를 \\\"사망한 사람의 배우자\\\"로 한다.\",\n          \"제1004조의2제1항 각 호 외의 부분 전단 중 \\\"상속인이 될 사람이 피상속인의 직계존속으로서\\\"를 \\\"상속인이 될 사람이\\\"로 하고, 같은 항 제1호 중 \\\"부양의무(미성년자에 대한 부양의무로 한정한다)\\\"를 \\\"부양의무\\\"로 하며, 같은 항 제2호 중 \\\"직계비속\\\"을 \\\"직계혈족\\\"으로 하고, 같은 조 제3항 각 호 외의 부분 중 \\\"공동상속인은 피상속인의 직계존속으로서\\\"를 \\\"공동상속인은\\\"으로 하며, 같은 항 제1호 중 \\\"부양의무(미성년자에 대한 부양의무로 한정한다)\\\"를 \\\"부양의무\\\"로 한다.\",\n          \"제1008조에 단서를 다음과 같이 신설한다.\",\n          \"  다만, 증여나 유증이 상당한 기간 동거ㆍ간호 그 밖의 방법으로 피상속인을 특별히 부양하거나 피상속인의 재산의 유지 또는 증가에 특별히 기여한 데 대한 보상으로 행하여진 때에는 기여에 상응하는 범위에서 그러하지 아니하다.\",\n          \"제1010조를 다음과 같이 한다.\",\n          \"제1010조(대습상속분) ① 제1001조에 의하여 사망하거나 제1004조 또는 제1004조의2에 따라 상속인이 되지 못한 사람에 갈음하여 상속인이 된 사람의 상속분은 사망하거나 상속인이 되지 못한 사람의 상속분에 의한다.\",\n          \"  ② 전항의 경우에 사망하거나 제1004조 또는 제1004조의2에 따라 상속인이 되지 못한 사람의 직계비속이 수인인 때에는 그 상속분은 사망하거나 상속인이 되지 못한 사람의 상속분의 한도에서 제1009조에 의하여 이를 정한다. 제1003조제2항의 경우에도 또한 같다.\",\n          \"제1115조의 조 번호 및 제목을 다음과 같이 하고, 같은 조 제1항을 다음과 같이 한다.\",\n          \"제1115조(유류분의 보전)\",\n          \"  ① 유류분권리자가 피상속인의 제1114조에 규정된 증여 및 유증으로 인하여 그 유류분에 부족이 생긴 때에는 부족한 한도에서 그 재산의 가액의 지급을 청구할 수 있다. 이 경우 가액의 지급을 청구한 날부터 이자를 가산한다.\",\n          \"          부칙\",\n          \"제1조(시행일) 이 법은 공포한 날부터 시행한다. \",\n          \"제2조(상속권 상실 선고 등에 관한 적용례) 제1008조 단서의 개정규정은 2024년 4월 25일 이후 상속이 개시되는 경우에 대해서도 적용하고, 제1004조의2의 개정규정은 2024년 4월 25일 이후 상속이 개시되는 경우로서 이 법 시행 전에 같은 조 제1항 각 호 또는 제3항 각 호에 해당하는 행위가 있었던 경우에 대해서도 적용한다. 제1001조 및 제1010조의 개정규정 중 제1004조의2에 관한 부분도 같다. \",\n          \"제3조(유류분의 보전에 관한 적용례) 제1115조제1항의",
+  "api_url": "https://www.law.go.kr/DRF/lawService.do?target=law&type=JSON&MST=284415&OC=LexGuardKey",
+  "note": "전체 내용은 API URL에서 확인하세요.",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [FAILURE 유도] law_article_tool / 실패 유도: 존재하지 않는 법령명
+------------------------------------------------------------------------
+  tool : law_article_tool
+  args : {"law_name": "가나다라마바사법_절대없음_99999"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = True
+    success                    = False
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = '법령 ID를 찾을 수 없습니다.'
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['success', 'error', 'recovery_guide', 'note', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "success": false,
+  "error": "법령 ID를 찾을 수 없습니다.",
+  "recovery_guide": "법령명을 정확히 입력해주세요. 예: '형법', '민법', '개인정보보호법'. 법령명이 정확한지 확인하세요.",
+  "note": null,
+  "api_url": null,
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] law_comparison_tool / 정상: 형법 신구법 비교
+------------------------------------------------------------------------
+  tool : law_comparison_tool
+  args : {"law_name": "형법", "compare_type": "신구법"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['law_name', 'law_id', 'compare_type', 'comparison', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "law_name": "형법",
+  "law_id": "284025",
+  "compare_type": "신구법",
+  "comparison": {
+    "OldAndNewService": {
+      "신조문목록": {
+        "조문": [
+          {
+            "content": "제98조<P>(적국을 위한 간첩)</P> ① 적국을 위하여 <P>적국의 지령, 사주, 그 밖의 의사 연락 하에 국가기밀을 탐지ㆍ수집ㆍ누설ㆍ전달ㆍ중개하거나 이를</P> 방조한 자는 사형, 무기 또는 7년 이상의 징역에 처한다.",
+            "no": "1"
+          },
+          {
+            "content": "<P><삭  제></P>",
+            "no": "2"
+          },
+          {
+            "content": "<P>제98조의2(외국 등을 위한 간첩) 외국 또는 이에 준하는 단체(이하 “외국등”이라 한다)를 위하여 외국등의 지령, 사주, 그 밖의 의사 연락 하에 국가기밀을 탐지ㆍ수집ㆍ누설ㆍ전달ㆍ중개하거나 이를 방조한 자는 3년 이상의 유기징역에 처한다.</P>",
+            "no": "3"
+          },
+          {
+            "content": "제99조(일반이적) <P>제92조부터 제98조까지</P>에 기재한 이외에 대한민국의 군사상 이익을 해하거나 적국에 군사상 이익을 공여한 자는 무기 또는 3년 이상의 징역에 처한다.",
+            "no": "4"
+          },
+          {
+            "content": "<P>제100조(미수범) 제92조부터 제98조까지, 제98조의2 및 제99조의 미수범은 처벌한다.</P>",
+            "no": "5"
+          },
+          {
+            "content": "제101조(예비, 음모, 선동, 선전) ① <P>제92조부터 제98조까지, 제98조의2 또는 제99조</P>의 죄를 범할 목적으로 예비 또는 음모한 자는 2년 이상의 유기징역에 처한다. <P>다만,</P> 그 목적한 죄의 실행에 이르기 전에 자수한 때에는 그 형을 감경 또는 면제한다.",
+            "no": "6"
+          },
+          {
+            "content": "② <P>제92조부터 제98조까지, 제98조의2 또는 제99조</P>의 죄를 선동 또는 선전한 자도 <P>제1항</P>의 형과 같다.",
+            "no": "7"
+          },
+          {
+            "content": "제102조(준적국) <P>제93조부터 제98조까지 및 제99조부터 제101조까지</P>의 죄에 있어서는 대한민국에 적대하는 <P>외국등은</P> 적국으로 간주한다.",
+            "no": "8"
+          },
+          {
+            "content": "제104조(동맹국) 본장의 <P>규정(제98조의2는 제외한다)</P>은 동맹국에 대한 행위에 적용한다.",
+            "no": "9"
+          },
+          {
+            "content": "<P>제123조의2(법왜곡) 형사사건의 재판에 관여하는 법관, 공소를 제기하거나 유지하는 검사 또는 범죄수사에 관한 직무를 수행하는 자가 타인에게 위법 또는 부당하게 이익을 주거나 권익을 해할 목적으로 재판 또는 수사 중인 형사사건에 관하여 다음 각 호의 어느 하나에 해당하는 행위를 한 경우에는 10년 이하의 징역과 10년 이하의 자격정지에 처한다.1. 법령의 적용 요건이 충족되지 아니함을 알면서도 이를 적용하거나, 적용되어야 할 법령임을 알면서도 이를 적용하지 아니하여 의도적으로 재판 및 수사의 결과에 영향을 미친 경우. 다만, 법령 해석의 합리적 범위에서 이루어진 재량적 판단은 이에 해당하지 아니한다.2. 사건에 관한 증거를 인멸, 은닉, 위조 또는 변조하거나 위조 또는 변조된 증거를 그 사정을 알면서 재판 또는 수사에 사용한 경우3. 폭행, 협박, 위계, 그 밖의 방법으로 위법하게 증거를 수집하거나, 적법한 증거가 존재하지 아니함을 알면서도 범죄사실을 인정한 경우</P>",
+            "no": "10"
+          }
+        ]
+      },
+      "구조문목록": {
+        "조문": [
+          {
+            "content": "제98조<P>(간첩)</P> ①적국을 위하여 <P>간첩하거나 적국의 간첩을</P> 방조한 자는 사형, 무기 또는 7년 이상의 징역에 처한다.",
+            "no": "1"
+          },
+          {
+            "content": "<P>②군사상의 기밀을 적국에 누설한 자도 전항의 형과 같다.</P>",
+            "no": "2"
+          },
+          {
+            "content": "<P><신  설></P>",
+            "no": "3"
+          },
+          {
+            "content": "제99조(일반이적) <P>전7조</P>에 기재한 이외에 대한민국의 군사상 이익을 해하거나 적국에 군사상 이익을 공여한 자는 무기 또는 3년 이상의 징역에 처한다.",
+            "no": "4"
+          },
+          {
+            "content": "<P>제100조(미수범) 전8조의 미수범은 처벌한다.</P>",
+            "no": "5"
+          },
+          {
+            "content": "제101조(예비, 음모, 선동, 선전) ①<P>제92조 내지 제99조</P>의 죄를 범할 목적으로 예비 또는 음모한 자는 2년 이상의 유기징역에 처한다. <P>단
+  ... (총 4366 chars, truncated)
+
+------------------------------------------------------------------------
+  [FAILURE 유도] law_comparison_tool / 실패 유도: 존재하지 않는 법령 비교
+------------------------------------------------------------------------
+  tool : law_comparison_tool
+  args : {"law_name": "가나다법_절대없음_99999", "compare_type": "신구법"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = True
+    success                    = False
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = '법령 ID를 찾을 수 없습니다.'
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['success', 'error', 'recovery_guide', 'note', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "success": false,
+  "error": "법령 ID를 찾을 수 없습니다.",
+  "recovery_guide": "법령명을 정확히 입력해주세요. 예: '형법', '민법', '개인정보보호법'. 법령명이 정확한지 확인하세요.",
+  "note": null,
+  "api_url": null,
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] precedent_lookup_tool / 정상: 키워드 검색 (부당해고)
+------------------------------------------------------------------------
+  tool : precedent_lookup_tool
+  args : {"keyword": "부당해고", "per_page": 3}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'page', 'per_page', 'total', 'precedents', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "부당해고",
+  "page": 1,
+  "per_page": 3,
+  "total": 400,
+  "precedents": [
+    {
+      "id": "2",
+      "사건번호": "2025두33276",
+      "데이터출처명": "대법원",
+      "사건종류코드": "400107",
+      "사건종류명": "일반행정",
+      "선고": "선고",
+      "선고일자": "2025.10.16",
+      "판례일련번호": "612851",
+      "판결유형": "판결",
+      "법원종류코드": "",
+      "법원명": "대법원",
+      "판례상세링크": "/DRF/lawService.do?OC=LexGuardKey&target=prec&ID=612851&type=HTML&mobileYn=",
+      "사건명": "부당해고구제재심판정취소[근로자가 사직서를 제출한 후 노동위원회에 부당해고 구제신청을 한 사건]"
+    },
+    {
+      "id": "1",
+      "사건번호": "2023두54914",
+      "데이터출처명": "대법원",
+      "사건종류코드": "400107",
+      "사건종류명": "일반행정",
+      "선고": "선고",
+      "선고일자": "2026.01.29",
+      "판례일련번호": "616245",
+      "판결유형": "판결",
+      "법원종류코드": "",
+      "법원명": "대법원",
+      "판례상세링크": "/DRF/lawService.do?OC=LexGuardKey&target=prec&ID=616245&type=HTML&mobileYn=",
+      "사건명": "부당해고구제재심판정취소[택시협동조합 소속 조합원인 택시운전기사들의 근로기준법상 근로자성 및 근로관계 승계 여부가 문제된 사건]"
+    },
+    {
+      "id": "3",
+      "사건번호": "2025부505",
+      "데이터출처명": "대법원",
+      "사건종류코드": "400107",
+      "사건종류명": "일반행정",
+      "선고": "자",
+      "선고일자": "2025.09.22",
+      "판례일련번호": "613009",
+      "판결유형": "결정",
+      "법원종류코드": "",
+      "법원명": "대법원",
+      "판례상세링크": "/DRF/lawService.do?OC=LexGuardKey&target=prec&ID=613009&type=HTML&mobileYn=",
+      "사건명": "부당해고구제재심판정취소"
+    }
+  ],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=prec&type=JSON&page=1&display=3&query=%EB%B6%80%EB%8B%B9%ED%95%B4%EA%B3%A0&OC=LexGuardKey",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] precedent_lookup_tool / 정상: 사건번호 직접 검색
+------------------------------------------------------------------------
+  tool : precedent_lookup_tool
+  args : {"case_number": "2020다200614"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'page', 'per_page', 'total', 'precedents', 'api_url', 'message', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "2020다200614",
+  "page": 1,
+  "per_page": 10,
+  "total": 0,
+  "precedents": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=prec&type=JSON&page=1&display=10&query=2020%EB%8B%A4200614&OC=LexGuardKey",
+  "message": "검색 결과가 없습니다.",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [FAILURE 유도] precedent_lookup_tool / 실패 유도: 검색 결과 없음
+------------------------------------------------------------------------
+  tool : precedent_lookup_tool
+  args : {"keyword": "xyzqwerty_절대없는판례키워드_99999"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'page', 'per_page', 'total', 'precedents', 'api_url', 'message', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "xyzqwerty_절대없는판례키워드_99999",
+  "page": 1,
+  "per_page": 10,
+  "total": 0,
+  "precedents": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=prec&type=JSON&page=1&display=10&query=xyzqwerty_%EC%A0%88%EB%8C%80%EC%97%86%EB%8A%94%ED%8C%90%EB%A1%80%ED%82%A4%EC%9B%8C%EB%93%9C_99999&OC=LexGuardKey",
+  "message": "검색 결과가 없습니다.",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] interpretation_tool / 정상: 근로자성 법령해석
+------------------------------------------------------------------------
+  tool : interpretation_tool
+  args : {"query": "근로자성 판단 기준", "per_page": 3}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'page', 'per_page', 'agency', 'total', 'interpretations', 'api_url', 'message', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "근로자성 판단 기준",
+  "page": 1,
+  "per_page": 3,
+  "agency": null,
+  "total": 0,
+  "interpretations": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=expc&type=JSON&page=1&display=3&query=%EA%B7%BC%EB%A1%9C%EC%9E%90%EC%84%B1+%ED%8C%90%EB%8B%A8+%EA%B8%B0%EC%A4%80&OC=LexGuardKey",
+  "message": "검색 결과가 없습니다.",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [FAILURE 유도] interpretation_tool / 실패 유도: 검색 결과 없음
+------------------------------------------------------------------------
+  tool : interpretation_tool
+  args : {"query": "xyzqwerty_절대없는해석_99999"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'page', 'per_page', 'agency', 'total', 'interpretations', 'api_url', 'message', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "xyzqwerty_절대없는해석_99999",
+  "page": 1,
+  "per_page": 10,
+  "agency": null,
+  "total": 0,
+  "interpretations": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=expc&type=JSON&page=1&display=10&query=xyzqwerty_%EC%A0%88%EB%8C%80%EC%97%86%EB%8A%94%ED%95%B4%EC%84%9D_99999&OC=LexGuardKey",
+  "message": "검색 결과가 없습니다.",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] administrative_appeal_tool / 정상: 부당해고 행정심판
+------------------------------------------------------------------------
+  tool : administrative_appeal_tool
+  args : {"query": "부당해고 행정심판", "per_page": 3}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'page', 'per_page', 'total', 'appeals', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "부당해고 행정심판",
+  "page": 1,
+  "per_page": 3,
+  "total": 0,
+  "appeals": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=decc&type=JSON&page=1&display=3&query=%EB%B6%80%EB%8B%B9%ED%95%B4%EA%B3%A0+%ED%96%89%EC%A0%95%EC%8B%AC%ED%8C%90&OC=LexGuardKey",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [FAILURE 유도] administrative_appeal_tool / 실패 유도: 검색 결과 없음
+------------------------------------------------------------------------
+  tool : administrative_appeal_tool
+  args : {"query": "xyzqwerty_절대없는행정심판_99999"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'page', 'per_page', 'total', 'appeals', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "xyzqwerty_절대없는행정심판_99999",
+  "page": 1,
+  "per_page": 10,
+  "total": 0,
+  "appeals": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=decc&type=JSON&page=1&display=10&query=xyzqwerty_%EC%A0%88%EB%8C%80%EC%97%86%EB%8A%94%ED%96%89%EC%A0%95%EC%8B%AC%ED%8C%90_99999&OC=LexGuardKey",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] constitutional_decision_tool / 정상: 표현의 자유 헌재결정
+------------------------------------------------------------------------
+  tool : constitutional_decision_tool
+  args : {"query": "표현의 자유", "per_page": 3}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'page', 'per_page', 'total', 'decisions', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "표현의 자유",
+  "page": 1,
+  "per_page": 3,
+  "total": 0,
+  "decisions": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=detc&type=JSON&page=1&display=3&query=%ED%91%9C%ED%98%84%EC%9D%98+%EC%9E%90%EC%9C%A0&OC=LexGuardKey",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [FAILURE 유도] constitutional_decision_tool / 실패 유도: 검색 결과 없음
+------------------------------------------------------------------------
+  tool : constitutional_decision_tool
+  args : {"query": "xyzqwerty_절대없는헌재결정_99999"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'page', 'per_page', 'total', 'decisions', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "xyzqwerty_절대없는헌재결정_99999",
+  "page": 1,
+  "per_page": 10,
+  "total": 0,
+  "decisions": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=detc&type=JSON&page=1&display=10&query=xyzqwerty_%EC%A0%88%EB%8C%80%EC%97%86%EB%8A%94%ED%97%8C%EC%9E%AC%EA%B2%B0%EC%A0%95_99999&OC=LexGuardKey",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] committee_decision_tool / 정상: 개인정보보호위원회 결정
+------------------------------------------------------------------------
+  tool : committee_decision_tool
+  args : {"committee_type": "개인정보보호위원회", "query": "개인정보 유출", "per_page": 3}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['committee_type', 'query', 'page', 'per_page', 'total', 'decisions', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "committee_type": "개인정보보호위원회",
+  "query": "개인정보 유출",
+  "page": 1,
+  "per_page": 3,
+  "total": 0,
+  "decisions": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=ppc&type=JSON&page=1&display=3&query=%EA%B0%9C%EC%9D%B8%EC%A0%95%EB%B3%B4+%EC%9C%A0%EC%B6%9C&OC=LexGuardKey",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [FAILURE 유도] committee_decision_tool / 실패 유도: 잘못된 committee_type
+------------------------------------------------------------------------
+  tool : committee_decision_tool
+  args : {"committee_type": "존재하지않는위원회_99999", "query": "테스트"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = True
+    success                    = False
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = '지원하지 않는 위원회 종류입니다: 존재하지않는위원회_99999'
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['success', 'error', 'recovery_guide', 'note', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "success": false,
+  "error": "지원하지 않는 위원회 종류입니다: 존재하지않는위원회_99999",
+  "recovery_guide": "지원: 개인정보보호위원회, 고용보험심사위원회, 국가인권위원회, 국민권익위원회, 금융위원회, 노동위원회, 방송미디어통신위원회, 산업재해보상보험재심사위원회, 중앙토지수용위원회, 중앙환경분쟁조정위원회, 증권선물위원회",
+  "note": null,
+  "api_url": null,
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] special_administrative_appeal_tool / 정상: 조세심판원
+------------------------------------------------------------------------
+  tool : special_administrative_appeal_tool
+  args : {"tribunal_type": "조세심판원", "query": "부가가치세", "per_page": 3}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['tribunal_type', 'query', 'page', 'per_page', 'total', 'appeals', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "tribunal_type": "조세심판원",
+  "query": "부가가치세",
+  "page": 1,
+  "per_page": 3,
+  "total": 0,
+  "appeals": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=ttSpecialDecc&type=JSON&page=1&display=3&query=%EB%B6%80%EA%B0%80%EA%B0%80%EC%B9%98%EC%84%B8&OC=LexGuardKey",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [FAILURE 유도] special_administrative_appeal_tool / 실패 유도: 잘못된 tribunal_type
+------------------------------------------------------------------------
+  tool : special_administrative_appeal_tool
+  args : {"tribunal_type": "존재하지않는심판원_99999", "query": "테스트"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = True
+    success                    = False
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = '지원하지 않는 심판원입니다: 존재하지않는심판원_99999'
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['success', 'error', 'recovery_guide', 'note', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "success": false,
+  "error": "지원하지 않는 심판원입니다: 존재하지않는심판원_99999",
+  "recovery_guide": "지원: 국민권익위원회, 인사혁신처 소청심사위원회, 조세심판원, 해양안전심판원",
+  "note": null,
+  "api_url": null,
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] local_ordinance_tool / 정상: 서울시 조례 검색
+------------------------------------------------------------------------
+  tool : local_ordinance_tool
+  args : {"query": "주거환경", "local_government": "서울특별시", "per_page": 3}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'local_government', 'page', 'per_page', 'total', 'ordinances', 'api_url', 'note', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "주거환경",
+  "local_government": "서울특별시",
+  "page": 1,
+  "per_page": 3,
+  "total": 422,
+  "ordinances": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=ordin&type=JSON&page=1&display=3&query=%EC%A3%BC%EA%B1%B0%ED%99%98%EA%B2%BD&orgNm=%EC%84%9C%EC%9A%B8%ED%8A%B9%EB%B3%84%EC%8B%9C&OC=LexGuardKey",
+  "note": "API 응답에서 totalCnt는 있으나 자치법규 목록(ordin)이 비어 있습니다. 국가법령정보센터 응답 구조를 확인하세요.",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [FAILURE 유도] local_ordinance_tool / 실패 유도: 검색 결과 없음
+------------------------------------------------------------------------
+  tool : local_ordinance_tool
+  args : {"query": "xyzqwerty_절대없는조례_99999"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'local_government', 'page', 'per_page', 'total', 'ordinances', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "xyzqwerty_절대없는조례_99999",
+  "local_government": null,
+  "page": 1,
+  "per_page": 20,
+  "total": 0,
+  "ordinances": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=ordin&type=JSON&page=1&display=20&query=xyzqwerty_%EC%A0%88%EB%8C%80%EC%97%86%EB%8A%94%EC%A1%B0%EB%A1%80_99999&OC=LexGuardKey",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] administrative_rule_tool / 정상: 고용노동부 행정규칙
+------------------------------------------------------------------------
+  tool : administrative_rule_tool
+  args : {"query": "근로시간", "agency": "고용노동부", "per_page": 3}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'agency', 'page', 'per_page', 'total', 'rules', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "근로시간",
+  "agency": "고용노동부",
+  "page": 1,
+  "per_page": 3,
+  "total": 0,
+  "rules": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=admrul&type=JSON&page=1&display=3&query=%EA%B7%BC%EB%A1%9C%EC%8B%9C%EA%B0%84&orgCd=100000&OC=LexGuardKey",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [FAILURE 유도] administrative_rule_tool / 실패 유도: 검색 결과 없음
+------------------------------------------------------------------------
+  tool : administrative_rule_tool
+  args : {"query": "xyzqwerty_절대없는행정규칙_99999"}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = None
+    success_transport          = None
+    success_search             = None
+    has_legal_basis            = None
+    missing_reason             = None
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'unknown'
+  top-level keys               = ['query', 'agency', 'page', 'per_page', 'total', 'rules', 'api_url', '_meta']
+
+  [raw_result 전체]
+{
+  "query": "xyzqwerty_절대없는행정규칙_99999",
+  "agency": null,
+  "page": 1,
+  "per_page": 20,
+  "total": 0,
+  "rules": [],
+  "api_url": "https://www.law.go.kr/DRF/lawSearch.do?target=admrul&type=JSON&page=1&display=20&query=xyzqwerty_%EC%A0%88%EB%8C%80%EC%97%86%EB%8A%94%ED%96%89%EC%A0%95%EA%B7%9C%EC%B9%99_99999&OC=LexGuardKey",
+  "_meta": {
+    "response_type": "unknown",
+    "fields": [
+      "error",
+      "recovery_guide"
+    ],
+    "parsing_hint": "응답 구조를 확인하세요."
+  }
+}
+
+------------------------------------------------------------------------
+  [SUCCESS 기대] document_issue_tool / 정상: 프리랜서 계약서 분석
+------------------------------------------------------------------------
+  tool : document_issue_tool
+  args : {"document_text": "제1조 (계약의 목적) 본 계약은 갑(위탁자)과 을(수탁자) 간의 소프트웨어 개발 용역 계약이다.\n제2조 (업무 내용) 을은 갑의 지시에 따라 매일 오전 9시부터 오후 6시까지 갑의 사무실에 출근하여 업무를 수행한다.\n제3조 (보수) 갑은 을에게 월 300만원을 지급한다. 4대보험은 적용하지 않는다.\n제4조 (계약 해지) 갑은 언제든지 계약을 해지할 수 있다.", "auto_search": true, "max_clauses": 2, "max_results_per_type": 2}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = True
+    success                    = False
+    success_transport          = True
+    success_search             = False
+    has_legal_basis            = False
+    missing_reason             = 'NO_MATCH'
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'document_issue'
+  top-level keys               = ['success', 'success_transport', 'success_search', 'auto_search', 'analysis_success', 'has_legal_basis', 'missing_reason', 'document_type_code', 'document_analysis', 'answer', 'citations', 'legal_basis_block_text', 'retry_plan', 'response_policy', '_meta']
+
+  [raw_result 전체]
+{
+  "success": false,
+  "success_transport": true,
+  "success_search": false,
+  "auto_search": true,
+  "analysis_success": true,
+  "has_legal_basis": false,
+  "missing_reason": "NO_MATCH",
+  "document_type_code": "labor",
+  "document_analysis": {
+    "detected": true,
+    "document_type": "노동/용역 계약서",
+    "document_type_code": "labor",
+    "clauses": [
+      "제1조 (계약의 목적) 본 계약은 갑(위탁자)과 을(수탁자) 간의 소프트웨어 개발 용역 계약이다.",
+      "제2조 (업무 내용) 을은 갑의 지시에 따라 매일 오전 9시부터 오후 6시까지 갑의 사무실에 출근하여 업무를 수행한다.",
+      "제3조 (보수) 갑은 을에게 월 300만원을 지급한다. 4대보험은 적용하지 않는다.",
+      "제4조 (계약 해지) 갑은 언제든지 계약을 해지할 수 있다."
+    ],
+    "clause_issues": [
+      {
+        "clause": "제4조 (계약 해지) 갑은 언제든지 계약을 해지할 수 있다.",
+        "issue_tags": [
+          "해지 요건"
+        ]
+      }
+    ],
+    "clause_basis_hints": [
+      {
+        "clause": "제4조 (계약 해지) 갑은 언제든지 계약을 해지할 수 있다.",
+        "suggested_queries": [
+          "근로계약 해지 요건",
+          "용역계약 해지 손해배상",
+          "민법 해지 통고"
+        ]
+      }
+    ],
+    "issues": [],
+    "suggested_queries": [
+      "근로자성 판단 기준",
+      "사용종속관계 판단 요소",
+      "지휘감독 여부 판례",
+      "위장도급 판단 기준",
+      "용역계약 손해배상 예정액",
+      "근로기준법 제2조 근로자 정의",
+      "프리랜서 근로자성 판례",
+      "근로계약 해지 요건"
+    ],
+    "note": "문서 타입: 노동/용역 계약서. 조항별로 법령·판례 근거를 조회해야 합니다.",
+    "document_basis_plan": [
+      "조항별 쟁점 태그를 확인",
+      "각 조항의 suggested_queries로 법령/판례 검색",
+      "근거 결과를 법적 근거 요약 블록에 반영"
+    ],
+    "anchor_statutes_reference": [
+      "근로기준법 제2조(근로자·사용자의 정의)",
+      "근로기준법 제15조(근로조건의 최저 기준)",
+      "근로기준법 제20조(위약 예정의 금지)",
+      "근로기준법 제23조(해고의 제한)",
+      "근로기준법 제26조(해고의 예고)",
+      "근로기준법 제27조(해고사유의 서면통지)",
+      "근로기준법 제36조(금품의 청산)",
+      "근로기준법 제43조(임금의 전액 지급)",
+      "근로기준법 제53조·제55조(연장·휴일근로)",
+      "근로기준법 제60조(연차유급휴가)",
+      "근로기준법 제94조(취업규칙의 불이익 변경)",
+      "기간제 및 단시간근로자 보호 등에 관한 법률 제4조(기간제 근로계약의 사용기간·갱신 등)",
+      "근로자퇴직급여 보장법 제9조(퇴직급여 지급)",
+      "최저임금법(수습근로자 등 임금 감액 한도·적용 요건·직무 예외 — 조문 번호는 조회 후 기재)",
+      "민법 제398조(손해배상의 예정)"
+    ]
+  },
+  "answer": {
+    "risk_findings": [
+      {
+        "clause": "제4조 (계약 해지) 갑은 언제든지 계약을 해지할 수 있다.",
+        "why": "근로계약 해지 요건",
+        "citations": []
+      }
+    ]
+  },
+  "citations": [],
+  "legal_basis_block_text": "법적 근거 요약: 근거를 찾지 못했습니다(NO_MATCH). 문서 분석 결과를 기반으로 조항별 검색을 진행하세요.",
+  "retry_plan": {
+    "suggested_queries": [
+      "근로자성 판단 기준",
+      "사용종속관계 판단 요소",
+      "지휘감독 여부 판례",
+      "위장도급 판단 기준",
+      "용역계약 손해배상 예정액",
+      "근로기준법 제2조 근로자 정의"
+    ],
+    "note": "추천 검색어로 법령/판례 검색을 재시도하세요."
+  },
+  "response_policy": {
+    "must_include": [
+      "document_analysis",
+      "legal_basis_block_text",
+      "legal_basis_block",
+      "retry_plan"
+    ],
+    "preferred_order": [
+      "legal_basis_block_text",
+      "document_analysis"
+    ],
+    "if_has_legal_basis_false": "no_conclusions",
+    "when_api_error": "explain_api_error_and_request_retry",
+    "answer_format": "labor_dense_v1",
+    "instruction": "근로·용역: COMMON_CONTRACT_REVIEW_INSTRUCTION + LABOR_CONTRACT_REVIEW_ADDON."
+  },
+  "_meta": {
+    "response_type": "doc
+  ... (총 3153 chars, truncated)
+
+------------------------------------------------------------------------
+  [FAILURE 유도] document_issue_tool / 실패 유도: 내용 없는 문서 (auto_search=False)
+------------------------------------------------------------------------
+  tool : document_issue_tool
+  args : {"document_text": ".", "auto_search": false, "max_clauses": 1}
+
+  [핵심 필드 분석]
+    isError (MCP 레벨)           = False
+    success                    = True
+    success_transport          = True
+    success_search             = False
+    has_legal_basis            = False
+    missing_reason             = 'NO_SEARCH'
+    error                      = None
+    error_code                 = None
+    _meta.response_type        = 'document_issue'
+  top-level keys               = ['success', 'success_transport', 'success_search', 'auto_search', 'analysis_success', 'has_legal_basis', 'missing_reason', 'document_type_code', 'document_analysis', 'answer', 'citations', 'legal_basis_block_text', 'retry_plan', 'response_policy', '_meta']
+
+  [raw_result 전체]
+{
+  "success": true,
+  "success_transport": true,
+  "success_search": false,
+  "auto_search": false,
+  "analysis_success": false,
+  "has_legal_basis": false,
+  "missing_reason": "NO_SEARCH",
+  "document_type_code": null,
+  "document_analysis": null,
+  "answer": {
+    "risk_findings": []
+  },
+  "citations": [],
+  "legal_basis_block_text": "법적 근거 요약: 검색 미수행(NO_SEARCH).",
+  "retry_plan": null,
+  "response_policy": {
+    "must_include": [
+      "document_analysis",
+      "legal_basis_block_text",
+      "legal_basis_block",
+      "retry_plan"
+    ],
+    "preferred_order": [
+      "legal_basis_block_text",
+      "document_analysis"
+    ],
+    "if_has_legal_basis_false": "no_conclusions",
+    "when_api_error": "explain_api_error_and_request_retry",
+    "answer_format": "generic_dense_v1",
+    "instruction": "COMMON_CONTRACT_REVIEW_INSTRUCTION + GENERIC_CONTRACT_REVIEW_ADDON(비 labor)."
+  },
+  "_meta": {
+    "response_type": "document_issue",
+    "fields": [
+      "success_transport",
+      "success_search",
+      "auto_search",
+      "analysis_success",
+      "has_legal_basis",
+      "missing_reason",
+      "document_type_code",
+      "document_analysis",
+      "answer",
+      "citations"
+    ],
+    "parsing_hint": "results.document_analysis에 조항별 이슈와 근거 조회 힌트가 있습니다."
+  }
+}
+
+========================================================================
+  결과 요약
+========================================================================
+  총 케이스  : 27
+  응답 수신  : 27
+  연결 오류  : 0
+

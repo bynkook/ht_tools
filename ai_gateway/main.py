@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .routers import health_router, agent_chat_router, chat_router, image_router, doc_search_router, doc_upload_router
+from .services.mcp import GenericMcpHost, load_mcp_settings
 from .services.rate_limiter_v2 import rate_limiter
 
 # 환경 설정 및 Secrets 로드
@@ -184,6 +185,7 @@ async def lifespan(app: FastAPI):
         timeout=timeout,
         limits=limits,
     )
+    app.state.mcp_settings = load_mcp_settings(SECRETS)
     logger.info(
         "✅ HTTP Client initialized (limits: max=%s, keepalive=%s, expiry=%ss | timeout: connect=%ss, read=%ss, write=%ss, pool=%ss)",
         HTTPX_MAX_CONNECTIONS,
@@ -194,6 +196,40 @@ async def lifespan(app: FastAPI):
         HTTPX_TIMEOUT_WRITE_SECONDS,
         HTTPX_TIMEOUT_POOL_SECONDS,
     )
+    enabled_providers = [
+        f"{provider.provider_id}:{provider.transport}:{provider.base_url}"
+        for provider in app.state.mcp_settings.enabled_provider_configs()
+    ]
+    logger.info(
+        "✅ MCP settings initialized (test_mode=%s, verbose_json=%s, discovery_on_startup=%s, store_system_logs=%s, max_payload_chars=%s, visible_band_limit=%s, raw_bytes_limit=%s, redact_headers=%s, allow_remote_mcp=%s, providers=%s)",
+        app.state.mcp_settings.host.test_mode,
+        app.state.mcp_settings.host.test_mode_verbose_json,
+        app.state.mcp_settings.host.test_mode_discovery_on_startup,
+        app.state.mcp_settings.host.test_mode_store_system_logs,
+        app.state.mcp_settings.host.test_mode_max_payload_chars,
+        app.state.mcp_settings.host.test_mode_visible_band_limit,
+        app.state.mcp_settings.host.test_mode_raw_bytes_limit,
+        app.state.mcp_settings.host.test_mode_redact_headers,
+        app.state.mcp_settings.host.test_mode_allow_remote_mcp,
+        enabled_providers,
+    )
+    app.state.mcp_startup_capabilities = None
+    if (
+        app.state.mcp_settings.host.test_mode
+        and app.state.mcp_settings.host.test_mode_discovery_on_startup
+    ):
+        try:
+            app.state.mcp_startup_capabilities = await GenericMcpHost(
+                app.state.mcp_settings
+            ).discover_provider_capabilities()
+            logger.info(
+                "✅ MCP startup discovery completed: tools=%s resources=%s prompts=%s",
+                len(app.state.mcp_startup_capabilities.get("tools", [])),
+                len(app.state.mcp_startup_capabilities.get("resources", [])),
+                len(app.state.mcp_startup_capabilities.get("prompts", [])),
+            )
+        except Exception as startup_exc:
+            logger.warning("MCP startup discovery failed: %s", startup_exc)
 
     metrics_tasks = [
         asyncio.create_task(_metrics_log_loop(60)),

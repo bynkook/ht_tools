@@ -1,4 +1,4 @@
-import React, { useState, memo } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -6,6 +6,8 @@ import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { User, Bot, Copy, Check } from 'lucide-react';
+
+import SystemMessageBand from './SystemMessageBand';
 
 // 코드 블록을 별도 컴포넌트로 분리하여 스트리밍 중 Copy 버튼 상태 초기화 방지
 // react-markdown v9: pre 컴포넌트의 renderer로 사용 (블록 코드 전용)
@@ -81,7 +83,20 @@ const CodeBlock = memo(({ children, theme }) => {
  */
 const ChatBubble = memo(({ message, isStreaming }) => {
   const isUser = message.role === 'user';
-  const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  const [theme, setTheme] = useState(() =>
+    document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+  );
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setTheme(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   // SyntaxHighlighter의 className 속성이 rehype-sanitize 기본 스키마에서 제거되지 않도록 허용
   const sanitizeSchema = {
@@ -155,7 +170,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-500 underline hover:text-blue-600"
+                className="text-blue-400 underline hover:text-blue-300"
                 {...props}
               >
                 {children}
@@ -171,13 +186,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
 
   // System 메시지 (커맨드 히스토리 / 메모리 결과 표시용)
   if (message.role === 'system') {
-    return (
-      <div className="flex justify-center animate-fade-in-up my-3">
-        <div className="max-w-[85%] rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/70 px-4 py-3 text-xs text-[var(--text-secondary)]">
-          {renderMarkdown(message.content)}
-        </div>
-      </div>
-    );
+    return <SystemMessageBand message={message} />;
   }
 
   if (isUser) {
@@ -195,13 +204,13 @@ const ChatBubble = memo(({ message, isStreaming }) => {
 
   return (
     <div className="flex items-start gap-3 animate-fade-in-up">
-      <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-500 flex items-center justify-center shadow-md">
-        <Bot size={18} className="text-white" />
+      <div className="flex-shrink-0 w-9 h-9 rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-color)] flex items-center justify-center shadow-md">
+        <Bot size={18} className="text-[var(--text-secondary)]" />
       </div>
       <div className="max-w-[85%] flex-1 min-w-0">
         {/* RAG 출처 배지 */}
         {message.isRag && (
-          <div className="flex items-center gap-1 mb-1 text-xs text-cyan-600 dark:text-cyan-400">
+          <div className="flex items-center gap-1 mb-1 text-xs text-[var(--text-secondary)]">
             <span>📚</span>
             <span className="font-medium">문서 기반 답변</span>
             {message.ragCategory && (
@@ -213,7 +222,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
           {renderMarkdown(message.content)}
           {isStreaming && (
             <span className="inline-flex ml-1">
-              <span className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse" />
+              <span className="w-2 h-2 bg-[var(--text-secondary)] rounded-full animate-pulse" />
             </span>
           )}
         </div>

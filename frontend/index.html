@@ -5,6 +5,24 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HT Auto-Tools 2026</title>
+    <script>
+      (function() {
+        // FabriX Chat theme bootstrap — runs before app hydration to prevent FOUC
+        // dark mode는 /chat 경로에서만 적용. 다른 앱은 항상 light mode 유지.
+        // Storage key: 'fabrix-theme' | Values: 'light' | 'dark' | (absent = default light)
+        try {
+          var isChatRoute = window.location.pathname === '/chat' || window.location.pathname.startsWith('/chat/');
+          var stored = localStorage.getItem('fabrix-theme');
+          if (isChatRoute && stored === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (_) {
+          // Storage unavailable (private browsing, etc.) — default to light mode
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

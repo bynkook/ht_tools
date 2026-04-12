@@ -1,0 +1,123 @@
+{
+  "rule_ref": "internal_docs.default",
+  "provider_id": "internal_docs",
+  "description": "Default keyword activation rules for the internal docs provider.",
+  "rules": [
+    {
+      "id": "category_listing_keywords",
+      "intent_label": "category_listing",
+      "action": "list_categories_detail",
+      "description": "Category/listing keywords matched a documentation catalog request.",
+      "priority": 30,
+      "keyword_groups": {
+        "category_listing": [
+          "카테고리",
+          "category",
+          "문서 목록"
+        ]
+      },
+      "match": {
+        "any_of_groups": [
+          "category_listing"
+        ]
+      }
+    },
+    {
+      "id": "doc_read_full",
+      "intent_label": "doc_read_full",
+      "action": "read_doc",
+      "description": "Full document read: triggered when the user explicitly names a file (by extension) or expresses full-read intent ('전체', '전문', '읽어' etc.). Legal-domain keywords are NOT a trigger here — those belong to the lexguard provider.",
+      "priority": 70,
+      "keyword_groups": {
+        "doc_filename": [
+          ".md",
+          ".txt",
+          ".pdf",
+          ".docx",
+          ".hwp"
+        ],
+        "full_read_intent": [
+          "전체",
+          "전문",
+          "전체 내용",
+          "전문 읽",
+          "처음부터",
+          "끝까지",
+          "읽어줘",
+          "읽어 줘",
+          "전체를 읽",
+          "문서 전체",
+          "파일 전체"
+        ]
+      },
+      "match": {
+        "any_of_groups": [
+          "doc_filename",
+          "full_read_intent"
+        ]
+      },
+      "use_active_category": true
+    },
+    {
+      "id": "doc_search_target + search_action",
+      "intent_label": "doc_search",
+      "action": "search_docs_rag",
+      "description": "Document/category/folder target keywords and search-or-summary intent keywords matched the document search rule.",
+      "keyword_groups": {
+        "doc_target": [
+          "문서",
+          "폴더",
+          "디렉터리",
+          "자료",
+          "파일",
+          "조항",
+          "약관",
+          "규정",
+          "기준",
+          "본문"
+        ],
+        "search_action": [
+          "검색",
+          "찾",
+          "조회",
+          "확인",
+          "알려",
+          "보여",
+          "요약",
+          "정리",
+          "주요",
+          "핵심",
+          "최근",
+          "최신",
+          "요점",
+          "검토",
+          "분석",
+          "look up",
+          "search",
+          "find"
+        ],
+        "context_hint": [
+          "관련",
+          "내용",
+          "조항",
+          "항목",
+          "본문"
+        ]
+      },
+      "match": {
+        "all_of_groups": [
+          "search_action"
+        ],
+        "any_of_groups": [
+          "doc_target",
+          "context_hint"
+        ],
+        "active_category_any_of_groups": [
+          "context_hint"
+        ]
+      },
+      "use_active_category": true,
+      "match_provider_categories": true
+    }
+  ]
+}

@@ -24,15 +24,115 @@
     --bubble-user: #3b82f6;
     --bubble-assistant: #ffffff;
 
+    /* 주요 액션 버튼 (New Chat, Send) */
+    --btn-primary-bg: linear-gradient(to right, #06b6d4, #3b82f6);
+    --btn-primary-bg-hover: linear-gradient(to right, #0891b2, #2563eb);
+    --btn-primary-text: #ffffff;
+    --btn-primary-border: transparent;
+    --btn-primary-border-hover: transparent;
+
+    /* Stop 버튼 (생성 중단) — light: 소프트 레드 */
+    --btn-stop-bg: #fca5a5;
+    --btn-stop-bg-hover: #f87171;
+    --btn-stop-text: #7f1d1d;
+
+    /* 앱 아이콘 배지 (Sparkles 컨테이너) */
+    --icon-badge-bg: linear-gradient(to bottom right, #06b6d4, #3b82f6);
+    --icon-badge-border: transparent;
+    --icon-badge-text: #ffffff;
+
+    /* 입력창 테두리 */
+    --input-border-color: #e2e8f0;
+    --input-border-width: 1px;
+
     /* 그림자 */
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
   }
 
+  html.dark {
+    /* 다크 테마 토큰 오버라이드 — zinc/black 계열 (blue tint 없음) */
+    --bg-primary: #09090b;
+    --bg-secondary: #18181b;
+    --bg-tertiary: #27272a;
+
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-placeholder: #71717a;
+
+    --border-color: #3f3f46;
+
+    --accent-color: #ffffff;
+    --accent-hover: #e4e4e7;
+
+    --user-bubble-bg: #27272a;
+    --user-bubble-text: #e4e4e7;
+
+    --bubble-user: #3b82f6;
+    --bubble-assistant: #18181b;
+
+    /* 그림자 — 다크 모드에서 더 진하게 */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5);
+
+    /* 주요 액션 버튼 (New Chat, Send) — dark: black + zinc border */
+    --btn-primary-bg: #09090b;
+    --btn-primary-bg-hover: #18181b;
+    --btn-primary-text: #ffffff;
+    --btn-primary-border: #71717a;
+    --btn-primary-border-hover: #ffffff;
+
+    /* Stop 버튼 — dark: 소프트 레드 (더 어둡게) */
+    --btn-stop-bg: #7f1d1d;
+    --btn-stop-bg-hover: #991b1b;
+    --btn-stop-text: #fca5a5;
+
+    /* 앱 아이콘 배지 — dark: zinc 배경 */
+    --icon-badge-bg: #27272a;
+    --icon-badge-border: #3f3f46;
+    --icon-badge-text: #a1a1aa;
+
+    /* 입력창 테두리 — dark: soft white, 1px */
+    --input-border-color: rgba(255, 255, 255, 0.6);
+    --input-border-width: 1px;
+  }
+
   body {
     @apply bg-[var(--bg-primary)] text-[var(--text-primary)] antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* 공통 컴포넌트 */
+@layer components {
+  /* 주요 액션 버튼 — 테마별 스타일 중앙 집중 */
+  .btn-primary {
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-text);
+    border: 1px solid var(--btn-primary-border);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--btn-primary-bg-hover);
+    border-color: var(--btn-primary-border-hover);
+    opacity: 0.9;
+  }
+
+  /* 앱 아이콘 배지 — 테마별 스타일 중앙 집중 */
+  .icon-badge {
+    background: var(--icon-badge-bg);
+    border: 1px solid var(--icon-badge-border);
+    color: var(--icon-badge-text);
+  }
+
+  /* Stop 버튼 — 테마별 소프트 레드 */
+  .btn-stop {
+    background: var(--btn-stop-bg);
+    color: var(--btn-stop-text);
+  }
+  .btn-stop:hover {
+    background: var(--btn-stop-bg-hover);
   }
 }
 

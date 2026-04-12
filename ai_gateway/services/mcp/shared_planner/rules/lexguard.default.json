@@ -1,0 +1,208 @@
+{
+  "rule_ref": "lexguard.default",
+  "provider_id": "lexguard",
+  "description": "Default keyword activation rules for the lexguard legal QA provider. legal_qa_tool is the single entry point for all general legal questions. Specialized tools (law_article_tool, law_comparison_tool, document_issue_tool) only fire on highly specific query patterns.",
+  "rules": [
+    {
+      "id": "document_analysis",
+      "intent_label": "document_analysis",
+      "action": "document_issue_tool",
+      "description": "Fires only when the query contains both a contract/document noun AND an analysis-action verb. Requires both groups to match — prevents false positives from contract mentions without an analysis intent.",
+      "priority": 10,
+      "keyword_groups": {
+        "contract_doc": [
+          "계약서",
+          "표준계약",
+          "용역계약",
+          "도급계약",
+          "약관",
+          "협약서",
+          "각서",
+          "합의서",
+          "근로계약서",
+          "임대차계약서",
+          "하도급계약",
+          "프리랜서계약",
+          "현장설명서"
+        ],
+        "analysis_action": [
+          "분석",
+          "검토",
+          "독소조항",
+          "불공정조항",
+          "부당특약",
+          "위험조항",
+          "법령위반조항"
+        ]
+      },
+      "match": {
+        "all_of_groups": [
+          "analysis_action"
+        ],
+        "any_of_groups": [
+          "contract_doc"
+        ]
+      }
+    },
+    {
+      "id": "law_article_lookup",
+      "intent_label": "law_article_lookup",
+      "action": "law_article_tool",
+      "description": "Fires only when the query contains both a known law name AND an explicit article-number pattern (제N조). Requires both groups — prevents firing on vague law references without a specific article.",
+      "priority": 20,
+      "keyword_groups": {
+        "article_pattern": [
+          "regex:제\\d+조의\\d+",
+          "regex:제\\d+조"
+        ],
+        "law_name": [
+          "근로기준법",
+          "민법",
+          "형법",
+          "상법",
+          "헌법",
+          "행정기본법",
+          "행정절차법",
+          "개인정보보호법",
+          "저작권법",
+          "특허법",
+          "국민건강보험법",
+          "고용보험법",
+          "산업재해보상보험법",
+          "국민연금법",
+          "소득세법",
+          "부가가치세법",
+          "법인세법",
+          "주택임대차보호법",
+          "상가건물임대차보호법",
+          "도로교통법",
+          "건축법",
+          "국토계획법",
+          "공정거래법",
+          "하도급법",
+          "소비자기본법",
+          "전자상거래법",
+          "정보통신망법",
+          "전기통신사업법",
+          "의료법",
+          "약사법",
+          "식품위생법",
+          "학교폭력예방법",
+          "아동복지법",
+          "장애인복지법",
+          "국가공무원법",
+          "지방공무원법"
+        ]
+      },
+      "match": {
+        "all_of_groups": [
+          "article_pattern"
+        ],
+        "any_of_groups": [
+          "law_name"
+        ]
+      }
+    },
+    {
+      "id": "law_comparison",
+      "intent_label": "law_comparison",
+      "action": "law_comparison_tool",
+      "description": "Fires only when the query contains both a comparison-type keyword (신구법/연혁/3단비교) AND a known law name. Requires both groups — prevents firing on vague references to legal change without identifying a specific law.",
+      "priority": 30,
+      "keyword_groups": {
+        "comparison_type": [
+          "신구법",
+          "신구조문",
+          "연혁",
+          "3단비교",
+          "삼단비교",
+          "개정연혁",
+          "법령연혁",
+          "개정전후",
+          "신·구법"
+        ],
+        "law_name": [
+          "근로기준법",
+          "민법",
+          "형법",
+          "상법",
+          "헌법",
+          "행정기본법",
+          "행정절차법",
+          "개인정보보호법",
+          "저작권법",
+          "특허법",
+          "국민건강보험법",
+          "고용보험법",
+          "산업재해보상보험법",
+          "국민연금법",
+          "소득세법",
+          "부가가치세법",
+          "법인세법",
+          "주택임대차보호법",
+          "상가건물임대차보호법",
+          "도로교통법",
+          "건축법",
+          "국토계획법",
+          "공정거래법",
+          "하도급법",
+          "소비자기본법",
+          "전자상거래법",
+          "정보통신망법",
+          "전기통신사업법",
+          "의료법",
+          "약사법",
+          "식품위생법",
+          "학교폭력예방법",
+          "아동복지법",
+          "장애인복지법",
+          "국가공무원법",
+          "지방공무원법"
+        ]
+      },
+      "match": {
+        "all_of_groups": [
+          "comparison_type"
+        ],
+        "any_of_groups": [
+          "law_name"
+        ]
+      }
+    },
+    {
+      "id": "legal_qa_primary",
+      "intent_label": "legal_qa",
+      "action": "legal_qa_tool",
+      "description": "Broad catch-all for all general legal questions. legal_qa_tool is the single entry point performing parallel multi-source search (statutes, precedents, interpretations, committee decisions). Fires on any query containing legal terminology — intentionally wide to capture all questions not claimed by more specific rules above.",
+      "priority": 100,
+      "keyword_groups": {
+        "legal_core": [
+          "법률", "법령", "법", "조문", "조항", "시행령", "시행규칙", "법조항",
+          "판례", "판결", "선고", "대법원", "고등법원", "지방법원", "헌법재판소", "헌재",
+          "해고", "부당해고", "정리해고", "임금", "퇴직금", "체불", "근로", "근로자",
+          "근로기준법", "산재", "프리랜서",
+          "손해배상", "계약위반", "위약금", "재산분할", "상속", "양육권", "위자료", "불법행위",
+          "행정소송", "행정처분", "행정심판", "과태료", "허가",
+          "세금", "세무", "부동산", "임대차", "전세", "소비자", "금융", "보험",
+          "저작권", "특허", "개인정보",
+          "법령해석", "유권해석", "해석례", "법제처",
+          "조례", "자치법규", "훈령", "예규", "고시",
+          "헌법소원", "위헌", "합헌",
+          "위원회", "결정", "심판", "재결",
+          "법적", "위법", "합법", "불법", "권리", "의무", "책임"
+        ],
+        "question_intent": [
+          "알려", "찾아", "검색", "조회", "확인", "설명", "해석", "적용",
+          "어떻게", "어떤", "무엇", "뭐야", "뭔가", "있나요", "되나요", "할 수 있",
+          "해당", "위반", "처벌", "제재", "효력", "유효", "무효"
+        ]
+      },
+      "match": {
+        "any_of_groups": [
+          "legal_core",
+          "question_intent"
+        ]
+      }
+    }
+  ]
+}
