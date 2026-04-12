@@ -29,6 +29,7 @@ GEMINI.md
 .opencode
 .ruff_cache/
 .sisyphus/
+.playwright-mcp/
 
 # GitHub App credentials
 gha-creds-*.json

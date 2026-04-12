@@ -118,23 +118,24 @@ const InputBox = ({
 
   return (
     <div className="w-full">
-      <div
-        ref={composerRef}
-        className="flex flex-col bg-white border border-[var(--border-color)] rounded-2xl p-1 shadow-md hover:shadow-md focus-within:shadow-md transition-all w-full"
-      >
-        {/* Text Input */}
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => { setText(e.target.value); historyIdxRef.current = -1; if (isTemplateActive) setIsTemplateActive(false); }}
-          onKeyDown={handleKeyDown}
-          {...inputFocusProps}
-          placeholder="Message FabriX Chat..."
-          rows={1}
-          readOnly={isLoading}
-          aria-busy={isLoading}
-          className="bg-transparent text-sm text-[var(--text-primary)] placeholder:text-gray-400 px-4 py-3 resize-none focus:outline-none w-full"
-        />
+        <div
+          ref={composerRef}
+          className="flex flex-col bg-[var(--bg-primary)] rounded-2xl p-1 shadow-md hover:shadow-md focus-within:shadow-md transition-all w-full"
+          style={{ border: 'var(--input-border-width) solid var(--input-border-color)' }}
+        >
+          {/* Text Input */}
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => { setText(e.target.value); historyIdxRef.current = -1; if (isTemplateActive) setIsTemplateActive(false); }}
+            onKeyDown={handleKeyDown}
+            {...inputFocusProps}
+            placeholder="Message FabriX Chat..."
+            rows={1}
+            readOnly={isLoading}
+            aria-busy={isLoading}
+            className="bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] px-4 py-3 resize-none focus:outline-none w-full"
+          />
 
         {/* Toolbar row: Template (left) + Send/Stop (right) */}
         <div className="flex items-center justify-between px-2 pt-1 pb-2">
@@ -150,7 +151,7 @@ const InputBox = ({
             <button
               onMouseDown={keepFocusOnPointerDown}
               onClick={onStop}
-              className="flex items-center justify-center w-10 h-10 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all hover:scale-105 active:scale-95"
+              className="flex items-center justify-center w-10 h-10 btn-stop rounded-lg transition-all hover:scale-105 active:scale-95"
               title="Stop generating"
             >
               <StopCircle size={18} />
@@ -160,7 +161,7 @@ const InputBox = ({
               onMouseDown={keepFocusOnPointerDown}
               onClick={handleSend}
               disabled={!text.trim() || isBusy}
-              className="flex items-center justify-center w-10 h-10 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-lg hover:scale-105 active:scale-95 transition-all"
+              className="flex items-center justify-center w-10 h-10 btn-primary rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:scale-105 active:scale-95 transition-all"
               title="Send message"
             >
               <Send size={18} />

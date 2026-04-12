@@ -540,7 +540,7 @@ const ChatPage = () => {
         <div className="w-[90%] mx-auto flex flex-col gap-6">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[50vh] text-center animate-fade-in-up">
-              <div className="w-16 h-16 bg-gradient-to-tr from-cyan-500 to-blue-500 rounded-2xl flex items-center justify-center shadow-lg mb-6 text-white">
+              <div className="w-16 h-16 icon-badge rounded-2xl flex items-center justify-center shadow-lg mb-6">
                 <Sparkles size={32} />
               </div>
               <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">How can I help you today?</h2>

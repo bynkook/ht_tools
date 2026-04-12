@@ -2,10 +2,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   ChevronLeft, ChevronRight, Plus, MessageSquare, Trash2, 
-  Home, Sparkles, Cpu, LogOut, ChevronDown, Check // 수정함 (모델선택창 수정)
+  Home, Sparkles, Cpu, LogOut, ChevronDown, Check, Moon, Sun
 } from 'lucide-react';
 import { modelApi, modelChatApi, authApi } from '../../../api/djangoApi';
 import useChatRuntimeConfig from '../hooks/useChatRuntimeConfig';
+import { getTheme, toggleTheme } from '../../../lib/theme';
 
 /**
  * Sidebar component for Model Chat (FabriX Chat)
@@ -25,6 +26,12 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [error, setError] = useState(null);
   const { runtimeConfig, hasLoadedRuntimeConfig } = useChatRuntimeConfig();
+  const [currentTheme, setCurrentTheme] = useState(() => getTheme());
+
+  const handleThemeToggle = () => {
+    toggleTheme();
+    setCurrentTheme(getTheme());
+  };
 
   // 모델목록 출력오류 방지
   const normalizeSessions = (data) => {
@@ -202,24 +209,31 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
         >
           <ChevronRight size={20} />
         </button>
-        <button
-          onClick={() => navigate('/')}
-          className="p-2 rounded-lg hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors"
-          title="Home"
-        >
-          <Home size={20} />
-        </button>
-      </div>
-    );
-  }
+      <button
+        onClick={() => navigate('/')}
+        className="p-2 rounded-lg hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors"
+        title="Home"
+      >
+        <Home size={20} />
+      </button>
+      <button
+        onClick={handleThemeToggle}
+        className="p-2 rounded-lg hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors mt-2"
+        title={currentTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {currentTheme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+      </button>
+    </div>
+  );
+}
 
   return (
     <div className="fixed left-0 top-0 h-full w-64 bg-[var(--bg-secondary)] border-r border-[var(--border-color)] flex flex-col z-40">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-tr from-cyan-500 to-blue-500 rounded-lg flex items-center justify-center">
-            <Sparkles size={16} className="text-white" />
+          <div className="w-8 h-8 icon-badge rounded-lg flex items-center justify-center">
+            <Sparkles size={16} />
           </div>
           <span className="font-semibold text-[var(--text-primary)]">FabriX Chat</span>
         </div>
@@ -230,6 +244,13 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
             title="Home"
           >
             <Home size={16} />
+          </button>
+          <button
+            onClick={handleThemeToggle}
+            className="p-1.5 rounded-md hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors"
+            title={currentTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {currentTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
           <button
             onClick={() => setIsCollapsed(true)}
@@ -250,15 +271,15 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
             <button
               onClick={() => !isLoadingModels && models.length > 0 && setIsModelMenuOpen(!isModelMenuOpen)}
               disabled={isLoadingModels || models.length === 0}
-              className="flex items-center justify-between gap-2.5 w-full px-3 py-2 bg-white border border-[var(--border-color)] rounded-xl hover:border-blue-300 hover:shadow-md transition-all text-left group disabled:opacity-60 disabled:cursor-not-allowed"
+              className="flex items-center justify-between gap-2.5 w-full px-3 py-2 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl hover:border-[var(--text-secondary)] hover:shadow-md transition-all text-left group disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <div className="flex items-center gap-2.5 overflow-hidden">
-                <div className="p-1.5 bg-cyan-50 text-cyan-600 rounded-lg group-hover:bg-cyan-100 shrink-0">
+                <div className="p-1.5 bg-[var(--bg-tertiary)] text-[var(--text-secondary)] rounded-lg group-hover:bg-[var(--border-color)] shrink-0">
                   <Cpu size={12} />
                 </div>
                 <div className="overflow-hidden">
                   <p className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-wider">Model</p>
-                  <p className="font-semibold text-[12px] text-[var(--text-primary)] text-gray-700 truncate">
+                  <p className="font-semibold text-[12px] text-[var(--text-primary)] truncate">
                     {isLoadingModels
                       ? 'Loading...'
                       : selectedModel
@@ -269,13 +290,13 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
                   </p>
                 </div>
               </div>
-              <ChevronDown size={16} className={`text-gray-400 transition-transform ${isModelMenuOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown size={16} className={`text-[var(--text-secondary)] transition-transform ${isModelMenuOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isModelMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsModelMenuOpen(false)} />
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-xl z-50 max-h-64 overflow-y-auto custom-scrollbar overflow-x-hidden py-2">
+                <div className="absolute top-full left-0 right-0 mt-2 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl shadow-xl z-50 max-h-64 overflow-y-auto custom-scrollbar overflow-x-hidden py-2">
                   {models.length > 0 ? (
                     models.map((model) => {
                       const isSelected = selectedModelId === model.id;
@@ -283,20 +304,20 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
                         <button
                           key={model.id}
                           onClick={() => handleModelSelect(model.id)}
-                          className={`flex items-center gap-2.5 w-full px-3 py-2 hover:bg-cyan-50 transition-colors text-left ${isSelected ? 'bg-cyan-50' : ''}`}
+                          className={`flex items-center gap-2.5 w-full px-3 py-2 hover:bg-[var(--bg-tertiary)] transition-colors text-left ${isSelected ? 'bg-[var(--bg-tertiary)]' : ''}`}
                         >
                           <div className="flex-1 overflow-hidden">
-                            <p className={`font-semibold text-[12px] truncate ${isSelected ? 'text-cyan-700' : 'text-gray-700'}`}>
+                            <p className={`font-semibold text-[12px] truncate ${isSelected ? 'text-[var(--accent-color)]' : 'text-[var(--text-primary)]'}`}>
                               {getModelDisplayName(model)}
                             </p>
-                            <p className="text-[10px] text-gray-400 truncate tracking-tight">{model.id}</p>
+                            <p className="text-[10px] text-[var(--text-secondary)] truncate tracking-tight">{model.id}</p>
                           </div>
-                          {isSelected && <Check size={16} className="text-cyan-600 shrink-0" />}
+                          {isSelected && <Check size={16} className="text-[var(--accent-color)] shrink-0" />}
                         </button>
                       );
                     })
                   ) : (
-                    <div className="px-4 py-6 text-center text-gray-400">
+                    <div className="px-4 py-6 text-center text-[var(--text-secondary)]">
                       <p className="text-sm">No models available</p>
                     </div>
                   )}
@@ -314,7 +335,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
       <div className="px-3 py-3">
         <button
           onClick={handleNewChat}
-          className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm"
+          className="w-full flex items-center justify-center gap-2 py-2.5 btn-primary rounded-lg transition-all font-medium text-sm"
         >
           <Plus size={18} />
           New Chat
@@ -328,11 +349,11 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
         </div>
         
         {isLoadingSessions ? (
-          <div className="p-4 text-center text-gray-400 text-xs animate-pulse">
+          <div className="p-4 text-center text-[var(--text-secondary)] text-xs animate-pulse">
             Loading history...
           </div>
         ) : sessions.length === 0 ? (
-          <div className="p-4 text-center text-gray-400 text-xs">
+          <div className="p-4 text-center text-[var(--text-secondary)] text-xs">
             No history yet
           </div>
         ) : (
@@ -343,17 +364,17 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
               className={`
                 group relative flex items-center gap-3 px-4 py-1.5 rounded-xl cursor-pointer transition-all
                 ${currentSessionId === String(session.id)
-                  ? 'bg-white shadow-sm border border-blue-100 text-blue-500 font-medium'
-                  : 'text-[var(--text-secondary)] hover:bg-white/50 hover:text-[var(--text-primary)]'
+                  ? 'bg-[var(--bg-primary)] shadow-sm border border-[var(--border-color)] text-[var(--accent-color)] font-medium'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/60 hover:text-[var(--text-primary)]'
                 }
               `}
             >
-              <MessageSquare size={12} className={`${currentSessionId === String(session.id) ? 'text-blue-500' : 'text-gray-400'} shrink-0`} />
+              <MessageSquare size={12} className={`${currentSessionId === String(session.id) ? 'text-[var(--accent-color)]' : 'text-[var(--text-secondary)]'} shrink-0`} />
               <span className="text-xs truncate pr-6">{session.title || "New Conversation"}</span>
               
               <button
                 onClick={(e) => handleDeleteSession(session.id, e)}
-                className="absolute right-2 opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                className="absolute right-2 opacity-0 group-hover:opacity-100 p-1.5 text-[var(--text-secondary)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
                 title="Delete"
               >
                 <Trash2 size={14} />
@@ -367,7 +388,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
       <div className="p-4 bg-[var(--bg-secondary)] mt-auto shrink-0">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-500 flex items-center justify-center text-white font-bold shadow-sm shrink-0">
+            <div className="w-10 h-10 rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-color)] flex items-center justify-center text-[var(--text-primary)] font-bold shadow-sm shrink-0">
               {(sessionStorage.getItem('username') || 'U').charAt(0).toUpperCase()}
             </div>
             <div className="overflow-hidden">
@@ -394,7 +415,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
                 }
               }
             }}
-            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+            className="p-2 text-[var(--text-secondary)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
             title="Log out"
           >
             <LogOut size={18} />
