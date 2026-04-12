@@ -592,3 +592,68 @@ def test_host_read_doc_to_document_issue_tool_chaining_regression():
 
     issue_call = next(c for c in call_log if c["step"] == "document_issue_tool")
     assert issue_call["arguments"].get("document_text") == "전체 계약서 전문"
+
+
+def test_host_read_doc_result_key_normalization():
+    """fastmcp structured_content로 {"result": "..."} 형태로 반환될 때도 체이닝이 정상 동작해야 한다.
+
+    실제 fastmcp 서버는 read_doc 응답을 structured_content {"result": "..."} 형태로 반환한다.
+    이 경우 normalize_context_result가 "result" → "content" 로 정규화해야 체이닝이 성공한다.
+    """
+    host = _build_host()
+
+    from services.mcp.shared_planner.models import PlannerDecisionProvenance
+
+    read_plan = PlannerToolPlan(
+        provider="internal_docs",
+        action="read_doc",
+        params={"filename": "표준계약서.md"},
+        provenance=PlannerDecisionProvenance(
+            decision_source="keyword_rule",
+            matched_rule="doc_read_full",
+            normalized_query="표준계약서.md 읽어줘",
+            provider_candidates=("internal_docs.read_doc",),
+            selected_provider="internal_docs",
+            selected_action="read_doc",
+        ),
+    )
+
+    # fastmcp server returns structured_content {"result": "..."} — not "content"
+    read_raw_result_key = {"result": "전체 계약서 전문 (result 키)"}
+    issue_raw = {"issues": []}
+    call_log: list[dict] = []
+
+    async def fake_execute_tool_action(self, *, action, arguments, provider_id=None):
+        call_log.append({"step": action, "arguments": dict(arguments)})
+        if action == "read_doc":
+            return read_raw_result_key
+        if action == "document_issue_tool":
+            return issue_raw
+        raise AssertionError(f"Unexpected action: {action}")
+
+    fake_decision = PlannerDecision(
+        route="catalog_match",
+        clean_query="표준계약서.md 부당특약 검토",
+        plans=(read_plan, _make_issue_plan()),
+    )
+
+    mock_planner = MagicMock()
+    mock_planner.plan = MagicMock(return_value=fake_decision)
+    host._planner = mock_planner
+
+    with (
+        patch.object(GenericMcpHost, "validate_planner_decision", new=AsyncMock()),
+        patch.object(GenericMcpHost, "execute_tool_action", fake_execute_tool_action),
+        patch(
+            "services.mcp.host.require_provider_manifest", return_value=_fake_manifest()
+        ),
+    ):
+        asyncio.run(host.build_chat_resolution(user_text="표준계약서.md 부당특약 검토"))
+
+    issue_call = next(c for c in call_log if c["step"] == "document_issue_tool")
+    assert (
+        issue_call["arguments"].get("document_text") == "전체 계약서 전문 (result 키)"
+    ), (
+        "read_doc의 'result' 키가 document_text로 체이닝되지 않음 — "
+        f"실제 arguments: {issue_call['arguments']}"
+    )

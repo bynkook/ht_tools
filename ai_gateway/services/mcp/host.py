@@ -179,11 +179,17 @@ def normalize_context_result(
     # system_prompt is intentionally None — the content is consumed by chaining, not injected
     # into the chat context directly.
     if action == "read_doc":
-        # tool_result_to_dict stores plain-text tool results as {"raw_text": "..."}
-        # because the MCP server returns a bare string (not JSON).
-        # extract_document_text_from_result expects a "content" key, so normalize here.
-        if "content" not in raw_result_dict and "raw_text" in raw_result_dict:
-            raw_result_dict = {"content": raw_result_dict["raw_text"]}
+        # Normalize read_doc result so extract_document_text_from_result always finds
+        # a "content" key for downstream chaining (document_issue_tool).
+        #
+        # The fastmcp server may return the document text under different keys:
+        #   - {"raw_text": "..."}  — bare string result (no JSON), stored by tool_result_to_dict
+        #   - {"result": "..."}   — structured_content response from fastmcp server
+        # Both must be normalized to {"content": "..."}.
+        if "content" not in raw_result_dict:
+            doc_text = raw_result_dict.get("raw_text") or raw_result_dict.get("result")
+            if doc_text and isinstance(doc_text, str):
+                raw_result_dict = {"content": doc_text}
         return {
             "action": action,
             "arguments": resolved_arguments,
