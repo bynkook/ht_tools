@@ -9,6 +9,7 @@ from typing import AsyncIterator
 from ..config import McpEventPolicy
 from ..context_merge import merge_system_prompts
 from ..event_emitter import SystemEventEmitter
+from ..host import render_context_result_system_prompt
 from .base import BaseChatRuntime, ChatRuntimeInput
 from .upstream import FabrixUpstreamClient
 
@@ -43,6 +44,11 @@ class NormalChatRuntime(BaseChatRuntime):
             system_prompt = merge_system_prompts(
                 system_prompt, resolution.system_prompt
             )
+            for context_result in getattr(resolution, "context_results", ()):
+                rendered_prompt = render_context_result_system_prompt(context_result)
+                if rendered_prompt == context_result.get("system_prompt"):
+                    continue
+                system_prompt = merge_system_prompts(system_prompt, rendered_prompt)
 
         upstream = await self._upstream_client.stream_chat(
             model_ids=runtime_input.model_ids,

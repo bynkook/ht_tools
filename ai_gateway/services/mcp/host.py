@@ -25,8 +25,8 @@ from .mcp_plan_executor import McpPlanExecutor
 from .providers import get_provider_manifest, require_provider_manifest
 from .rag_context import (
     LEXGUARD_LEGAL_ACTIONS,
-    build_legal_context_system_prompt,
     build_rag_response,
+    render_legal_context_system_prompt,
 )
 from .registry import connect_provider
 from .result_normalizer import tool_result_to_dict
@@ -44,6 +44,7 @@ class McpChatResolution:
     route: str
     system_prompt: str | None
     missing_mentions: list[str]
+    context_results: tuple[dict[str, Any], ...] = ()
     decision: PlannerDecision | None = None
     # True when MCP actually contributed context (route != "chat_only" and system_prompt produced).
     # Used by NormalChatRuntime to emit a single "MCP activated" system event on success.
@@ -64,6 +65,27 @@ def _context_fragment_type(context_result: dict[str, Any]) -> str:
     if context_result.get("system_prompt"):
         return "system_prompt"
     return "tool_result"
+
+
+def render_context_result_system_prompt(
+    context_result: dict[str, Any],
+    *,
+    test_mode: bool = False,
+) -> str | None:
+    system_prompt = context_result.get("system_prompt")
+    if system_prompt:
+        return str(system_prompt)
+
+    action = context_result.get("action")
+    if action in LEXGUARD_LEGAL_ACTIONS:
+        structured_result = context_result.get("structured_result")
+        if isinstance(structured_result, dict):
+            return render_legal_context_system_prompt(
+                structured_result,
+                test_mode=test_mode,
+            )
+
+    return None
 
 
 def _with_category(items: list[dict[str, Any]], category: str) -> list[dict[str, Any]]:
@@ -140,18 +162,17 @@ def normalize_context_result(
 
     raw_result_dict = _coerce_result_dict(raw_result)
 
-    # lexguard legal tools: convert structured result into a system_prompt string
+    # lexguard legal tools: preserve structured results and defer prompt rendering
+    # until the final normal-mode LLM boundary.
     if action in LEXGUARD_LEGAL_ACTIONS:
-        system_prompt = build_legal_context_system_prompt(
-            action, raw_result_dict, test_mode=test_mode
-        )
         return {
             "action": action,
             "arguments": resolved_arguments,
             "query": resolved_arguments.get("query"),
             "category": resolved_arguments.get("category"),
             "raw_result": raw_result_dict,
-            "system_prompt": system_prompt,
+            "system_prompt": None,
+            "structured_result": raw_result_dict,
         }
 
     # read_doc: wrap full content for downstream chaining (document_issue_tool).
@@ -166,6 +187,7 @@ def normalize_context_result(
             "filename": resolved_arguments.get("filename"),
             "raw_result": raw_result_dict,
             "system_prompt": None,
+            "structured_result": raw_result_dict,
         }
 
     return {
@@ -175,6 +197,7 @@ def normalize_context_result(
         "category": resolved_arguments.get("category"),
         "raw_result": raw_result_dict,
         "system_prompt": raw_result_dict.get("system_prompt"),
+        "structured_result": raw_result_dict,
     }
 
 
@@ -196,6 +219,7 @@ def build_context_debug_payload(
                 "files": context_result.get("files", []),
                 "snippets": context_result.get("snippets", []),
                 "system_prompt": context_result.get("system_prompt"),
+                "structured_result": context_result.get("structured_result"),
             }
         )
         final_system_prompt = merge_system_prompts(
@@ -810,6 +834,7 @@ class GenericMcpHost:
             return McpChatResolution(
                 route="chat_only",
                 system_prompt=None,
+                context_results=(),
                 missing_mentions=[],
                 decision=decision,
             )
@@ -863,6 +888,7 @@ class GenericMcpHost:
             return McpChatResolution(
                 route="manual_mentions",
                 system_prompt=system_prompt,
+                context_results=(),
                 missing_mentions=missing_mentions,
                 decision=decision,
                 activated=bool(system_prompt),
@@ -872,6 +898,7 @@ class GenericMcpHost:
             return McpChatResolution(
                 route="chat_only",
                 system_prompt=None,
+                context_results=(),
                 missing_mentions=[],
                 decision=decision,
             )
@@ -885,9 +912,14 @@ class GenericMcpHost:
         return McpChatResolution(
             route=decision.route,
             system_prompt=execution_result.system_prompt,
+            context_results=execution_result.context_results,
             missing_mentions=[],
             decision=decision,
-            activated=bool(execution_result.system_prompt),
+            activated=bool(execution_result.system_prompt)
+            or any(
+                bool(render_context_result_system_prompt(context_result))
+                for context_result in execution_result.context_results
+            ),
         )
 
     async def execute_manual_command(
@@ -937,4 +969,5 @@ __all__ = [
     "McpChatResolution",
     "build_context_debug_payload",
     "normalize_context_result",
+    "render_context_result_system_prompt",
 ]

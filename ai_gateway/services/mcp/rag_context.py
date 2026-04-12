@@ -110,6 +110,7 @@ def build_rag_response(
             "category": category,
             "system_prompt": no_result_prompt,
             "retrieval_meta": data.get("retrieval_meta"),
+            "structured_result": data,
         }
 
     category_label = f" ({category})" if category else " (전체)"
@@ -174,16 +175,16 @@ def build_rag_response(
         "category": category,
         "system_prompt": system_prompt,
         "retrieval_meta": data.get("retrieval_meta"),
+        "structured_result": data,
     }
 
 
-def build_legal_context_system_prompt(
-    action: str,
+def render_legal_context_system_prompt(
     raw_result: dict[str, Any],
     *,
     test_mode: bool = False,
 ) -> str | None:
-    """Convert a lexguard tool result dict into a system prompt string.
+    """Render a lexguard tool result dict into a system prompt string.
 
     Design contract (normal mode):
     - Transport/API failures  → raw_result contains "error_code" field → return None
@@ -231,6 +232,17 @@ def build_legal_context_system_prompt(
     return f"=== {section_header} ===\n\n{raw_json}\n\n===================="
 
 
+def build_legal_context_system_prompt(
+    action: str,
+    raw_result: dict[str, Any],
+    *,
+    test_mode: bool = False,
+) -> str | None:
+    """Backward-compatible wrapper for legal context rendering."""
+    _ = action
+    return render_legal_context_system_prompt(raw_result, test_mode=test_mode)
+
+
 # Lexguard action names that produce legal context (not RAG doc search)
 LEXGUARD_LEGAL_ACTIONS = frozenset(
     [
@@ -254,4 +266,5 @@ __all__ = [
     "build_legal_context_system_prompt",
     "build_rag_response",
     "LEXGUARD_LEGAL_ACTIONS",
+    "render_legal_context_system_prompt",
 ]

@@ -37,6 +37,7 @@ class ExecutorHooks:
 class PlanExecutionResult:
     results: list[dict[str, Any]]
     system_prompt: str | None
+    context_results: tuple[dict[str, Any], ...]
     plans: list[PlannerToolPlan]
 
 
@@ -181,6 +182,7 @@ class McpPlanExecutor:
             return PlanExecutionResult(
                 results=results,
                 system_prompt=system_prompt,
+                context_results=tuple(context_results),
                 plans=list(plans_list),
             )
         except Exception as error:
