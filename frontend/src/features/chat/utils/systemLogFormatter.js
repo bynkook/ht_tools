@@ -27,6 +27,7 @@ export const getSystemMessageMetaLine = (message) => {
     metadata.partialFailure ? 'partial failure' : null,
     metadata.requestId,
     metadata.suppressedCount > 0 ? `suppressed ${metadata.suppressedCount}` : null,
+    metadata.rawTruncated ? `raw truncated (${metadata.rawOriginalBytes}→${metadata.rawTruncatedBytes} bytes)` : null,
     metadata.rawSuppressed ? 'raw suppressed' : null,
   ].filter(Boolean);
   return parts.join(' · ');

@@ -1,3 +1,5 @@
+# pyright: reportImplicitRelativeImport=false
+
 from pathlib import Path
 import sys
 
@@ -45,7 +47,9 @@ def test_context_aggregated_payload_contains_final_system_prompt():
         {
             "query": "표준계약서에서 위약금 관련 내용을 검색",
             "category": "test문서",
-            "files": [{"filename": "standard-contract.md", "snippet": "위약금 관련 조항"}],
+            "files": [
+                {"filename": "standard-contract.md", "snippet": "위약금 관련 조항"}
+            ],
             "snippets": [
                 {
                     "filename": "standard-contract.md",
@@ -158,3 +162,164 @@ def test_system_event_guard_marks_raw_suppression_with_multi_provider_context():
     assert flushed[1].provider_id == "internal_docs"
     assert flushed[1].provider_display_name == "Internal Docs"
     assert flushed[1].tool == "search_docs_rag"
+
+
+def test_system_event_guard_truncates_raw_when_over_budget_but_remaining_sufficient():
+    policy = McpEventPolicy(
+        verbose_json=True,
+        redact_headers=True,
+        max_payload_chars=4000,
+        persist_system_logs=True,
+        visible_band_limit=20,
+        raw_bytes_limit=200,
+    )
+    emitter = SystemEventEmitter(policy, channel="mcp_test")
+    guard = SystemEventGuard(policy, request_id="turn-20260408-000000-000003")
+
+    first_event = emitter.info(
+        phase="tool_call",
+        title="Initial tool call",
+        content="Priming the raw budget.",
+        request_id="turn-20260408-000000-000003",
+        provider="internal_docs",
+        provider_display_name="Internal Docs",
+        tool="search_docs_rag",
+        raw={"payload": "a" * 5},
+    )
+    second_event = emitter.info(
+        phase="tool_result",
+        title="Large tool result",
+        content="This payload should be truncated.",
+        request_id="turn-20260408-000000-000003",
+        provider="internal_docs",
+        provider_display_name="Internal Docs",
+        tool="search_docs_rag",
+        raw={"payload": "b" * 300},
+    )
+
+    first_emitted = guard.accept(first_event)
+    second_emitted = guard.accept(second_event)
+    flushed = guard.flush()
+
+    assert first_emitted == []
+    assert len(second_emitted) == 1
+    assert second_emitted[0].raw == {"payload": "a" * 5}
+    assert len(flushed) == 1
+    assert flushed[0].meta["rawTruncated"] is True
+    assert flushed[0].meta["rawOriginalBytes"] > flushed[0].meta["rawTruncatedBytes"]
+    assert flushed[0].raw is not None
+
+
+def test_system_event_guard_fully_suppresses_when_remaining_below_min_threshold():
+    policy = McpEventPolicy(
+        verbose_json=True,
+        redact_headers=True,
+        max_payload_chars=4000,
+        persist_system_logs=True,
+        visible_band_limit=20,
+        raw_bytes_limit=60,
+    )
+    emitter = SystemEventEmitter(policy, channel="mcp_test")
+    guard = SystemEventGuard(policy, request_id="turn-20260408-000000-000004")
+
+    emitted = guard.accept(
+        emitter.info(
+            phase="tool_result",
+            title="Budget exhausted immediately",
+            content="This should be suppressed.",
+            request_id="turn-20260408-000000-000004",
+            provider="internal_docs",
+            provider_display_name="Internal Docs",
+            tool="search_docs_rag",
+            raw={"payload": "c" * 100},
+        )
+    )
+    flushed = guard.flush()
+
+    assert emitted == []
+    assert len(flushed) == 2
+    assert flushed[0].meta["rawSuppressed"] is True
+    assert flushed[0].raw is None
+    assert flushed[1].meta["rawSuppressedCount"] == 1
+
+
+def test_system_event_guard_truncated_raw_is_json_serializable():
+    policy = McpEventPolicy(
+        verbose_json=True,
+        redact_headers=True,
+        max_payload_chars=4000,
+        persist_system_logs=True,
+        visible_band_limit=20,
+        raw_bytes_limit=200,
+    )
+    emitter = SystemEventEmitter(policy, channel="mcp_test")
+    guard = SystemEventGuard(policy, request_id="turn-20260408-000000-000005")
+
+    first_emitted = guard.accept(
+        emitter.info(
+            phase="tool_call",
+            title="Budget priming",
+            content="Small payload.",
+            request_id="turn-20260408-000000-000005",
+            provider="internal_docs",
+            provider_display_name="Internal Docs",
+            tool="search_docs_rag",
+            raw={"payload": "d" * 5},
+        )
+    )
+    second_emitted = guard.accept(
+        emitter.info(
+            phase="tool_result",
+            title="Truncated payload",
+            content="This should stay serializable.",
+            request_id="turn-20260408-000000-000005",
+            provider="internal_docs",
+            provider_display_name="Internal Docs",
+            tool="search_docs_rag",
+            raw={"payload": "e" * 300},
+        )
+    )
+    flushed = guard.flush()
+
+    assert first_emitted == []
+    assert len(second_emitted) == 1
+    truncated_raw = second_emitted[0].raw
+
+    assert isinstance(truncated_raw, dict)
+    assert truncated_raw is not None
+    __import__("json").dumps(truncated_raw, ensure_ascii=False)
+    assert len(flushed) == 1
+    assert isinstance(flushed[0].raw, dict)
+
+
+def test_system_event_guard_normal_mode_policy_never_produces_truncation_metadata():
+    policy = McpEventPolicy(
+        verbose_json=True,
+        redact_headers=True,
+        max_payload_chars=4000,
+        persist_system_logs=True,
+        visible_band_limit=20,
+        raw_bytes_limit=0,
+    )
+    emitter = SystemEventEmitter(policy, channel="mcp_test")
+    guard = SystemEventGuard(policy, request_id="turn-20260408-000000-000006")
+
+    emitted = guard.accept(
+        emitter.info(
+            phase="tool_result",
+            title="Normal mode raw guard",
+            content="No truncation metadata should appear.",
+            request_id="turn-20260408-000000-000006",
+            provider="internal_docs",
+            provider_display_name="Internal Docs",
+            tool="search_docs_rag",
+            raw={"payload": "f" * 10},
+        )
+    )
+    flushed = guard.flush()
+
+    assert emitted == []
+    assert len(flushed) == 2
+    assert flushed[0].meta["rawSuppressed"] is True
+    assert "rawTruncated" not in flushed[0].meta
+    assert flushed[0].raw is None

@@ -3,11 +3,13 @@ Backend-side guardrails for request-scoped MCP system logs.
 """
 
 from dataclasses import replace
-from json import dumps
+from json import dumps, loads
 from typing import Any
 
 from .config import McpEventPolicy
 from .event_schema import SystemEvent, build_event_fingerprint
+
+_MIN_TRUNCATION_PREVIEW_BYTES = 64
 
 
 class SystemEventGuard:
@@ -102,9 +104,27 @@ class SystemEventGuard:
             return event
 
         raw_bytes = self._serialized_size(event.raw)
-        if self._raw_bytes_used + raw_bytes <= self._policy.raw_bytes_limit:
+        remaining = self._policy.raw_bytes_limit - self._raw_bytes_used
+
+        if raw_bytes <= remaining:
             self._raw_bytes_used += raw_bytes
             return event
+
+        if remaining > _MIN_TRUNCATION_PREVIEW_BYTES:
+            truncated_value, actual_emitted_bytes = self._truncate_raw_safe(
+                event.raw, remaining
+            )
+            self._raw_bytes_used += actual_emitted_bytes
+            return replace(
+                event,
+                raw=truncated_value,
+                meta={
+                    **event.meta,
+                    "rawTruncated": True,
+                    "rawOriginalBytes": raw_bytes,
+                    "rawTruncatedBytes": actual_emitted_bytes,
+                },
+            )
 
         self._raw_suppressed_count += 1
         return replace(
@@ -115,6 +135,23 @@ class SystemEventGuard:
                 "rawSuppressed": True,
             },
         )
+
+    def _truncate_raw_safe(self, raw: Any, max_bytes: int) -> tuple[Any, int]:
+        try:
+            raw_bytes = dumps(raw, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        except Exception:
+            raw_bytes = str(raw).encode("utf-8")
+
+        sliced_bytes = raw_bytes[:max_bytes]
+        sliced_text = sliced_bytes.decode("utf-8", errors="ignore")
+
+        try:
+            truncated_value = loads(sliced_text)
+        except Exception:
+            truncated_value = {"_truncated": True, "preview": sliced_text}
+
+        actual_emitted_bytes = self._serialized_size(truncated_value)
+        return truncated_value, actual_emitted_bytes
 
     def _build_summary_event(
         self,
