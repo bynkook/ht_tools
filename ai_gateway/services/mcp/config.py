@@ -324,7 +324,7 @@ def load_mcp_host_settings(secrets: dict | None = None) -> McpHostSettings:
         ),
         test_mode_visible_band_limit=_parse_int(
             os.getenv("MCP_TEST_MODE_VISIBLE_BAND_LIMIT"),
-            _parse_int(host_config.get("test_mode_visible_band_limit"), 20),
+            _parse_int(host_config.get("test_mode_visible_band_limit"), 50),
         ),
         test_mode_raw_bytes_limit=_parse_int(
             os.getenv("MCP_TEST_MODE_RAW_BYTES_LIMIT"),

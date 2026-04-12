@@ -81,7 +81,7 @@ def test_system_event_payload_preserves_multi_provider_contract_fields():
             redact_headers=True,
             max_payload_chars=4000,
             persist_system_logs=True,
-            visible_band_limit=20,
+            visible_band_limit=50,
             raw_bytes_limit=4096,
         ),
         channel="mcp_test",
@@ -127,7 +127,7 @@ def test_system_event_guard_passes_raw_through_unchanged():
         redact_headers=True,
         max_payload_chars=4000,
         persist_system_logs=True,
-        visible_band_limit=20,
+        visible_band_limit=50,
         raw_bytes_limit=4096,
     )
     emitter = SystemEventEmitter(policy, channel="mcp_test")
@@ -174,7 +174,7 @@ def test_system_event_guard_emitter_truncate_applied_before_guard():
         redact_headers=True,
         max_payload_chars=4000,
         persist_system_logs=True,
-        visible_band_limit=20,
+        visible_band_limit=50,
         raw_bytes_limit=4096,
     )
     emitter = SystemEventEmitter(policy, channel="mcp_test")
@@ -213,7 +213,7 @@ def test_system_event_guard_no_raw_metadata_added():
         redact_headers=True,
         max_payload_chars=4000,
         persist_system_logs=True,
-        visible_band_limit=20,
+        visible_band_limit=50,
         raw_bytes_limit=0,
     )
     emitter = SystemEventEmitter(policy, channel="mcp_test")
