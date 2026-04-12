@@ -3,13 +3,10 @@ Backend-side guardrails for request-scoped MCP system logs.
 """
 
 from dataclasses import replace
-from json import dumps
 from typing import Any
 
 from .config import McpEventPolicy
 from .event_schema import SystemEvent, build_event_fingerprint
-
-RAW_VALUE_PREVIEW_CHARS = 500
 
 
 class SystemEventGuard:
@@ -32,21 +29,17 @@ class SystemEventGuard:
 
     def accept(self, event: SystemEvent) -> list[SystemEvent]:
         emitted: list[SystemEvent] = []
-        guarded_event = self._apply_raw_preview(event)
-        self._remember_context(guarded_event)
+        self._remember_context(event)
 
         if (
             self._pending_event is not None
-            and self._pending_event.fingerprint == guarded_event.fingerprint
+            and self._pending_event.fingerprint == event.fingerprint
         ):
             self._pending_event = replace(
                 self._pending_event,
-                repeat_count=self._pending_event.repeat_count
-                + guarded_event.repeat_count,
-                raw=guarded_event.raw
-                if guarded_event.raw is not None
-                else self._pending_event.raw,
-                timestamp=guarded_event.timestamp,
+                repeat_count=self._pending_event.repeat_count + event.repeat_count,
+                raw=event.raw if event.raw is not None else self._pending_event.raw,
+                timestamp=event.timestamp,
             )
             return emitted
 
@@ -58,7 +51,7 @@ class SystemEventGuard:
             self._pending_event = None
             return emitted
 
-        self._pending_event = guarded_event
+        self._pending_event = event
         self._visible_count += 1
         return emitted
 
@@ -87,14 +80,6 @@ class SystemEventGuard:
             "tool": event.tool,
             "timestamp": event.timestamp,
         }
-
-    def _apply_raw_preview(self, event: SystemEvent) -> SystemEvent:
-        if event.raw is None:
-            return event
-        preview = _build_raw_preview(event.raw, RAW_VALUE_PREVIEW_CHARS)
-        if preview is event.raw:
-            return event
-        return replace(event, raw=preview)
 
     def _build_summary_event(
         self,
@@ -132,31 +117,6 @@ class SystemEventGuard:
             suppressed_count=suppressed_count,
             timestamp=self._last_context["timestamp"],
         )
-
-
-def _build_raw_preview(raw: Any, max_chars: int) -> Any:
-    """이벤트별 독립적으로 dict의 각 value를 max_chars 문자로 제한한다.
-
-    - dict가 아닌 경우: str로 변환 후 제한
-    - 모든 value가 제한 이내이면 원본 객체를 그대로 반환 (identity 보장)
-    """
-    if not isinstance(raw, dict):
-        s = dumps(raw, ensure_ascii=False)
-        if len(s) <= max_chars:
-            return raw
-        return s[:max_chars] + "...(생략)"
-
-    truncated = False
-    result: dict[str, Any] = {}
-    for k, v in raw.items():
-        s = dumps(v, ensure_ascii=False)
-        if len(s) > max_chars:
-            result[k] = s[:max_chars] + "...(생략)"
-            truncated = True
-        else:
-            result[k] = v
-
-    return result if truncated else raw
 
 
 __all__ = ["SystemEventGuard"]

@@ -100,6 +100,35 @@ class McpPlanExecutor:
                     results=list(results),
                 )
 
+                # document_issue_tool: document_text 필수 파라미터 검증
+                if effective_plan.action == "document_issue_tool":
+                    doc_text = effective_plan.params.get("document_text")
+                    if not doc_text or not str(doc_text).strip():
+                        logger.warning(
+                            "[MCP executor] document_issue_tool 실행 취소: "
+                            "document_text가 비어 있습니다 (search_docs_rag 결과 없음). "
+                            "index=%d",
+                            index,
+                        )
+                        skipped_result: dict[str, Any] = {
+                            "action": "document_issue_tool",
+                            "skipped": True,
+                            "reason": "search_docs_rag returned no results — document_text is empty",
+                        }
+                        results.append(skipped_result)
+                        await self._invoke_hook(
+                            hooks.on_after_tool_call if hooks else None,
+                            plan=effective_plan,
+                            original_plan=plan,
+                            index=index,
+                            total_plans=len(plans_list),
+                            result=skipped_result,
+                            results=list(results),
+                            system_prompt=system_prompt,
+                        )
+                        index += 1
+                        continue
+
                 result = await execute_fn(effective_plan)
                 results.append(result)
                 system_prompt = merge_system_prompts(

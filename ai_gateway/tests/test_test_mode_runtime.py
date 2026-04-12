@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from services.mcp.config import McpEventPolicy
 from services.mcp.event_emitter import SystemEventEmitter
-from services.mcp.event_guard import SystemEventGuard, _build_raw_preview
+from services.mcp.event_guard import SystemEventGuard
 from services.mcp.host import build_context_debug_payload, normalize_context_result
 from services.mcp.test_mode.planner import ToolPlan
 
@@ -120,8 +120,8 @@ def test_system_event_payload_preserves_multi_provider_contract_fields():
     assert payload["raw"]["headers"]["authorization"] == "[REDACTED]"
 
 
-def test_system_event_guard_raw_preview_applied_per_event():
-    """각 이벤트는 독립적으로 value 500자 제한 preview를 받는다."""
+def test_system_event_guard_passes_raw_through_unchanged():
+    """guard는 raw를 변형하지 않는다 — emitter의 truncate_event_raw가 이미 처리."""
     policy = McpEventPolicy(
         verbose_json=True,
         redact_headers=True,
@@ -146,7 +146,7 @@ def test_system_event_guard_raw_preview_applied_per_event():
     event2 = emitter.info(
         phase="tool_result",
         title="Long payload",
-        content="Should be truncated per-value.",
+        content="Should be truncated by emitter, not guard.",
         request_id="turn-20260408-000000-000002",
         provider="internal_docs",
         provider_display_name="Internal Docs",
@@ -158,56 +158,56 @@ def test_system_event_guard_raw_preview_applied_per_event():
     second_emitted = guard.accept(event2)
     flushed = guard.flush()
 
-    # event1이 emit됨 (event2 accept 시점에 pending에서 방출)
+    # event1이 그대로 emit됨 (event2 accept 시점에 pending에서 방출)
     assert len(second_emitted) == 1
     assert second_emitted[0].raw == {"payload": "x" * 10}
 
-    # event2는 flush에서 나옴: value 500자 제한 적용
+    # event2는 flush에서 나옴: guard가 raw를 변형하지 않음
     assert len(flushed) == 1
-    assert flushed[0].raw is not None
-    truncated_value = flushed[0].raw["payload"]
-    assert truncated_value.endswith("...(생략)")
-    assert len(truncated_value) < 600 + len("...(생략)")
+    assert flushed[0].raw == {"payload": "y" * 600}
 
 
-def test_build_raw_preview_short_values_kept_verbatim():
-    """500자 이하 value는 원본 Python 값 그대로 유지된다."""
-    raw = {"a": "hello", "b": [1, 2, 3]}
-    result = _build_raw_preview(raw, 500)
-    assert result is raw  # identity 보장
+def test_system_event_guard_emitter_truncate_applied_before_guard():
+    """emitter의 max_payload_chars(4000자) 제한은 guard 진입 전에 적용된다."""
+    policy = McpEventPolicy(
+        verbose_json=True,
+        redact_headers=True,
+        max_payload_chars=4000,
+        persist_system_logs=True,
+        visible_band_limit=20,
+        raw_bytes_limit=4096,
+    )
+    emitter = SystemEventEmitter(policy, channel="mcp_test")
+    guard = SystemEventGuard(policy, request_id="turn-20260408-000000-000003")
+
+    # 4000자 초과 payload → emitter가 {"truncated": True, "preview": ..., "original_length": ...} 로 교체
+    event = emitter.info(
+        phase="tool_result",
+        title="Very large payload",
+        content="Emitter should truncate this before guard sees it.",
+        request_id="turn-20260408-000000-000003",
+        provider="internal_docs",
+        provider_display_name="Internal Docs",
+        tool="search_docs_rag",
+        raw={"payload": "z" * 5000},
+    )
+
+    # emitter 단계에서 이미 truncated dict로 변환됨
+    assert isinstance(event.raw, dict)
+    assert event.raw.get("truncated") is True
+    assert "preview" in event.raw
+    assert event.raw["original_length"] > 4000
+
+    guard.accept(event)
+    flushed = guard.flush()
+
+    # guard는 raw를 그대로 통과시킴
+    assert len(flushed) == 1
+    assert flushed[0].raw is event.raw
 
 
-def test_build_raw_preview_long_value_truncated():
-    """500자 초과 value는 s[:500] + '...(생략)' 문자열로 교체된다."""
-    long_val = "z" * 600
-    raw = {"key": long_val, "other": "short"}
-    result = _build_raw_preview(raw, 500)
-
-    assert result is not raw
-    assert result["other"] == "short"
-    truncated = result["key"]
-    assert isinstance(truncated, str)
-    assert truncated.endswith("...(생략)")
-    # dumps("z"*600) 의 앞 500자를 잘라내고 suffix 추가
-    import json
-
-    serialized = json.dumps(long_val, ensure_ascii=False)
-    assert truncated == serialized[:500] + "...(생략)"
-
-
-def test_build_raw_preview_non_dict():
-    """dict가 아닌 값도 500자 제한이 적용된다."""
-    short_list = [1, 2, 3]
-    assert _build_raw_preview(short_list, 500) is short_list  # identity
-
-    long_str = "a" * 600
-    result = _build_raw_preview(long_str, 500)
-    assert isinstance(result, str)
-    assert result.endswith("...(생략)")
-
-
-def test_system_event_guard_normal_mode_policy_no_raw_budget_side_effects():
-    """raw_bytes_limit 값에 무관하게 rawSuppressed/rawTruncated 메타는 더 이상 생성되지 않는다."""
+def test_system_event_guard_no_raw_metadata_added():
+    """guard는 rawSuppressed/rawTruncated 같은 메타를 절대 추가하지 않는다."""
     policy = McpEventPolicy(
         verbose_json=True,
         redact_headers=True,
