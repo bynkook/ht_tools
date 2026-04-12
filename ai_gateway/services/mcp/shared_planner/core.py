@@ -216,8 +216,21 @@ class SharedPlannerCore:
         candidate_summary = tuple(
             f"{match.provider_id}.{match.action}" for match in matches
         )
+        selected_matches = self._select_catalog_matches(matches)
+
+        # Full-read intent detection:
+        # search_docs_rag + document_issue_tool co-match means the user wants full
+        # document analysis, not just snippet retrieval.  Flag the search plan so
+        # the execution loop can dynamically insert a read_doc step after search
+        # results are available (TOP1 filename → read_doc → document_issue_tool).
+        actions_in_plan = {m.action for m in selected_matches}
+        full_read_mode = (
+            "search_docs_rag" in actions_in_plan
+            and "document_issue_tool" in actions_in_plan
+        )
+
         plans: list[PlannerToolPlan] = []
-        for selected in self._select_catalog_matches(matches):
+        for selected in selected_matches:
             params = dict(selected.params)
             resolved_category = (
                 active_category if selected.use_active_category else None
@@ -230,6 +243,10 @@ class SharedPlannerCore:
                     resolved_category,
                     **params,
                 )
+                if full_read_mode:
+                    # Signal the execution loop: upgrade snippets → full document read.
+                    # The loop will insert read_doc dynamically after TOP1 filename is known.
+                    params["full_read_mode"] = True
             else:
                 # Non-RAG actions: map user query to tool-specific parameter names.
                 # document_issue_tool requires "document_text", not "query".
@@ -319,16 +336,11 @@ class SharedPlannerCore:
         result = dict(params)
 
         # Tools that require document_text instead of query.
-        # document_text must be populated via result chaining (read_doc → document_issue_tool).
-        # A standalone document_issue_tool plan without prior read_doc is a planner configuration
-        # error — the activation rules must always pair them.
+        # document_text is injected at execution time via result chaining
+        # (search_docs_rag / read_doc → document_issue_tool).
+        # Planning phase only preserves any statically supplied params.
+        # Execution-time completeness is validated by GenericMcpHost._validate_effective_plan_params().
         if action == "document_issue_tool":
-            if "document_text" not in result:
-                raise ValueError(
-                    "document_issue_tool requires 'document_text' but it was not provided. "
-                    "The activation rule must chain read_doc before document_issue_tool so the "
-                    "document content is available for result chaining."
-                )
             return result
 
         # Tools that require law_name instead of query.

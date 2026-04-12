@@ -13,7 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from services.mcp.config import load_mcp_settings
 from services.mcp.runtime.base import ChatRuntimeInput, McpContextInput
 from services.mcp.runtime.test_mode_runtime import TestModeChatRuntime
-from services.mcp.shared_planner.models import PlannerDecision, PlannerDecisionProvenance, PlannerToolPlan
+from services.mcp.shared_planner.models import (
+    PlannerDecision,
+    PlannerDecisionProvenance,
+    PlannerToolPlan,
+)
 
 
 def _build_settings():
@@ -46,7 +50,11 @@ async def _run_runtime(runtime, runtime_input):
     return await _collect_payloads(stream)
 
 
-def _build_plan(provider: str = "internal_docs", action: str = "search_docs_rag", params: dict | None = None):
+def _build_plan(
+    provider: str = "internal_docs",
+    action: str = "search_docs_rag",
+    params: dict | None = None,
+):
     resolved_params = params or {"query": "위약금", "category": "test문서"}
     provenance = PlannerDecisionProvenance(
         decision_source="keyword_rule",
@@ -119,7 +127,58 @@ class FakeHost:
     async def build_planner_provider_categories(self):
         return {"internal_docs": ("회의록",)}
 
-    async def execute_tool_action(self, *, action: str, arguments: dict | None = None, provider_id: str | None = None):
+    async def run_rag_search(
+        self,
+        *,
+        query,
+        category=None,
+        filename_filter=None,
+        max_docs=None,
+        snippet_chars=None,
+        provider_id=None,
+    ):
+        self.execute_calls.append(
+            {
+                "action": "search_docs_rag",
+                "arguments": {
+                    k: v
+                    for k, v in {"query": query, "category": category}.items()
+                    if v is not None
+                },
+                "provider_id": provider_id,
+            }
+        )
+        return {"files": [], "snippets": []}
+
+    def _resolve_doc_search_plan_params(self, plan_params, *, default_query):
+        from services.mcp.config import load_mcp_settings
+        from services.mcp.doc_search_policy import normalize_doc_search_rag_params
+
+        settings = load_mcp_settings(
+            {
+                "mcp": {
+                    "providers": {
+                        "internal_docs": {
+                            "base_url": "http://127.0.0.1:8002/mcp",
+                            "transport": "streamable_http",
+                        }
+                    }
+                }
+            }
+        )
+        return normalize_doc_search_rag_params(
+            plan_params,
+            query=str(plan_params.get("query", default_query)),
+            settings=settings.host.doc_search,
+        )
+
+    async def execute_tool_action(
+        self,
+        *,
+        action: str,
+        arguments: dict | None = None,
+        provider_id: str | None = None,
+    ):
         self.execute_calls.append(
             {
                 "action": action,
@@ -132,7 +191,9 @@ class FakeHost:
 
 def test_test_runtime_passes_selected_provider_to_discovery_and_tool_calls():
     plan = _build_plan()
-    planner = FakePlanner(PlannerDecision(route="catalog_match", clean_query="위약금", plans=(plan,)))
+    planner = FakePlanner(
+        PlannerDecision(route="catalog_match", clean_query="위약금", plans=(plan,))
+    )
     host = FakeHost()
     runtime = TestModeChatRuntime(
         request=SimpleNamespace(),
@@ -148,7 +209,11 @@ def test_test_runtime_passes_selected_provider_to_discovery_and_tool_calls():
                 model_ids=["test-model"],
                 contents=["위약금 찾아줘"],
                 is_stream=True,
-                mcp_context=McpContextInput(active_category="test문서", rag_enabled=False, provider_id="internal_docs"),
+                mcp_context=McpContextInput(
+                    active_category="test문서",
+                    rag_enabled=False,
+                    provider_id="internal_docs",
+                ),
             ),
         )
     )
@@ -165,7 +230,9 @@ def test_test_runtime_passes_selected_provider_to_discovery_and_tool_calls():
             "provider_id": "internal_docs",
         }
     ]
-    tool_decision_event = next(payload for payload in payloads if payload.get("phase") == "planning")
+    tool_decision_event = next(
+        payload for payload in payloads if payload.get("phase") == "planning"
+    )
     assert tool_decision_event["provider"] == "internal_docs"
     assert tool_decision_event["provider_id"] == "internal_docs"
     assert tool_decision_event["provider_display_name"] == "Internal Docs"
@@ -176,10 +243,16 @@ def test_test_runtime_passes_selected_provider_to_discovery_and_tool_calls():
 
 def test_test_runtime_discovers_each_provider_once_for_multi_provider_plan():
     plans = (
-        _build_plan(provider="internal_docs", params={"query": "위약금", "category": "test문서"}),
-        _build_plan(provider="legal_cases", action="read_doc", params={"filename": "case-1.md"}),
+        _build_plan(
+            provider="internal_docs", params={"query": "위약금", "category": "test문서"}
+        ),
+        _build_plan(
+            provider="legal_cases", action="read_doc", params={"filename": "case-1.md"}
+        ),
     )
-    planner = FakePlanner(PlannerDecision(route="scenario", clean_query="위약금", plans=plans))
+    planner = FakePlanner(
+        PlannerDecision(route="scenario", clean_query="위약금", plans=plans)
+    )
     host = FakeHost()
     runtime = TestModeChatRuntime(
         request=SimpleNamespace(),
@@ -195,7 +268,11 @@ def test_test_runtime_discovers_each_provider_once_for_multi_provider_plan():
                 model_ids=["test-model"],
                 contents=["복합 MCP 실행"],
                 is_stream=True,
-                mcp_context=McpContextInput(active_category="test문서", rag_enabled=False, provider_id="internal_docs"),
+                mcp_context=McpContextInput(
+                    active_category="test문서",
+                    rag_enabled=False,
+                    provider_id="internal_docs",
+                ),
             ),
         )
     )
@@ -215,13 +292,21 @@ def test_test_runtime_discovers_each_provider_once_for_multi_provider_plan():
         },
     ]
     provider_connect_events = [
-        payload for payload in payloads if payload.get("phase") == "provider_connect" and payload.get("title") == "Provider connect start"
+        payload
+        for payload in payloads
+        if payload.get("phase") == "provider_connect"
+        and payload.get("title") == "Provider connect start"
     ]
-    assert [payload["provider_id"] for payload in provider_connect_events] == ["internal_docs", "legal_cases"]
+    assert [payload["provider_id"] for payload in provider_connect_events] == [
+        "internal_docs",
+        "legal_cases",
+    ]
 
 
 def test_test_runtime_uses_selected_provider_when_no_tool_is_planned():
-    planner = FakePlanner(PlannerDecision(route="chat_only", clean_query="위약금", plans=()))
+    planner = FakePlanner(
+        PlannerDecision(route="chat_only", clean_query="위약금", plans=())
+    )
     host = FakeHost()
     runtime = TestModeChatRuntime(
         request=SimpleNamespace(),
@@ -237,7 +322,9 @@ def test_test_runtime_uses_selected_provider_when_no_tool_is_planned():
                 model_ids=["test-model"],
                 contents=["위약금 찾아줘"],
                 is_stream=True,
-                mcp_context=McpContextInput(active_category=None, rag_enabled=True, provider_id="legal_cases"),
+                mcp_context=McpContextInput(
+                    active_category=None, rag_enabled=True, provider_id="legal_cases"
+                ),
             ),
         )
     )
@@ -247,5 +334,9 @@ def test_test_runtime_uses_selected_provider_when_no_tool_is_planned():
     assert host.validated_decisions[0].route == "chat_only"
     assert host.discover_calls == ["legal_cases"]
     assert host.execute_calls == []
-    assistant_final = next(payload for payload in payloads if payload.get("event_type") == "assistant_final")
+    assistant_final = next(
+        payload
+        for payload in payloads
+        if payload.get("event_type") == "assistant_final"
+    )
     assert "선택된 MCP tool이 없습니다" in assistant_final["content"]

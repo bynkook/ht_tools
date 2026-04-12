@@ -6,12 +6,48 @@ Design principle:
   (lexguard.default.json keyword rules), not at execution time.
 - Result chaining passes doc_search/read_doc output as document_text to the
   next tool (document_issue_tool) when the planner has already scheduled both.
+- When full_read_mode=True is set on a search_docs_rag plan, the execution loop
+  extracts the TOP1 filename and inserts a read_doc plan dynamically before
+  document_issue_tool, so the full document text (not just snippets) is analysed.
 """
 
 import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def extract_top_filename_from_rag_result(result: dict[str, Any]) -> str | None:
+    """Extract the TOP1 filename from a search_docs_rag result.
+
+    Used by the execution loop when full_read_mode=True is set on a
+    search_docs_rag plan.  If a filename is available, the loop inserts a
+    read_doc plan so the full document text reaches document_issue_tool instead
+    of snippet fragments.
+
+    Lookup order:
+    1. snippets[0]["filename"]  — highest-ranked RAG chunk (most reliable)
+    2. files[0]["filename"]     — file-level metadata fallback
+
+    Returns the filename string, or None if no filename is available.
+    """
+    raw_result = result.get("raw_result")
+    if not isinstance(raw_result, dict):
+        return None
+
+    snippets = raw_result.get("snippets", [])
+    if snippets and isinstance(snippets[0], dict):
+        filename = snippets[0].get("filename")
+        if filename and isinstance(filename, str):
+            return filename.strip() or None
+
+    files = raw_result.get("files", [])
+    if files and isinstance(files[0], dict):
+        filename = files[0].get("filename")
+        if filename and isinstance(filename, str):
+            return filename.strip() or None
+
+    return None
 
 
 def extract_document_text_from_result(result: dict[str, Any]) -> str | None:
@@ -110,5 +146,6 @@ def chain_document_text(
 __all__ = [
     "chain_document_text",
     "extract_document_text_from_result",
+    "extract_top_filename_from_rag_result",
     "should_chain_doc_to_lexguard",
 ]

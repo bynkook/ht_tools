@@ -22,7 +22,11 @@ class FakeProvider:
         return {"name": category}
 
     async def execute_manual_command(self, **kwargs):
-        return {"success": True, "content": f"manual:{kwargs['action']}", "kwargs": kwargs}
+        return {
+            "success": True,
+            "content": f"manual:{kwargs['action']}",
+            "kwargs": kwargs,
+        }
 
 
 def _build_host() -> GenericMcpHost:
@@ -45,7 +49,9 @@ def _build_host() -> GenericMcpHost:
     return GenericMcpHost(settings)
 
 
-def _fake_manifest(*, supports_rag: bool = True, manual_commands=("list", "search", "read")):
+def _fake_manifest(
+    *, supports_rag: bool = True, manual_commands=("list", "search", "read")
+):
     return SimpleNamespace(
         capability_policy=SimpleNamespace(
             supports_rag_context=supports_rag,
@@ -87,7 +93,9 @@ def test_host_forwards_explicit_provider_override_to_registry_connection():
 
     with (
         patch("services.mcp.host.connect_provider", fake_connect_provider),
-        patch("services.mcp.host.require_provider_manifest", return_value=_fake_manifest()),
+        patch(
+            "services.mcp.host.require_provider_manifest", return_value=_fake_manifest()
+        ),
     ):
         result = asyncio.run(
             host.execute_tool_action(
@@ -167,18 +175,29 @@ def test_host_rejects_rag_search_when_manifest_disables_rag_context():
         capability_policy = FakePolicy()
 
     async def fail_execute_tool_action(self, **kwargs):
-        raise AssertionError("execute_tool_action should not run when capability check fails")
+        raise AssertionError(
+            "execute_tool_action should not run when capability check fails"
+        )
 
     with (
-        patch("services.mcp.host.require_provider_manifest", return_value=FakeManifest()),
+        patch(
+            "services.mcp.host.require_provider_manifest", return_value=FakeManifest()
+        ),
         patch.object(GenericMcpHost, "execute_tool_action", fail_execute_tool_action),
     ):
         try:
-            asyncio.run(host.run_rag_search(query="위약금", provider_id="internal_docs"))
+            asyncio.run(
+                host.run_rag_search(query="위약금", provider_id="internal_docs")
+            )
         except ValueError as error:
-            assert str(error) == "MCP provider does not support RAG context search: internal_docs"
+            assert (
+                str(error)
+                == "MCP provider does not support RAG context search: internal_docs"
+            )
         else:
-            raise AssertionError("Expected ValueError for unsupported RAG context search")
+            raise AssertionError(
+                "Expected ValueError for unsupported RAG context search"
+            )
 
 
 def test_host_manual_command_does_not_prevalidate_category_before_provider_call():
@@ -191,7 +210,9 @@ def test_host_manual_command_does_not_prevalidate_category_before_provider_call(
         yield FakeProvider()
 
     async def fail_validate_category(self, category, *, provider_id=None):
-        raise AssertionError("validate_category should not run before provider manual command delegation")
+        raise AssertionError(
+            "validate_category should not run before provider manual command delegation"
+        )
 
     with (
         patch("services.mcp.host.connect_provider", fake_connect_provider),
@@ -242,25 +263,322 @@ def test_host_run_rag_search_balances_unscoped_results_across_categories():
         category = arguments.get("category")
         if category == "회의록":
             return {
-                "files": [{"filename": "minutes.md", "snippet": "회의 안전 점검", "category": category}],
-                "snippets": [{"filename": "minutes.md", "snippet": "회의 안전 점검", "category": category, "start": 1, "end": 10}],
+                "files": [
+                    {
+                        "filename": "minutes.md",
+                        "snippet": "회의 안전 점검",
+                        "category": category,
+                    }
+                ],
+                "snippets": [
+                    {
+                        "filename": "minutes.md",
+                        "snippet": "회의 안전 점검",
+                        "category": category,
+                        "start": 1,
+                        "end": 10,
+                    }
+                ],
             }
         if category == "팀주간업무":
             return {
-                "files": [{"filename": "weekly.md", "snippet": "업무 안전 조치", "category": category}],
-                "snippets": [{"filename": "weekly.md", "snippet": "업무 안전 조치", "category": category, "start": 1, "end": 10}],
+                "files": [
+                    {
+                        "filename": "weekly.md",
+                        "snippet": "업무 안전 조치",
+                        "category": category,
+                    }
+                ],
+                "snippets": [
+                    {
+                        "filename": "weekly.md",
+                        "snippet": "업무 안전 조치",
+                        "category": category,
+                        "start": 1,
+                        "end": 10,
+                    }
+                ],
             }
         raise AssertionError(f"Unexpected category: {category}")
 
     with (
-        patch.object(GenericMcpHost, "list_category_catalog", fake_list_category_catalog),
+        patch.object(
+            GenericMcpHost, "list_category_catalog", fake_list_category_catalog
+        ),
         patch.object(GenericMcpHost, "execute_tool_action", fake_execute_tool_action),
-        patch("services.mcp.host.require_provider_manifest", return_value=_fake_manifest()),
+        patch(
+            "services.mcp.host.require_provider_manifest", return_value=_fake_manifest()
+        ),
     ):
-        result = asyncio.run(host.run_rag_search(query="안전", provider_id="internal_docs"))
+        result = asyncio.run(
+            host.run_rag_search(query="안전", provider_id="internal_docs")
+        )
 
     assert observed_categories == ["회의록", "팀주간업무"]
     assert [item["filename"] for item in result["files"]] == ["minutes.md", "weekly.md"]
-    assert [item["filename"] for item in result["snippets"]] == ["minutes.md", "weekly.md"]
+    assert [item["filename"] for item in result["snippets"]] == [
+        "minutes.md",
+        "weekly.md",
+    ]
     assert result["retrieval_meta"]["mode"] == "category_fanout"
     assert result["retrieval_meta"]["categories_queried"] == ["회의록", "팀주간업무"]
+
+
+# ── full_read_mode 동적 read_doc 삽입 테스트 ──────────────────────────────────
+
+from unittest.mock import AsyncMock, MagicMock
+
+from services.mcp.shared_planner.models import PlannerDecision, PlannerToolPlan
+
+
+def _make_search_plan(
+    full_read_mode: bool = False, category: str | None = None
+) -> PlannerToolPlan:
+    params: dict = {"query": "표준계약서", "max_docs": 5, "snippet_chars": 1500}
+    if full_read_mode:
+        params["full_read_mode"] = True
+    if category:
+        params["category"] = category
+    from services.mcp.shared_planner.models import PlannerDecisionProvenance
+
+    return PlannerToolPlan(
+        provider="internal_docs",
+        action="search_docs_rag",
+        params=params,
+        provenance=PlannerDecisionProvenance(
+            decision_source="keyword_rule",
+            matched_rule="doc_search_target + search_action",
+            normalized_query="표준계약서 부당특약 검토",
+            provider_candidates=("internal_docs.search_docs_rag",),
+            selected_provider="internal_docs",
+            selected_action="search_docs_rag",
+        ),
+    )
+
+
+def _make_issue_plan() -> PlannerToolPlan:
+    from services.mcp.shared_planner.models import PlannerDecisionProvenance
+
+    return PlannerToolPlan(
+        provider="lexguard",
+        action="document_issue_tool",
+        params={},
+        provenance=PlannerDecisionProvenance(
+            decision_source="keyword_rule",
+            matched_rule="document_analysis",
+            normalized_query="표준계약서 부당특약 검토",
+            provider_candidates=("lexguard.document_issue_tool",),
+            selected_provider="lexguard",
+            selected_action="document_issue_tool",
+        ),
+    )
+
+
+def test_host_full_read_mode_inserts_read_doc_and_chains_full_content():
+    """full_read_mode=True: search_docs_rag TOP1 파일명으로 read_doc 삽입, 전문이 document_issue_tool에 전달돼야 한다."""
+    host = _build_host()
+
+    search_raw = {
+        "snippets": [
+            {
+                "filename": "표준계약서.md",
+                "snippet": "계약서 내용 일부",
+                "start": 0,
+                "end": 100,
+            }
+        ],
+        "files": [{"filename": "표준계약서.md"}],
+    }
+    read_raw = {"content": "전체 계약서 전문 내용입니다.", "filename": "표준계약서.md"}
+    issue_raw = {"issues": [{"type": "부당특약", "description": "불공정 조항 발견"}]}
+
+    call_log: list[dict] = []
+
+    async def fake_run_rag_search(
+        self,
+        *,
+        query,
+        category=None,
+        filename_filter=None,
+        max_docs=5,
+        snippet_chars=1500,
+        provider_id=None,
+    ):
+        call_log.append({"step": "search_docs_rag", "category": category})
+        return {"raw_result": search_raw, "system_prompt": None}
+
+    async def fake_execute_tool_action(self, *, action, arguments, provider_id=None):
+        call_log.append({"step": action, "arguments": dict(arguments)})
+        if action == "read_doc":
+            return read_raw
+        if action == "document_issue_tool":
+            return issue_raw
+        raise AssertionError(f"Unexpected action: {action}")
+
+    fake_decision = PlannerDecision(
+        route="catalog_match",
+        clean_query="표준계약서 부당특약 검토",
+        plans=(_make_search_plan(full_read_mode=True), _make_issue_plan()),
+    )
+
+    mock_planner = MagicMock()
+    mock_planner.plan = MagicMock(return_value=fake_decision)
+    host._planner = mock_planner
+
+    with (
+        patch.object(GenericMcpHost, "validate_planner_decision", new=AsyncMock()),
+        patch.object(GenericMcpHost, "run_rag_search", fake_run_rag_search),
+        patch.object(GenericMcpHost, "execute_tool_action", fake_execute_tool_action),
+        patch(
+            "services.mcp.host.require_provider_manifest", return_value=_fake_manifest()
+        ),
+    ):
+        asyncio.run(host.build_chat_resolution(user_text="표준계약서 부당특약 검토"))
+
+    steps = [c["step"] for c in call_log]
+    assert steps == ["search_docs_rag", "read_doc", "document_issue_tool"], (
+        f"예상: [search_docs_rag, read_doc, document_issue_tool], 실제: {steps}"
+    )
+
+    read_call = next(c for c in call_log if c["step"] == "read_doc")
+    assert read_call["arguments"]["filename"] == "표준계약서.md"
+
+    issue_call = next(c for c in call_log if c["step"] == "document_issue_tool")
+    assert (
+        issue_call["arguments"].get("document_text") == "전체 계약서 전문 내용입니다."
+    )
+
+
+def test_host_full_read_mode_fallback_when_filename_not_available():
+    """full_read_mode=True이지만 파일명 없으면 read_doc 삽입 안 하고 snippet 체이닝으로 fallback해야 한다."""
+    host = _build_host()
+
+    search_raw_no_filename = {
+        "snippets": [{"snippet": "계약서 내용 일부"}],  # filename 없음
+        "files": [],
+    }
+    issue_raw = {"issues": []}
+
+    call_log: list[dict] = []
+
+    async def fake_run_rag_search(self, **kwargs):
+        call_log.append({"step": "search_docs_rag"})
+        return {"raw_result": search_raw_no_filename, "system_prompt": None}
+
+    async def fake_execute_tool_action(self, *, action, arguments, provider_id=None):
+        call_log.append({"step": action, "arguments": dict(arguments)})
+        if action == "document_issue_tool":
+            return issue_raw
+        raise AssertionError(f"Unexpected action: {action}")
+
+    fake_decision = PlannerDecision(
+        route="catalog_match",
+        clean_query="표준계약서 부당특약 검토",
+        plans=(_make_search_plan(full_read_mode=True), _make_issue_plan()),
+    )
+
+    mock_planner = MagicMock()
+    mock_planner.plan = MagicMock(return_value=fake_decision)
+    host._planner = mock_planner
+
+    with (
+        patch.object(GenericMcpHost, "validate_planner_decision", new=AsyncMock()),
+        patch.object(GenericMcpHost, "run_rag_search", fake_run_rag_search),
+        patch.object(GenericMcpHost, "execute_tool_action", fake_execute_tool_action),
+        patch(
+            "services.mcp.host.require_provider_manifest", return_value=_fake_manifest()
+        ),
+    ):
+        # snippet fallback 시 document_text가 snippet 텍스트로 채워지므로 ValueError 아님
+        asyncio.run(host.build_chat_resolution(user_text="표준계약서 부당특약 검토"))
+
+    steps = [c["step"] for c in call_log]
+    assert "read_doc" not in steps, "파일명 없으면 read_doc 삽입되지 않아야 합니다"
+    assert "document_issue_tool" in steps
+
+
+def test_host_rejects_standalone_document_issue_tool_without_document_text():
+    """체이닝 없이 단독 document_issue_tool 실행 시 실행 타임 ValueError가 발생해야 한다."""
+    host = _build_host()
+
+    fake_decision = PlannerDecision(
+        route="catalog_match",
+        clean_query="표준계약서 부당특약 검토",
+        plans=(_make_issue_plan(),),  # 단독 — 선행 retrieval 없음
+    )
+
+    mock_planner = MagicMock()
+    mock_planner.plan = MagicMock(return_value=fake_decision)
+    host._planner = mock_planner
+
+    with (
+        patch.object(GenericMcpHost, "validate_planner_decision", new=AsyncMock()),
+        patch(
+            "services.mcp.host.require_provider_manifest", return_value=_fake_manifest()
+        ),
+    ):
+        try:
+            asyncio.run(
+                host.build_chat_resolution(user_text="표준계약서 부당특약 검토")
+            )
+        except ValueError as e:
+            assert "document_text" in str(e)
+        else:
+            raise AssertionError(
+                "단독 document_issue_tool은 실행 타임 ValueError를 발생시켜야 합니다"
+            )
+
+
+def test_host_read_doc_to_document_issue_tool_chaining_regression():
+    """기존 경로: read_doc → document_issue_tool 체이닝이 정상 동작해야 한다 (회귀 테스트)."""
+    host = _build_host()
+
+    from services.mcp.shared_planner.models import PlannerDecisionProvenance
+
+    read_plan = PlannerToolPlan(
+        provider="internal_docs",
+        action="read_doc",
+        params={"filename": "표준계약서.md"},
+        provenance=PlannerDecisionProvenance(
+            decision_source="keyword_rule",
+            matched_rule="doc_read_full",
+            normalized_query="표준계약서.md 읽어줘",
+            provider_candidates=("internal_docs.read_doc",),
+            selected_provider="internal_docs",
+            selected_action="read_doc",
+        ),
+    )
+
+    read_raw = {"content": "전체 계약서 전문", "filename": "표준계약서.md"}
+    issue_raw = {"issues": []}
+    call_log: list[dict] = []
+
+    async def fake_execute_tool_action(self, *, action, arguments, provider_id=None):
+        call_log.append({"step": action, "arguments": dict(arguments)})
+        if action == "read_doc":
+            return read_raw
+        if action == "document_issue_tool":
+            return issue_raw
+        raise AssertionError(f"Unexpected action: {action}")
+
+    fake_decision = PlannerDecision(
+        route="catalog_match",
+        clean_query="표준계약서.md 부당특약 검토",
+        plans=(read_plan, _make_issue_plan()),
+    )
+
+    mock_planner = MagicMock()
+    mock_planner.plan = MagicMock(return_value=fake_decision)
+    host._planner = mock_planner
+
+    with (
+        patch.object(GenericMcpHost, "validate_planner_decision", new=AsyncMock()),
+        patch.object(GenericMcpHost, "execute_tool_action", fake_execute_tool_action),
+        patch(
+            "services.mcp.host.require_provider_manifest", return_value=_fake_manifest()
+        ),
+    ):
+        asyncio.run(host.build_chat_resolution(user_text="표준계약서.md 부당특약 검토"))
+
+    issue_call = next(c for c in call_log if c["step"] == "document_issue_tool")
+    assert issue_call["arguments"].get("document_text") == "전체 계약서 전문"

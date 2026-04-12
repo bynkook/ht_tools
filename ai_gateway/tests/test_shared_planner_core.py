@@ -32,8 +32,8 @@ def test_shared_planner_selects_same_doc_search_plan_used_by_test_mode_wrapper()
 def test_shared_planner_preserves_targeted_mentions_for_wrappers():
     shared_core = SharedPlannerCore()
 
-    decision = shared_core.plan('@260330 품질 관련 내용 검색', active_category="회의록")
-    route_decision = route_chat_query('@260330 품질 관련 내용 검색', rag_enabled=True)
+    decision = shared_core.plan("@260330 품질 관련 내용 검색", active_category="회의록")
+    route_decision = route_chat_query("@260330 품질 관련 내용 검색", rag_enabled=True)
 
     assert decision.route == "manual_mentions"
     assert decision.mentions == ("260330",)
@@ -111,3 +111,56 @@ def test_shared_planner_emits_one_plan_per_matching_provider_for_multi_provider_
     ]
     assert decision.plans[0].params["category"] == "계약문서"
     assert "category" not in decision.plans[1].params
+
+
+def test_planner_sets_full_read_mode_when_search_and_document_issue_co_match():
+    """search_docs_rag + document_issue_tool 동시 매칭 시 full_read_mode=True가 설정돼야 한다."""
+    # internal_docs + lexguard 두 provider 룰을 모두 로드해야
+    # search_docs_rag(internal_docs)와 document_issue_tool(lexguard)가 동시에 매칭됨.
+    shared_core = SharedPlannerCore(
+        activation_rule_refs=["internal_docs.default", "lexguard.default"]
+    )
+
+    decision = shared_core.plan(
+        "test문서 폴더에 표준계약서 문서의 부당특약 존재 가능성을 검토해라"
+    )
+
+    assert decision.route == "catalog_match"
+    actions = [p.action for p in decision.plans]
+    assert "search_docs_rag" in actions
+    assert "document_issue_tool" in actions
+
+    search_plan = next(p for p in decision.plans if p.action == "search_docs_rag")
+    assert search_plan.params.get("full_read_mode") is True
+
+
+def test_planner_does_not_set_full_read_mode_for_snippet_only_query():
+    """search_docs_rag 단독 매칭 시 full_read_mode가 설정되지 않아야 한다."""
+    shared_core = SharedPlannerCore(
+        activation_rule_refs=["internal_docs.default", "lexguard.default"]
+    )
+
+    decision = shared_core.plan("계약서에서 위약금 조항 찾아줘")
+
+    assert decision.route == "catalog_match"
+    search_plans = [p for p in decision.plans if p.action == "search_docs_rag"]
+    assert search_plans, "search_docs_rag plan이 있어야 합니다"
+    for plan in search_plans:
+        assert (
+            "full_read_mode" not in plan.params
+            or plan.params.get("full_read_mode") is not True
+        )
+
+
+def test_planner_document_issue_tool_no_plantime_error():
+    """document_issue_tool이 플래닝 타임에 ValueError를 발생시켜서는 안 된다."""
+    shared_core = SharedPlannerCore(
+        activation_rule_refs=["internal_docs.default", "lexguard.default"]
+    )
+
+    # 이 쿼리는 search_docs_rag + document_issue_tool 동시 매칭 → 과거에 ValueError 발생
+    decision = shared_core.plan("표준계약서의 부당특약을 검토해라")
+
+    assert decision.route == "catalog_match"
+    actions = [p.action for p in decision.plans]
+    assert "document_issue_tool" in actions

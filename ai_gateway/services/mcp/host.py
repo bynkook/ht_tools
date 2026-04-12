@@ -3,9 +3,10 @@ Generic MCP host helpers used by FabriX Chat runtimes and MCP command routes.
 """
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import logging
-from typing import Any
+from typing import Any, cast
 
 from fastapi import HTTPException
 
@@ -20,6 +21,7 @@ from .doc_search_policy import (
     DOC_SEARCH_DEFAULT_SNIPPET_CHARS,
     normalize_doc_search_rag_params,
 )
+from .mcp_plan_executor import McpPlanExecutor
 from .providers import get_provider_manifest, require_provider_manifest
 from .rag_context import (
     LEXGUARD_LEGAL_ACTIONS,
@@ -30,13 +32,11 @@ from .registry import connect_provider
 from .result_normalizer import tool_result_to_dict
 from .shared_planner.core import SharedPlannerCore
 from .shared_planner.models import PlannerDecision, PlannerToolPlan
-from .shared_planner.result_chaining import (
-    chain_document_text,
-    should_chain_doc_to_lexguard,
-)
 
 
 logger = logging.getLogger(__name__)
+
+_PLANNER_INTERNAL_PARAMS = frozenset({"full_read_mode"})
 
 
 @dataclass(frozen=True)
@@ -390,9 +390,17 @@ class GenericMcpHost:
         ) as provider:
             provider_method = getattr(provider, action, None)
             if callable(provider_method):
-                return await provider_method(**tool_arguments)
+                provider_callable = cast(
+                    Callable[..., Awaitable[Any]],
+                    provider_method,
+                )
+                return await provider_callable(**tool_arguments)
             if hasattr(provider, "call_tool_dict"):
-                return await provider.call_tool_dict(action, tool_arguments)
+                call_tool_dict = cast(
+                    Callable[[str, dict[str, Any]], Awaitable[Any]],
+                    provider.call_tool_dict,
+                )
+                return await call_tool_dict(action, tool_arguments)
             raise ValueError(
                 f"MCP provider does not support action: {resolved_provider_id}.{action}"
             )
@@ -405,9 +413,14 @@ class GenericMcpHost:
         provider_id: str | None = None,
     ) -> Any:
         self._require_tool_action_supported(action, provider_id=provider_id)
+        clean_arguments = {
+            key: value
+            for key, value in (arguments or {}).items()
+            if key not in _PLANNER_INTERNAL_PARAMS
+        }
         return await self._call_provider_action(
             action=action,
-            arguments=arguments,
+            arguments=clean_arguments,
             provider_id=provider_id,
         )
 
@@ -432,7 +445,8 @@ class GenericMcpHost:
                 raise ValueError(
                     f"MCP provider does not support category listing: {resolved_provider_id}"
                 )
-            categories = await provider_method()
+            list_category_catalog = cast(Callable[[], Awaitable[Any]], provider_method)
+            categories = await list_category_catalog()
         return categories if isinstance(categories, list) else []
 
     async def validate_category(
@@ -456,7 +470,11 @@ class GenericMcpHost:
                 raise ValueError(
                     f"MCP provider does not support category validation: {resolved_provider_id}"
                 )
-            return await provider_method(category)
+            validate_category = cast(
+                Callable[[str], Awaitable[dict[str, Any]]],
+                provider_method,
+            )
+            return await validate_category(category)
 
     async def run_rag_search(
         self,
@@ -696,6 +714,23 @@ class GenericMcpHost:
             settings=self.settings.host.doc_search,
         )
 
+    def _validate_effective_plan_params(self, plan: PlannerToolPlan) -> None:
+        """Validate final effective plan arguments after result chaining has been applied.
+
+        Called immediately before provider execution — after chaining is complete.
+        Raises ValueError when a document_issue_tool plan still lacks document_text,
+        which means the planner produced a standalone plan with no preceding retrieval step.
+        """
+        if plan.action != "document_issue_tool":
+            return
+        document_text = plan.params.get("document_text")
+        if not isinstance(document_text, str) or not document_text.strip():
+            raise ValueError(
+                "document_issue_tool requires 'document_text' at execution time. "
+                "Expected it to be provided via result chaining from a preceding "
+                "search_docs_rag or read_doc step."
+            )
+
     async def _execute_context_plan(
         self, plan: PlannerToolPlan, *, default_query: str
     ) -> dict[str, Any]:
@@ -703,7 +738,7 @@ class GenericMcpHost:
             resolved_params = self._resolve_doc_search_plan_params(
                 plan.params, default_query=default_query
             )
-            return await self.run_rag_search(
+            context_result = await self.run_rag_search(
                 query=str(resolved_params["query"]),
                 category=resolved_params.get("category"),
                 filename_filter=resolved_params.get("filename_filter"),
@@ -711,19 +746,39 @@ class GenericMcpHost:
                 snippet_chars=int(resolved_params["snippet_chars"]),
                 provider_id=plan.provider,
             )
+            raw_result = context_result.get("raw_result")
+            if not isinstance(raw_result, dict):
+                raw_result = {
+                    "files": list(context_result.get("files") or []),
+                    "snippets": list(context_result.get("snippets") or []),
+                }
+                retrieval_meta = context_result.get("retrieval_meta")
+                if retrieval_meta is not None:
+                    raw_result["retrieval_meta"] = retrieval_meta
+            return {
+                "raw_result": raw_result,
+                "context_result": context_result,
+                "system_prompt": context_result.get("system_prompt"),
+            }
 
+        self._validate_effective_plan_params(plan)
         raw_result = await self.execute_tool_action(
             action=plan.action,
             arguments=plan.params,
             provider_id=plan.provider,
         )
-        return normalize_context_result(
+        context_result = normalize_context_result(
             action=plan.action,
             arguments=plan.params,
             raw_result=raw_result,
             doc_search_settings=self.settings.host.doc_search,
             test_mode=self._test_mode,
         )
+        return {
+            "raw_result": raw_result,
+            "context_result": context_result,
+            "system_prompt": context_result.get("system_prompt"),
+        }
 
     async def build_chat_resolution(
         self,
@@ -821,38 +876,18 @@ class GenericMcpHost:
                 decision=decision,
             )
 
-        system_prompt = None
-        results: list[dict[str, Any]] = []
-        plans_list = list(decision.plans)
-
-        for index, plan in enumerate(plans_list):
-            # Apply result chaining: inject doc search results into lexguard params
-            effective_plan = plan
-            if index > 0 and results:
-                prev_plan = plans_list[index - 1]
-                prev_result = results[-1]
-                if should_chain_doc_to_lexguard(prev_plan.action, plan.action):
-                    chained_params = chain_document_text(plan.params, prev_result)
-                    effective_plan = PlannerToolPlan(
-                        provider=plan.provider,
-                        action=plan.action,
-                        params=chained_params,
-                        provenance=plan.provenance,
-                    )
-
-            context_result = await self._execute_context_plan(
-                effective_plan, default_query=decision.clean_query
-            )
-            results.append(context_result)
-            system_prompt = merge_system_prompts(
-                system_prompt, context_result.get("system_prompt")
-            )
+        execution_result = await McpPlanExecutor().execute(
+            decision=decision,
+            execute_fn=lambda plan: self._execute_context_plan(
+                plan, default_query=decision.clean_query
+            ),
+        )
         return McpChatResolution(
             route=decision.route,
-            system_prompt=system_prompt,
+            system_prompt=execution_result.system_prompt,
             missing_mentions=[],
             decision=decision,
-            activated=bool(system_prompt),
+            activated=bool(execution_result.system_prompt),
         )
 
     async def execute_manual_command(
@@ -880,7 +915,11 @@ class GenericMcpHost:
                 raise ValueError(
                     f"Manual MCP commands are not supported by provider: {resolved_provider_id}"
                 )
-            return await provider_command(
+            execute_manual_command = cast(
+                Callable[..., Awaitable[dict[str, Any]]],
+                provider_command,
+            )
+            return await execute_manual_command(
                 action=action,
                 query=query,
                 target=target,

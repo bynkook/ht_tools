@@ -12,16 +12,12 @@ from ..config import McpEventPolicy, McpHostSettings
 from ..event_emitter import SystemEventEmitter
 from ..event_guard import SystemEventGuard
 from ..host import GenericMcpHost, build_context_debug_payload, normalize_context_result
+from ..mcp_plan_executor import ExecutorHooks, McpPlanExecutor
 from ..shared_planner.models import PlannerDecision, PlannerToolPlan
-from ..shared_planner.result_chaining import (
-    chain_document_text,
-    should_chain_doc_to_lexguard,
-)
 from ..test_mode import (
     DeterministicToolPlanner,
     ProtocolRecorder,
     ScenarioLoader,
-    ToolPlan,
 )
 from ..test_mode.synthetic_assistant import build_synthetic_assistant_summary
 from .base import BaseChatRuntime, ChatRuntimeInput
@@ -58,6 +54,7 @@ class TestModeChatRuntime(BaseChatRuntime):
         self._event_emitter = event_emitter or SystemEventEmitter(
             self._event_policy, channel="mcp_test"
         )
+        self._plan_executor = McpPlanExecutor()
 
     async def stream_chat(self, runtime_input: ChatRuntimeInput) -> AsyncIterator[str]:
         request_id = self._build_request_id()
@@ -106,8 +103,13 @@ class TestModeChatRuntime(BaseChatRuntime):
         guard = SystemEventGuard(self._event_policy, request_id=recorder.request_id)
         recorder_event_details = self._build_provider_event_details(recorder.provider)
         plans = list(decision.plans)
-        current_plan: ToolPlan | None = None
-        results: list[dict[str, Any]] = []
+        execution_payloads: list[str] = []
+        execution_state: dict[str, Any] = {
+            "current_plan": None,
+            "completed_count": 0,
+            "total_plans": len(plans),
+            "error_emitted": False,
+        }
 
         try:
             for provider_id in self._iter_discovery_providers(
@@ -184,73 +186,20 @@ class TestModeChatRuntime(BaseChatRuntime):
                 yield self._serialize_stream_end("test_mode_complete")
                 return
 
-            for index, plan in enumerate(plans, start=1):
-                current_plan = plan
-
-                # Result chaining: if previous plan was doc_search and current needs document_text,
-                # inject the document text from previous result.
-                effective_plan = plan
-                if index > 1 and results:
-                    prev_plan = plans[index - 2]  # index is 1-based, plans is 0-based
-                    prev_result = results[-1]
-                    if should_chain_doc_to_lexguard(prev_plan.action, plan.action):
-                        chained_params = chain_document_text(plan.params, prev_result)
-                        # Create updated plan with chained params (PlannerToolPlan is frozen)
-                        effective_plan = PlannerToolPlan(
-                            provider=plan.provider,
-                            action=plan.action,
-                            params=chained_params,
-                            provenance=plan.provenance,
-                        )
-                        current_plan = effective_plan
-
-                plan_event_details = self._build_plan_event_details(
-                    effective_plan, selection_rank=index
-                )
-                for payload in self._serialize_guarded_event(
-                    guard,
-                    recorder.tool_decision(
-                        content=f"Selected {effective_plan.provider}.{effective_plan.action} via {effective_plan.provenance.decision_source}.",
-                        raw=effective_plan.provenance.to_payload(),
-                        provider=effective_plan.provider,
-                        event_details=plan_event_details,
-                    ),
-                ):
-                    yield payload
-                for payload in self._serialize_guarded_event(
-                    guard,
-                    recorder.before_tool_call(
-                        tool=effective_plan.action,
-                        raw={"arguments": effective_plan.params},
-                        provider=effective_plan.provider,
-                        event_details=plan_event_details,
-                    ),
-                ):
-                    yield payload
-                result = await self._execute_plan(effective_plan)
-                results.append(result)
-                for payload in self._serialize_guarded_event(
-                    guard,
-                    recorder.after_tool_call(
-                        tool=effective_plan.action,
-                        raw=result["raw_result"],
-                        provider=effective_plan.provider,
-                        event_details=plan_event_details,
-                    ),
-                ):
-                    yield payload
-                current_plan = None
-
-            context_summary = self._build_context_summary(
-                runtime_input.system_prompt,
-                [result["context_result"] for result in results],
-            )
-            for payload in self._serialize_guarded_event(
-                guard,
-                recorder.context_aggregated(
-                    raw=context_summary, event_details=recorder_event_details
+            execution_result = await self._plan_executor.execute(
+                decision=decision,
+                execute_fn=self._execute_plan,
+                hooks=self._build_executor_hooks(
+                    guard=guard,
+                    recorder=recorder,
+                    recorder_event_details=recorder_event_details,
+                    runtime_input=runtime_input,
+                    execution_payloads=execution_payloads,
+                    execution_state=execution_state,
                 ),
-            ):
+            )
+
+            for payload in execution_payloads:
                 yield payload
             for payload in self._serialize_guarded_event(
                 guard,
@@ -266,33 +215,42 @@ class TestModeChatRuntime(BaseChatRuntime):
                 yield payload
             yield self._serialize_assistant_final(
                 build_synthetic_assistant_summary(
-                    plans=plans,
-                    results=[result["raw_result"] for result in results],
+                    plans=execution_result.plans,
+                    results=[
+                        result["raw_result"] for result in execution_result.results
+                    ],
                 ),
             )
             yield self._serialize_stream_end("test_mode_complete")
         except HTTPException as error:
-            error_provider = (
-                current_plan.provider if current_plan is not None else recorder.provider
-            )
-            error_event_details = self._build_error_event_details(
-                current_plan=current_plan,
-                completed_count=len(results),
-                total_plans=len(plans),
-            )
-            for payload in self._serialize_guarded_event(
-                guard,
-                recorder.error(
-                    phase="runtime",
-                    title="Runtime error",
-                    content=str(error.detail),
-                    raw={"status_code": error.status_code},
-                    tool=current_plan.action if current_plan is not None else None,
-                    provider=error_provider,
-                    event_details=error_event_details,
-                ),
-            ):
-                yield payload
+            if execution_state["error_emitted"]:
+                for payload in execution_payloads:
+                    yield payload
+            else:
+                current_plan = execution_state["current_plan"]
+                error_provider = (
+                    current_plan.provider
+                    if current_plan is not None
+                    else recorder.provider
+                )
+                error_event_details = self._build_error_event_details(
+                    current_plan=current_plan,
+                    completed_count=execution_state["completed_count"],
+                    total_plans=execution_state["total_plans"],
+                )
+                for payload in self._serialize_guarded_event(
+                    guard,
+                    recorder.error(
+                        phase="runtime",
+                        title="Runtime error",
+                        content=str(error.detail),
+                        raw={"status_code": error.status_code},
+                        tool=current_plan.action if current_plan is not None else None,
+                        provider=error_provider,
+                        event_details=error_event_details,
+                    ),
+                ):
+                    yield payload
             for payload in self._serialize_guard_flush(guard):
                 yield payload
             yield self._serialize_assistant_final(
@@ -300,27 +258,34 @@ class TestModeChatRuntime(BaseChatRuntime):
             )
             yield self._serialize_stream_end("error")
         except Exception as error:
-            error_provider = (
-                current_plan.provider if current_plan is not None else recorder.provider
-            )
-            error_event_details = self._build_error_event_details(
-                current_plan=current_plan,
-                completed_count=len(results),
-                total_plans=len(plans),
-            )
-            for payload in self._serialize_guarded_event(
-                guard,
-                recorder.error(
-                    phase="runtime",
-                    title="Runtime error",
-                    content=str(error),
-                    raw={"type": type(error).__name__},
-                    tool=current_plan.action if current_plan is not None else None,
-                    provider=error_provider,
-                    event_details=error_event_details,
-                ),
-            ):
-                yield payload
+            if execution_state["error_emitted"]:
+                for payload in execution_payloads:
+                    yield payload
+            else:
+                current_plan = execution_state["current_plan"]
+                error_provider = (
+                    current_plan.provider
+                    if current_plan is not None
+                    else recorder.provider
+                )
+                error_event_details = self._build_error_event_details(
+                    current_plan=current_plan,
+                    completed_count=execution_state["completed_count"],
+                    total_plans=execution_state["total_plans"],
+                )
+                for payload in self._serialize_guarded_event(
+                    guard,
+                    recorder.error(
+                        phase="runtime",
+                        title="Runtime error",
+                        content=str(error),
+                        raw={"type": type(error).__name__},
+                        tool=current_plan.action if current_plan is not None else None,
+                        provider=error_provider,
+                        event_details=error_event_details,
+                    ),
+                ):
+                    yield payload
             for payload in self._serialize_guard_flush(guard):
                 yield payload
             yield self._serialize_assistant_final(
@@ -328,22 +293,230 @@ class TestModeChatRuntime(BaseChatRuntime):
             )
             yield self._serialize_stream_end("error")
 
-    async def _execute_plan(self, plan: ToolPlan) -> dict[str, Any]:
+    async def _execute_plan(self, plan: PlannerToolPlan) -> dict[str, Any]:
+        # search_docs_rag: delegate to run_rag_search for consistent raw_result structure
+        # This ensures filename/snippet keys are properly normalized for result chaining.
+        if plan.action == "search_docs_rag":
+            return await self._execute_search_docs_rag_plan(plan)
+
         raw_result = await self.mcp_host.execute_tool_action(
             action=plan.action,
             arguments=plan.params,
             provider_id=plan.provider,
         )
+        context_result = normalize_context_result(
+            action=plan.action,
+            arguments=plan.params,
+            raw_result=raw_result,
+            doc_search_settings=self._settings.doc_search,
+            test_mode=True,
+        )
         return {
             "raw_result": raw_result,
-            "context_result": normalize_context_result(
-                action=plan.action,
-                arguments=plan.params,
-                raw_result=raw_result,
-                doc_search_settings=self._settings.doc_search,
-                test_mode=True,
-            ),
+            "context_result": context_result,
+            "system_prompt": context_result.get("system_prompt"),
         }
+
+    async def _execute_search_docs_rag_plan(
+        self, plan: PlannerToolPlan
+    ) -> dict[str, Any]:
+        """Execute search_docs_rag via run_rag_search for consistent raw_result structure.
+
+        Using run_rag_search ensures:
+        - Param normalization (max_docs, snippet_chars defaults)
+        - Category validation
+        - Snippet filtering via _select_prompt_snippets (filename/snippet keys guaranteed)
+
+        This aligns test mode with normal mode's _execute_context_plan path.
+        """
+        resolved_params = self.mcp_host._resolve_doc_search_plan_params(
+            plan.params, default_query=plan.params.get("query", "")
+        )
+        context_result = await self.mcp_host.run_rag_search(
+            query=str(resolved_params["query"]),
+            category=resolved_params.get("category"),
+            filename_filter=resolved_params.get("filename_filter"),
+            max_docs=int(resolved_params["max_docs"]),
+            snippet_chars=int(resolved_params["snippet_chars"]),
+            provider_id=plan.provider,
+        )
+        # Build raw_result structure matching _execute_context_plan output
+        raw_result = context_result.get("raw_result")
+        if not isinstance(raw_result, dict):
+            raw_result = {
+                "files": list(context_result.get("files") or []),
+                "snippets": list(context_result.get("snippets") or []),
+            }
+            retrieval_meta = context_result.get("retrieval_meta")
+            if retrieval_meta is not None:
+                raw_result["retrieval_meta"] = retrieval_meta
+        return {
+            "raw_result": raw_result,
+            "context_result": context_result,
+            "system_prompt": context_result.get("system_prompt"),
+        }
+
+    def _build_executor_hooks(
+        self,
+        *,
+        guard: SystemEventGuard,
+        recorder: ProtocolRecorder,
+        recorder_event_details: dict[str, Any],
+        runtime_input: ChatRuntimeInput,
+        execution_payloads: list[str],
+        execution_state: dict[str, Any],
+    ) -> ExecutorHooks:
+        async def on_plan_start(**kwargs: Any) -> None:
+            execution_state["current_plan"] = kwargs.get("plan")
+            execution_state["total_plans"] = kwargs.get(
+                "total_plans", execution_state["total_plans"]
+            )
+
+        async def on_tool_decision(**kwargs: Any) -> None:
+            plan = kwargs["plan"]
+            selection_rank = int(kwargs["index"]) + 1
+            execution_state["current_plan"] = plan
+            execution_state["total_plans"] = kwargs["total_plans"]
+            plan_event_details = self._build_plan_event_details(
+                plan, selection_rank=selection_rank
+            )
+            execution_payloads.extend(
+                self._serialize_guarded_event(
+                    guard,
+                    recorder.tool_decision(
+                        content=(
+                            f"Selected {plan.provider}.{plan.action} via "
+                            f"{plan.provenance.decision_source}."
+                        ),
+                        raw=plan.provenance.to_payload(),
+                        provider=plan.provider,
+                        event_details=plan_event_details,
+                    ),
+                )
+            )
+
+        async def on_before_tool_call(**kwargs: Any) -> None:
+            plan = kwargs["plan"]
+            selection_rank = int(kwargs["index"]) + 1
+            execution_payloads.extend(
+                self._serialize_guarded_event(
+                    guard,
+                    recorder.before_tool_call(
+                        tool=plan.action,
+                        raw={"arguments": plan.params},
+                        provider=plan.provider,
+                        event_details=self._build_plan_event_details(
+                            plan, selection_rank=selection_rank
+                        ),
+                    ),
+                )
+            )
+
+        async def on_after_tool_call(**kwargs: Any) -> None:
+            plan = kwargs["plan"]
+            result = kwargs["result"]
+            selection_rank = int(kwargs["index"]) + 1
+            execution_state["completed_count"] = len(kwargs["results"])
+            execution_payloads.extend(
+                self._serialize_guarded_event(
+                    guard,
+                    recorder.after_tool_call(
+                        tool=plan.action,
+                        raw=result["raw_result"],
+                        provider=plan.provider,
+                        event_details=self._build_plan_event_details(
+                            plan, selection_rank=selection_rank
+                        ),
+                    ),
+                )
+            )
+            execution_state["current_plan"] = None
+
+        async def on_plan_inserted(**kwargs: Any) -> None:
+            inserted_plan = kwargs["inserted_plan"]
+            trigger_plan = kwargs["trigger_plan"]
+            execution_state["total_plans"] = kwargs["total_plans"]
+            execution_payloads.extend(
+                self._serialize_guarded_event(
+                    guard,
+                    recorder.warning(
+                        phase="planning",
+                        title="Plan inserted",
+                        content=(
+                            f"Inserted {inserted_plan.provider}.{inserted_plan.action} "
+                            f"after {trigger_plan.provider}.{trigger_plan.action} for full document chaining."
+                        ),
+                        raw={"arguments": inserted_plan.params},
+                        tool=inserted_plan.action,
+                        provider=inserted_plan.provider,
+                        event_details=self._build_plan_event_details(
+                            inserted_plan, selection_rank=int(kwargs["index"]) + 1
+                        ),
+                    ),
+                )
+            )
+
+        async def on_context_aggregated(**kwargs: Any) -> None:
+            context_summary = self._build_context_summary(
+                runtime_input.system_prompt,
+                kwargs["context_results"],
+            )
+            execution_payloads.extend(
+                self._serialize_guarded_event(
+                    guard,
+                    recorder.context_aggregated(
+                        raw=context_summary, event_details=recorder_event_details
+                    ),
+                )
+            )
+
+        async def on_error(**kwargs: Any) -> None:
+            error = kwargs["error"]
+            current_plan = kwargs.get("plan")
+            execution_state["current_plan"] = current_plan
+            execution_state["completed_count"] = len(kwargs["results"])
+            execution_state["total_plans"] = kwargs["total_plans"]
+            error_provider = (
+                current_plan.provider if current_plan is not None else recorder.provider
+            )
+            error_event_details = self._build_error_event_details(
+                current_plan=current_plan,
+                completed_count=execution_state["completed_count"],
+                total_plans=execution_state["total_plans"],
+            )
+            raw = (
+                {"status_code": error.status_code}
+                if isinstance(error, HTTPException)
+                else {"type": type(error).__name__}
+            )
+            content = (
+                str(error.detail) if isinstance(error, HTTPException) else str(error)
+            )
+            execution_payloads.extend(
+                self._serialize_guarded_event(
+                    guard,
+                    recorder.error(
+                        phase="runtime",
+                        title="Runtime error",
+                        content=content,
+                        raw=raw,
+                        tool=current_plan.action if current_plan is not None else None,
+                        provider=error_provider,
+                        event_details=error_event_details,
+                    ),
+                )
+            )
+            execution_state["error_emitted"] = True
+
+        return ExecutorHooks(
+            on_plan_start=on_plan_start,
+            on_tool_decision=on_tool_decision,
+            on_before_tool_call=on_before_tool_call,
+            on_after_tool_call=on_after_tool_call,
+            on_plan_inserted=on_plan_inserted,
+            on_context_aggregated=on_context_aggregated,
+            on_error=on_error,
+        )
 
     def _build_context_summary(
         self, base_system_prompt: str | None, context_results: list[dict[str, Any]]
@@ -391,7 +564,7 @@ class TestModeChatRuntime(BaseChatRuntime):
         }
 
     def _build_plan_event_details(
-        self, plan: ToolPlan, *, selection_rank: int
+        self, plan: PlannerToolPlan, *, selection_rank: int
     ) -> dict[str, Any]:
         candidate_summary = (
             list(plan.provenance.provider_candidates)
@@ -409,7 +582,7 @@ class TestModeChatRuntime(BaseChatRuntime):
     def _build_error_event_details(
         self,
         *,
-        current_plan: ToolPlan | None,
+        current_plan: PlannerToolPlan | None,
         completed_count: int,
         total_plans: int,
     ) -> dict[str, Any]:
