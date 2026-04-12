@@ -63,10 +63,10 @@ const TemplateButton = ({
       <div className={`flex items-center border rounded-lg transition-colors
         ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
         ${isOpen
-          ? 'border-[var(--text-secondary)] bg-[var(--bg-secondary)]'
+          ? 'border-[var(--text-secondary)] bg-[var(--input-template-bg)]'
           : isActive
-            ? 'border-[var(--text-secondary)] bg-[var(--bg-secondary)]'
-            : 'border-[var(--border-color)] bg-[var(--bg-primary)] hover:bg-[var(--bg-secondary)] hover:border-[var(--text-secondary)]'
+            ? 'border-[var(--text-secondary)] bg-[var(--input-template-bg)]'
+            : 'border-[var(--border-color)] bg-[var(--input-template-bg)] hover:bg-[var(--input-template-bg)] hover:border-[var(--text-secondary)]'
         }`}
       >
         <button

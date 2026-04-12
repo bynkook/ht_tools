@@ -147,22 +147,25 @@ const ChatBubble = memo(({ message, isStreaming }) => {
             return <td className="px-4 py-2 text-xs border-t border-[var(--border-color)]">{children}</td>;
           },
           p({ children }) {
-            return <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>;
+            return <p className="mb-4 last:mb-0 leading-7">{children}</p>;
           },
           ul({ children }) {
-            return <ul className="list-disc list-inside mb-3 space-y-1">{children}</ul>;
+            return <ul className="list-disc list-outside ml-5 mb-4 space-y-1.5">{children}</ul>;
           },
           ol({ children }) {
-            return <ol className="list-decimal list-inside mb-3 space-y-1">{children}</ol>;
+            return <ol className="list-decimal list-outside ml-5 mb-4 space-y-1.5">{children}</ol>;
           },
           h1({ children }) {
-            return <h1 className="text-xs font-semibold mb-3 text-[var(--text-primary)]">{children}</h1>;
+            return <h1 className="text-sm font-bold mb-3 mt-5 text-[var(--text-primary)]">{children}</h1>;
           },
           h2({ children }) {
-            return <h2 className="text-xs font-semibold mb-3 text-[var(--text-primary)]">{children}</h2>;
+            return <h2 className="text-sm font-semibold mb-2 mt-4 text-[var(--text-primary)]">{children}</h2>;
           },
           h3({ children }) {
-            return <h3 className="text-xs font-semibold mb-2 text-[var(--text-primary)]">{children}</h3>;
+            return <h3 className="text-xs font-semibold mb-2 mt-3 text-[var(--text-primary)] opacity-80">{children}</h3>;
+          },
+          br() {
+            return <br />;
           },
           a({ children, href, ...props }) {
             return (
@@ -218,7 +221,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
             )}
           </div>
         )}
-        <div className="max-w-none text-xs text-[var(--text-primary)] break-words">
+        <div className="max-w-none text-xs text-[var(--text-primary)] break-words [&_br]:block [&_br]:mb-2">
           {renderMarkdown(message.content)}
           {isStreaming && (
             <span className="inline-flex ml-1">

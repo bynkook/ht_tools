@@ -41,9 +41,22 @@
     --icon-badge-border: transparent;
     --icon-badge-text: #ffffff;
 
-    /* 입력창 테두리 */
+    /* 입력창 테두리/배경 */
     --input-border-color: #e2e8f0;
     --input-border-width: 1px;
+    --input-bg: #ffffff;
+    --input-template-bg: #f1f5f9;
+
+    /* Send 버튼 — light */
+    --send-btn-bg-inactive: #e2e8f0;
+    --send-btn-bg-active: #3b82f6;
+    --send-btn-icon-inactive: #94a3b8;
+    --send-btn-icon-active: #ffffff;
+
+    /* 사용자 아바타 */
+    --avatar-bg: #dbeafe;
+    --avatar-text: #1d4ed8;
+    --avatar-border: #bfdbfe;
 
     /* 그림자 */
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
@@ -94,9 +107,22 @@
     --icon-badge-border: #3f3f46;
     --icon-badge-text: #a1a1aa;
 
-    /* 입력창 테두리 — dark: soft white, 1px */
-    --input-border-color: rgba(255, 255, 255, 0.6);
+    /* 입력창 테두리/배경 — dark */
+    --input-border-color: rgba(255, 255, 255, 0.8);
     --input-border-width: 1px;
+    --input-bg: #18181b;
+    --input-template-bg: #09090b;
+
+    /* Send 버튼 — dark: KIMI 스타일 투명도 기반 */
+    --send-btn-bg-inactive: rgba(255, 255, 255, 0.12);
+    --send-btn-bg-active: rgba(255, 255, 255, 0.85);
+    --send-btn-icon-inactive: #71717a;
+    --send-btn-icon-active: #09090b;
+
+    /* 사용자 아바타 — dark: zinc 배경 + 연한 텍스트 */
+    --avatar-bg: #3f3f46;
+    --avatar-text: #e4e4e7;
+    --avatar-border: #52525b;
   }
 
   body {
@@ -133,6 +159,25 @@
   }
   .btn-stop:hover {
     background: var(--btn-stop-bg-hover);
+  }
+
+  /* Send 버튼 — KIMI 스타일: 비활성(흐린 회색) / 활성(밝은 색) */
+  .btn-send {
+    background: var(--send-btn-bg-inactive);
+    color: var(--send-btn-icon-inactive);
+    border: none;
+    transition: background 0.2s, color 0.2s, transform 0.1s;
+  }
+  .btn-send:not(:disabled):hover {
+    opacity: 0.9;
+    transform: scale(1.05);
+  }
+  .btn-send:not(:disabled):active {
+    transform: scale(0.95);
+  }
+  .btn-send.is-active {
+    background: var(--send-btn-bg-active);
+    color: var(--send-btn-icon-active);
   }
 }
 

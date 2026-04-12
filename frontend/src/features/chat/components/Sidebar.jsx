@@ -230,34 +230,34 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
   return (
     <div className="fixed left-0 top-0 h-full w-64 bg-[var(--bg-secondary)] border-r border-[var(--border-color)] flex flex-col z-40">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 icon-badge rounded-lg flex items-center justify-center">
-            <Sparkles size={16} />
+      <div className="flex items-center justify-between px-3 py-2.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-7 h-7 icon-badge rounded-lg flex items-center justify-center shrink-0">
+            <Sparkles size={14} />
           </div>
-          <span className="font-semibold text-[var(--text-primary)]">FabriX Chat</span>
+          <span className="font-semibold text-[var(--text-primary)] truncate">FabriX Chat</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 shrink-0 ml-1">
           <button
             onClick={() => navigate('/')}
             className="p-1.5 rounded-md hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors"
             title="Home"
           >
-            <Home size={16} />
+            <Home size={15} />
           </button>
           <button
             onClick={handleThemeToggle}
             className="p-1.5 rounded-md hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors"
             title={currentTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
-            {currentTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            {currentTheme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
           </button>
           <button
             onClick={() => setIsCollapsed(true)}
             className="p-1.5 rounded-md hover:bg-[var(--hover-bg)] text-[var(--text-secondary)] transition-colors"
             title="Collapse sidebar"
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={15} />
           </button>
         </div>
       </div>
@@ -343,8 +343,8 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
       </div>
 
       {/* Session List */}
-      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1 custom-scrollbar">
-        <div className="px-4 text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mb-2 opacity-60">
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-0 custom-scrollbar">
+        <div className="px-4 text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest mb-1 opacity-60">
           Recent Conversations
         </div>
         
@@ -362,7 +362,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
               key={session.id}
               onClick={() => handleSessionClick(session.id)}
               className={`
-                group relative flex items-center gap-3 px-4 py-1.5 rounded-xl cursor-pointer transition-all
+                group relative flex items-center gap-2 px-3 py-1 rounded-lg cursor-pointer transition-all
                 ${currentSessionId === String(session.id)
                   ? 'bg-[var(--bg-primary)] shadow-sm border border-[var(--border-color)] text-[var(--accent-color)] font-medium'
                   : 'text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]/60 hover:text-[var(--text-primary)]'
@@ -370,7 +370,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
               `}
             >
               <MessageSquare size={12} className={`${currentSessionId === String(session.id) ? 'text-[var(--accent-color)]' : 'text-[var(--text-secondary)]'} shrink-0`} />
-              <span className="text-xs truncate pr-6">{session.title || "New Conversation"}</span>
+              <span className="text-xs truncate pr-4">{session.title || "New Conversation"}</span>
               
               <button
                 onClick={(e) => handleDeleteSession(session.id, e)}
@@ -388,7 +388,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
       <div className="p-4 bg-[var(--bg-secondary)] mt-auto shrink-0">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-color)] flex items-center justify-center text-[var(--text-primary)] font-bold shadow-sm shrink-0">
+            <div className="w-10 h-10 rounded-full bg-[var(--avatar-bg)] border border-[var(--avatar-border)] flex items-center justify-center text-[var(--avatar-text)] font-bold shadow-sm shrink-0">
               {(sessionStorage.getItem('username') || 'U').charAt(0).toUpperCase()}
             </div>
             <div className="overflow-hidden">

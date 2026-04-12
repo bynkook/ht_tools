@@ -120,7 +120,7 @@ const InputBox = ({
     <div className="w-full">
         <div
           ref={composerRef}
-          className="flex flex-col bg-[var(--bg-primary)] rounded-2xl p-1 shadow-md hover:shadow-md focus-within:shadow-md transition-all w-full"
+          className="flex flex-col bg-[var(--input-bg)] rounded-2xl p-1 shadow-md hover:shadow-md focus-within:shadow-md transition-all w-full"
           style={{ border: 'var(--input-border-width) solid var(--input-border-color)' }}
         >
           {/* Text Input */}
@@ -151,7 +151,7 @@ const InputBox = ({
             <button
               onMouseDown={keepFocusOnPointerDown}
               onClick={onStop}
-              className="flex items-center justify-center w-10 h-10 btn-stop rounded-lg transition-all hover:scale-105 active:scale-95"
+              className="flex items-center justify-center w-9 h-9 btn-stop rounded-lg transition-all hover:scale-105 active:scale-95"
               title="Stop generating"
             >
               <StopCircle size={18} />
@@ -161,7 +161,7 @@ const InputBox = ({
               onMouseDown={keepFocusOnPointerDown}
               onClick={handleSend}
               disabled={!text.trim() || isBusy}
-              className="flex items-center justify-center w-10 h-10 btn-primary rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:scale-105 active:scale-95 transition-all"
+              className={`flex items-center justify-center w-9 h-9 btn-send rounded-full transition-all ${text.trim() && !isBusy ? 'is-active' : 'cursor-not-allowed'}`}
               title="Send message"
             >
               <Send size={18} />

@@ -484,8 +484,11 @@ export const useCommands = ({
         '> `@`는 질문 어느 위치에나 사용 가능. 세션 카테고리 설정 시 경로 없는 파일명은 해당 카테고리 내 탐색.',
         '',
         '---',
+        '',
         `🔌 현재 기본 provider: **"${providerForState}"**`,
+        '',
         categoryStatus,
+        '',
         ragEnabled
           ? '🤖 RAG 모드: **ON** — 일반 질문 입력 시 문서를 자동 검색합니다'
           : '🤖 RAG 모드: **OFF** — `/mcp set <카테고리명>` 으로 활성화',

@@ -12,7 +12,7 @@ const SystemMessageBand = ({ message }) => {
     <div className="animate-fade-in-up">
       <div className="border-y border-[var(--border-color)] bg-[var(--bg-secondary)]/55 px-5 py-2.5">
         <SystemMessageMeta message={message} />
-        <div className="max-w-none text-xs leading-snug text-[var(--text-primary)]">
+        <div className="max-w-none text-xs leading-relaxed text-[var(--text-primary)]">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -48,7 +48,7 @@ const SystemMessageBand = ({ message }) => {
                 );
               },
               p({ children }) {
-                return <p className="mb-1.5 last:mb-0">{children}</p>;
+                return <p className="mb-2.5 last:mb-0">{children}</p>;
               },
             }}
           >
