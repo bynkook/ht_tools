@@ -311,8 +311,12 @@ class TestModeChatRuntime(BaseChatRuntime):
             doc_search_settings=self._settings.doc_search,
             test_mode=True,
         )
+        # Use the coerced dict from context_result as raw_result so that
+        # extract_document_text_from_result (result chaining) always receives
+        # a plain dict. Storing the raw CallToolResult object here would cause
+        # isinstance(raw_result, dict) to fail and silently break chaining.
         return {
-            "raw_result": raw_result,
+            "raw_result": context_result.get("raw_result") or {},
             "context_result": context_result,
             "system_prompt": context_result.get("system_prompt"),
         }

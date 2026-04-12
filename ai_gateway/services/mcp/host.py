@@ -179,6 +179,11 @@ def normalize_context_result(
     # system_prompt is intentionally None — the content is consumed by chaining, not injected
     # into the chat context directly.
     if action == "read_doc":
+        # tool_result_to_dict stores plain-text tool results as {"raw_text": "..."}
+        # because the MCP server returns a bare string (not JSON).
+        # extract_document_text_from_result expects a "content" key, so normalize here.
+        if "content" not in raw_result_dict and "raw_text" in raw_result_dict:
+            raw_result_dict = {"content": raw_result_dict["raw_text"]}
         return {
             "action": action,
             "arguments": resolved_arguments,
@@ -738,23 +743,6 @@ class GenericMcpHost:
             settings=self.settings.host.doc_search,
         )
 
-    def _validate_effective_plan_params(self, plan: PlannerToolPlan) -> None:
-        """Validate final effective plan arguments after result chaining has been applied.
-
-        Called immediately before provider execution — after chaining is complete.
-        Raises ValueError when a document_issue_tool plan still lacks document_text,
-        which means the planner produced a standalone plan with no preceding retrieval step.
-        """
-        if plan.action != "document_issue_tool":
-            return
-        document_text = plan.params.get("document_text")
-        if not isinstance(document_text, str) or not document_text.strip():
-            raise ValueError(
-                "document_issue_tool requires 'document_text' at execution time. "
-                "Expected it to be provided via result chaining from a preceding "
-                "search_docs_rag or read_doc step."
-            )
-
     async def _execute_context_plan(
         self, plan: PlannerToolPlan, *, default_query: str
     ) -> dict[str, Any]:
@@ -785,7 +773,6 @@ class GenericMcpHost:
                 "system_prompt": context_result.get("system_prompt"),
             }
 
-        self._validate_effective_plan_params(plan)
         raw_result = await self.execute_tool_action(
             action=plan.action,
             arguments=plan.params,
@@ -798,8 +785,12 @@ class GenericMcpHost:
             doc_search_settings=self.settings.host.doc_search,
             test_mode=self._test_mode,
         )
+        # Use the coerced dict from context_result as raw_result so that
+        # extract_document_text_from_result (result chaining) always receives
+        # a plain dict. Storing the raw CallToolResult object here would cause
+        # isinstance(raw_result, dict) to fail and silently break chaining.
         return {
-            "raw_result": raw_result,
+            "raw_result": context_result.get("raw_result") or {},
             "context_result": context_result,
             "system_prompt": context_result.get("system_prompt"),
         }

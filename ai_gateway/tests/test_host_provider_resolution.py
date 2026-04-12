@@ -497,8 +497,11 @@ def test_host_full_read_mode_fallback_when_filename_not_available():
     assert "document_issue_tool" in steps
 
 
-def test_host_rejects_standalone_document_issue_tool_without_document_text():
-    """체이닝 없이 단독 document_issue_tool 실행 시 실행 타임 ValueError가 발생해야 한다."""
+def test_host_standalone_document_issue_tool_executes_without_document_text():
+    """체이닝 없이 단독 document_issue_tool 실행 시 document_text 없이 그대로 실행되어야 한다.
+
+    document_text 유무에 따른 중단은 host/executor 책임이 아니라 lexguard 서버 책임이다.
+    """
     host = _build_host()
 
     fake_decision = PlannerDecision(
@@ -511,22 +514,29 @@ def test_host_rejects_standalone_document_issue_tool_without_document_text():
     mock_planner.plan = MagicMock(return_value=fake_decision)
     host._planner = mock_planner
 
+    call_log: list[dict] = []
+
+    async def fake_execute_tool_action(self, *, action, arguments, provider_id=None):
+        call_log.append({"step": action, "arguments": dict(arguments)})
+        return {"issues": []}
+
     with (
         patch.object(GenericMcpHost, "validate_planner_decision", new=AsyncMock()),
+        patch.object(GenericMcpHost, "execute_tool_action", fake_execute_tool_action),
         patch(
             "services.mcp.host.require_provider_manifest", return_value=_fake_manifest()
         ),
     ):
-        try:
-            asyncio.run(
-                host.build_chat_resolution(user_text="표준계약서 부당특약 검토")
-            )
-        except ValueError as e:
-            assert "document_text" in str(e)
-        else:
-            raise AssertionError(
-                "단독 document_issue_tool은 실행 타임 ValueError를 발생시켜야 합니다"
-            )
+        asyncio.run(host.build_chat_resolution(user_text="표준계약서 부당특약 검토"))
+
+    steps = [c["step"] for c in call_log]
+    assert "document_issue_tool" in steps, (
+        "단독 document_issue_tool도 정상 실행되어야 합니다"
+    )
+    issue_call = next(c for c in call_log if c["step"] == "document_issue_tool")
+    assert "document_text" not in issue_call["arguments"], (
+        "선행 retrieval 없으면 document_text가 params에 없어야 합니다"
+    )
 
 
 def test_host_read_doc_to_document_issue_tool_chaining_regression():

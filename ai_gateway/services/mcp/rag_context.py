@@ -188,7 +188,7 @@ def render_legal_context_system_prompt(
 
     Design contract (normal mode):
     - Transport/API failures  → raw_result contains "error_code" field → return None
-    - Tool input errors       → raw_result has success=False + "error" field → return None
+    - Tool-level failures     → raw_result has success=False (regardless of "error" field) → return None
     - All other responses     → pass raw_result as-is via json.dumps to the LLM
 
     test_mode=True:
@@ -197,6 +197,12 @@ def render_legal_context_system_prompt(
 
     FabriX does not parse or reformat lexguard response content.
     The LLM receives the full structured result and interprets it directly.
+
+    Note on success=False without "error" field:
+    - document_issue_tool called without document_text returns isError=True,
+      success=False, error=None. The "error" field is absent but the result
+      is still a failure. Filtering on success=False alone (not requiring "error")
+      prevents this case from polluting the LLM context.
     """
     if not raw_result:
         return None
@@ -209,10 +215,11 @@ def render_legal_context_system_prompt(
         if raw_result.get("error_code"):
             return None
 
-        # Tool-level input validation failure: e.g. unknown committee_type, law not found.
-        # These have success=False + an "error" message string.
-        # Nothing useful to pass to the LLM; the tool itself rejected the input.
-        if raw_result.get("success") is False and raw_result.get("error"):
+        # Tool-level failure: success=False means the tool rejected the input or
+        # could not produce a result. This includes cases where "error" is absent
+        # (e.g. document_issue_tool called without document_text returns success=False
+        # with no "error" string). Pass nothing to the LLM in all failure cases.
+        if raw_result.get("success") is False:
             return None
 
         return (
@@ -223,9 +230,7 @@ def render_legal_context_system_prompt(
         )
 
     # test_mode: always show full response including errors
-    is_error = bool(raw_result.get("error_code")) or (
-        raw_result.get("success") is False and raw_result.get("error")
-    )
+    is_error = bool(raw_result.get("error_code")) or raw_result.get("success") is False
     section_header = (
         "[TEST] 법률 MCP 오류 응답" if is_error else "[TEST] 법률 검색 결과"
     )
