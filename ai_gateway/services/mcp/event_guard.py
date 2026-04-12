@@ -3,13 +3,13 @@ Backend-side guardrails for request-scoped MCP system logs.
 """
 
 from dataclasses import replace
-from json import dumps, loads
+from json import dumps
 from typing import Any
 
 from .config import McpEventPolicy
 from .event_schema import SystemEvent, build_event_fingerprint
 
-_MIN_TRUNCATION_PREVIEW_BYTES = 64
+RAW_VALUE_PREVIEW_CHARS = 500
 
 
 class SystemEventGuard:
@@ -22,8 +22,6 @@ class SystemEventGuard:
         self._pending_event: SystemEvent | None = None
         self._visible_count = 0
         self._suppressed_count = 0
-        self._raw_suppressed_count = 0
-        self._raw_bytes_used = 0
         self._last_context: dict[str, Any] = {
             "provider": None,
             "provider_id": None,
@@ -34,7 +32,7 @@ class SystemEventGuard:
 
     def accept(self, event: SystemEvent) -> list[SystemEvent]:
         emitted: list[SystemEvent] = []
-        guarded_event = self._apply_raw_budget(event)
+        guarded_event = self._apply_raw_preview(event)
         self._remember_context(guarded_event)
 
         if (
@@ -70,15 +68,6 @@ class SystemEventGuard:
             emitted.append(self._pending_event)
             self._pending_event = None
 
-        if self._raw_suppressed_count > 0:
-            emitted.append(
-                self._build_summary_event(
-                    title="Raw payload limit reached",
-                    content=f"추가 raw payload **{self._raw_suppressed_count}건** 이 생략되었습니다.",
-                    raw_suppressed_count=self._raw_suppressed_count,
-                )
-            )
-
         if self._suppressed_count > 0:
             emitted.append(
                 self._build_summary_event(
@@ -99,59 +88,13 @@ class SystemEventGuard:
             "timestamp": event.timestamp,
         }
 
-    def _apply_raw_budget(self, event: SystemEvent) -> SystemEvent:
+    def _apply_raw_preview(self, event: SystemEvent) -> SystemEvent:
         if event.raw is None:
             return event
-
-        raw_bytes = self._serialized_size(event.raw)
-        remaining = self._policy.raw_bytes_limit - self._raw_bytes_used
-
-        if raw_bytes <= remaining:
-            self._raw_bytes_used += raw_bytes
+        preview = _build_raw_preview(event.raw, RAW_VALUE_PREVIEW_CHARS)
+        if preview is event.raw:
             return event
-
-        if remaining > _MIN_TRUNCATION_PREVIEW_BYTES:
-            truncated_value, actual_emitted_bytes = self._truncate_raw_safe(
-                event.raw, remaining
-            )
-            self._raw_bytes_used += actual_emitted_bytes
-            return replace(
-                event,
-                raw=truncated_value,
-                meta={
-                    **event.meta,
-                    "rawTruncated": True,
-                    "rawOriginalBytes": raw_bytes,
-                    "rawTruncatedBytes": actual_emitted_bytes,
-                },
-            )
-
-        self._raw_suppressed_count += 1
-        return replace(
-            event,
-            raw=None,
-            meta={
-                **event.meta,
-                "rawSuppressed": True,
-            },
-        )
-
-    def _truncate_raw_safe(self, raw: Any, max_bytes: int) -> tuple[Any, int]:
-        try:
-            raw_bytes = dumps(raw, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        except Exception:
-            raw_bytes = str(raw).encode("utf-8")
-
-        sliced_bytes = raw_bytes[:max_bytes]
-        sliced_text = sliced_bytes.decode("utf-8", errors="ignore")
-
-        try:
-            truncated_value = loads(sliced_text)
-        except Exception:
-            truncated_value = {"_truncated": True, "preview": sliced_text}
-
-        actual_emitted_bytes = self._serialized_size(truncated_value)
-        return truncated_value, actual_emitted_bytes
+        return replace(event, raw=preview)
 
     def _build_summary_event(
         self,
@@ -159,7 +102,6 @@ class SystemEventGuard:
         title: str,
         content: str,
         suppressed_count: int = 0,
-        raw_suppressed_count: int = 0,
     ) -> SystemEvent:
         provider_id = (
             self._last_context["provider_id"] or self._last_context["provider"]
@@ -178,7 +120,6 @@ class SystemEventGuard:
             tool=self._last_context["tool"],
             meta={
                 "persist": self._policy.persist_system_logs,
-                "rawSuppressedCount": raw_suppressed_count,
             },
             fingerprint=build_event_fingerprint(
                 level="info",
@@ -192,12 +133,30 @@ class SystemEventGuard:
             timestamp=self._last_context["timestamp"],
         )
 
-    @staticmethod
-    def _serialized_size(value: Any) -> int:
-        try:
-            return len(dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8"))
-        except Exception:
-            return len(str(value).encode("utf-8"))
+
+def _build_raw_preview(raw: Any, max_chars: int) -> Any:
+    """이벤트별 독립적으로 dict의 각 value를 max_chars 문자로 제한한다.
+
+    - dict가 아닌 경우: str로 변환 후 제한
+    - 모든 value가 제한 이내이면 원본 객체를 그대로 반환 (identity 보장)
+    """
+    if not isinstance(raw, dict):
+        s = dumps(raw, ensure_ascii=False)
+        if len(s) <= max_chars:
+            return raw
+        return s[:max_chars] + "...(생략)"
+
+    truncated = False
+    result: dict[str, Any] = {}
+    for k, v in raw.items():
+        s = dumps(v, ensure_ascii=False)
+        if len(s) > max_chars:
+            result[k] = s[:max_chars] + "...(생략)"
+            truncated = True
+        else:
+            result[k] = v
+
+    return result if truncated else raw
 
 
 __all__ = ["SystemEventGuard"]

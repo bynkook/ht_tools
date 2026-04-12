@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from services.mcp.config import McpEventPolicy
 from services.mcp.event_emitter import SystemEventEmitter
-from services.mcp.event_guard import SystemEventGuard
+from services.mcp.event_guard import SystemEventGuard, _build_raw_preview
 from services.mcp.host import build_context_debug_payload, normalize_context_result
 from services.mcp.test_mode.planner import ToolPlan
 
@@ -120,179 +120,94 @@ def test_system_event_payload_preserves_multi_provider_contract_fields():
     assert payload["raw"]["headers"]["authorization"] == "[REDACTED]"
 
 
-def test_system_event_guard_marks_raw_suppression_with_multi_provider_context():
+def test_system_event_guard_raw_preview_applied_per_event():
+    """각 이벤트는 독립적으로 value 500자 제한 preview를 받는다."""
     policy = McpEventPolicy(
         verbose_json=True,
         redact_headers=True,
         max_payload_chars=4000,
         persist_system_logs=True,
         visible_band_limit=20,
-        raw_bytes_limit=8,
+        raw_bytes_limit=4096,
     )
     emitter = SystemEventEmitter(policy, channel="mcp_test")
     guard = SystemEventGuard(policy, request_id="turn-20260408-000000-000002")
 
-    guarded = guard.accept(
-        emitter.info(
-            phase="tool_call",
-            title="After tool call",
-            content="search_docs_rag completed.",
-            request_id="turn-20260408-000000-000002",
-            provider="internal_docs",
-            provider_display_name="Internal Docs",
-            tool="search_docs_rag",
-            selection_reason="keyword rule matched",
-            selection_rank=1,
-            raw={"payload": "x" * 128},
-        )
-    )
-    flushed = guard.flush()
-
-    assert guarded == []
-    assert len(flushed) == 2
-    assert flushed[0].meta["rawSuppressed"] is True
-    assert flushed[0].provider == "internal_docs"
-    assert flushed[0].provider_id == "internal_docs"
-    assert flushed[0].provider_display_name == "Internal Docs"
-    assert flushed[0].tool == "search_docs_rag"
-    assert flushed[1].phase == "log_guard"
-    assert flushed[1].meta["persist"] is True
-    assert flushed[1].meta["rawSuppressedCount"] == 1
-    assert flushed[1].provider == "internal_docs"
-    assert flushed[1].provider_id == "internal_docs"
-    assert flushed[1].provider_display_name == "Internal Docs"
-    assert flushed[1].tool == "search_docs_rag"
-
-
-def test_system_event_guard_truncates_raw_when_over_budget_but_remaining_sufficient():
-    policy = McpEventPolicy(
-        verbose_json=True,
-        redact_headers=True,
-        max_payload_chars=4000,
-        persist_system_logs=True,
-        visible_band_limit=20,
-        raw_bytes_limit=200,
-    )
-    emitter = SystemEventEmitter(policy, channel="mcp_test")
-    guard = SystemEventGuard(policy, request_id="turn-20260408-000000-000003")
-
-    first_event = emitter.info(
+    event1 = emitter.info(
         phase="tool_call",
-        title="Initial tool call",
-        content="Priming the raw budget.",
-        request_id="turn-20260408-000000-000003",
+        title="Short payload",
+        content="Should pass through unchanged.",
+        request_id="turn-20260408-000000-000002",
         provider="internal_docs",
         provider_display_name="Internal Docs",
         tool="search_docs_rag",
-        raw={"payload": "a" * 5},
+        raw={"payload": "x" * 10},
     )
-    second_event = emitter.info(
+    event2 = emitter.info(
         phase="tool_result",
-        title="Large tool result",
-        content="This payload should be truncated.",
-        request_id="turn-20260408-000000-000003",
+        title="Long payload",
+        content="Should be truncated per-value.",
+        request_id="turn-20260408-000000-000002",
         provider="internal_docs",
         provider_display_name="Internal Docs",
         tool="search_docs_rag",
-        raw={"payload": "b" * 300},
+        raw={"payload": "y" * 600},
     )
 
-    first_emitted = guard.accept(first_event)
-    second_emitted = guard.accept(second_event)
+    guard.accept(event1)
+    second_emitted = guard.accept(event2)
     flushed = guard.flush()
 
-    assert first_emitted == []
+    # event1이 emit됨 (event2 accept 시점에 pending에서 방출)
     assert len(second_emitted) == 1
-    assert second_emitted[0].raw == {"payload": "a" * 5}
+    assert second_emitted[0].raw == {"payload": "x" * 10}
+
+    # event2는 flush에서 나옴: value 500자 제한 적용
     assert len(flushed) == 1
-    assert flushed[0].meta["rawTruncated"] is True
-    assert flushed[0].meta["rawOriginalBytes"] > flushed[0].meta["rawTruncatedBytes"]
     assert flushed[0].raw is not None
+    truncated_value = flushed[0].raw["payload"]
+    assert truncated_value.endswith("...(생략)")
+    assert len(truncated_value) < 600 + len("...(생략)")
 
 
-def test_system_event_guard_fully_suppresses_when_remaining_below_min_threshold():
-    policy = McpEventPolicy(
-        verbose_json=True,
-        redact_headers=True,
-        max_payload_chars=4000,
-        persist_system_logs=True,
-        visible_band_limit=20,
-        raw_bytes_limit=60,
-    )
-    emitter = SystemEventEmitter(policy, channel="mcp_test")
-    guard = SystemEventGuard(policy, request_id="turn-20260408-000000-000004")
-
-    emitted = guard.accept(
-        emitter.info(
-            phase="tool_result",
-            title="Budget exhausted immediately",
-            content="This should be suppressed.",
-            request_id="turn-20260408-000000-000004",
-            provider="internal_docs",
-            provider_display_name="Internal Docs",
-            tool="search_docs_rag",
-            raw={"payload": "c" * 100},
-        )
-    )
-    flushed = guard.flush()
-
-    assert emitted == []
-    assert len(flushed) == 2
-    assert flushed[0].meta["rawSuppressed"] is True
-    assert flushed[0].raw is None
-    assert flushed[1].meta["rawSuppressedCount"] == 1
+def test_build_raw_preview_short_values_kept_verbatim():
+    """500자 이하 value는 원본 Python 값 그대로 유지된다."""
+    raw = {"a": "hello", "b": [1, 2, 3]}
+    result = _build_raw_preview(raw, 500)
+    assert result is raw  # identity 보장
 
 
-def test_system_event_guard_truncated_raw_is_json_serializable():
-    policy = McpEventPolicy(
-        verbose_json=True,
-        redact_headers=True,
-        max_payload_chars=4000,
-        persist_system_logs=True,
-        visible_band_limit=20,
-        raw_bytes_limit=200,
-    )
-    emitter = SystemEventEmitter(policy, channel="mcp_test")
-    guard = SystemEventGuard(policy, request_id="turn-20260408-000000-000005")
+def test_build_raw_preview_long_value_truncated():
+    """500자 초과 value는 s[:500] + '...(생략)' 문자열로 교체된다."""
+    long_val = "z" * 600
+    raw = {"key": long_val, "other": "short"}
+    result = _build_raw_preview(raw, 500)
 
-    first_emitted = guard.accept(
-        emitter.info(
-            phase="tool_call",
-            title="Budget priming",
-            content="Small payload.",
-            request_id="turn-20260408-000000-000005",
-            provider="internal_docs",
-            provider_display_name="Internal Docs",
-            tool="search_docs_rag",
-            raw={"payload": "d" * 5},
-        )
-    )
-    second_emitted = guard.accept(
-        emitter.info(
-            phase="tool_result",
-            title="Truncated payload",
-            content="This should stay serializable.",
-            request_id="turn-20260408-000000-000005",
-            provider="internal_docs",
-            provider_display_name="Internal Docs",
-            tool="search_docs_rag",
-            raw={"payload": "e" * 300},
-        )
-    )
-    flushed = guard.flush()
+    assert result is not raw
+    assert result["other"] == "short"
+    truncated = result["key"]
+    assert isinstance(truncated, str)
+    assert truncated.endswith("...(생략)")
+    # dumps("z"*600) 의 앞 500자를 잘라내고 suffix 추가
+    import json
 
-    assert first_emitted == []
-    assert len(second_emitted) == 1
-    truncated_raw = second_emitted[0].raw
-
-    assert isinstance(truncated_raw, dict)
-    assert truncated_raw is not None
-    __import__("json").dumps(truncated_raw, ensure_ascii=False)
-    assert len(flushed) == 1
-    assert isinstance(flushed[0].raw, dict)
+    serialized = json.dumps(long_val, ensure_ascii=False)
+    assert truncated == serialized[:500] + "...(생략)"
 
 
-def test_system_event_guard_normal_mode_policy_never_produces_truncation_metadata():
+def test_build_raw_preview_non_dict():
+    """dict가 아닌 값도 500자 제한이 적용된다."""
+    short_list = [1, 2, 3]
+    assert _build_raw_preview(short_list, 500) is short_list  # identity
+
+    long_str = "a" * 600
+    result = _build_raw_preview(long_str, 500)
+    assert isinstance(result, str)
+    assert result.endswith("...(생략)")
+
+
+def test_system_event_guard_normal_mode_policy_no_raw_budget_side_effects():
+    """raw_bytes_limit 값에 무관하게 rawSuppressed/rawTruncated 메타는 더 이상 생성되지 않는다."""
     policy = McpEventPolicy(
         verbose_json=True,
         redact_headers=True,
@@ -304,11 +219,11 @@ def test_system_event_guard_normal_mode_policy_never_produces_truncation_metadat
     emitter = SystemEventEmitter(policy, channel="mcp_test")
     guard = SystemEventGuard(policy, request_id="turn-20260408-000000-000006")
 
-    emitted = guard.accept(
+    guard.accept(
         emitter.info(
             phase="tool_result",
             title="Normal mode raw guard",
-            content="No truncation metadata should appear.",
+            content="No budget suppression metadata should appear.",
             request_id="turn-20260408-000000-000006",
             provider="internal_docs",
             provider_display_name="Internal Docs",
@@ -318,8 +233,7 @@ def test_system_event_guard_normal_mode_policy_never_produces_truncation_metadat
     )
     flushed = guard.flush()
 
-    assert emitted == []
-    assert len(flushed) == 2
-    assert flushed[0].meta["rawSuppressed"] is True
+    assert len(flushed) == 1
+    assert "rawSuppressed" not in flushed[0].meta
     assert "rawTruncated" not in flushed[0].meta
-    assert flushed[0].raw is None
+    assert flushed[0].raw == {"payload": "f" * 10}
