@@ -211,17 +211,7 @@ const ChatBubble = memo(({ message, isStreaming }) => {
         <Bot size={18} className="text-[var(--text-secondary)]" />
       </div>
       <div className="max-w-[85%] flex-1 min-w-0">
-        {/* RAG 출처 배지 */}
-        {message.isRag && (
-          <div className="flex items-center gap-1 mb-1 text-xs text-[var(--text-secondary)]">
-            <span>📚</span>
-            <span className="font-medium">문서 기반 답변</span>
-            {message.ragCategory && (
-              <span className="opacity-60">· {message.ragCategory}</span>
-            )}
-          </div>
-        )}
-        <div className="max-w-none text-xs text-[var(--text-primary)] break-words [&_br]:block [&_br]:mb-2">
+        <divclassName="max-w-none text-xs text-[var(--text-primary)] break-words [&_br]:block [&_br]:mb-2">
           {renderMarkdown(message.content)}
           {isStreaming && (
             <span className="inline-flex ml-1">

@@ -291,7 +291,7 @@ const ChatPage = () => {
 
       await syncSessionTitleIfNeeded(sessionId, text);
       await modelChatApi.saveMessage(sessionId, 'user', userMsg.content);
-      setMessages(prev => [...prev, { role: 'assistant', content: '', isRag: ragEnabled && !!activeCategory, ragCategory: activeCategory }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
       assistantSavedRef.current = false;
       currentStreamingMsgRef.current = "";
       

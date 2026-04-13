@@ -6,6 +6,7 @@ __pycache__/
 test/
 doc/
 data/
+scripts/
 *.toml
 *.sqlite3
 *.sqlite3-shm
