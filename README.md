@@ -154,10 +154,11 @@ uvicorn ai_gateway.main:app --host 127.0.0.1 --port 8001 --reload
 
 - `./.github/copilot-instructions.md`
 - `./GEMINI.md`
+- `./doc.md/LEXGUARD_MCP_WORKFLOW_INTEGRATION_GUIDE.md` - FabriX의 LexGuard MCP host 통합 원칙, workflow 책임 분리, chaining 방향
 - `./doc.md/MEMORY_APIS.md`
 - `./doc.md/FEATURE_DATA_EXPLORER.md`
 - `./doc.md/FEATURE_IMAGE_INSPECTOR.md`
 - `./doc/chat_apis.html`
 - `./doc/agent_apis.html`
 
-Last updated: 2026-02-18
+Last updated: 2026-04-14

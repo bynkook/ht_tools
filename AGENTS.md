@@ -183,6 +183,7 @@ run_server.bat
 - Local legal QA MCP server: `C:\Users\BgKing\mycode\lexguard-mcp` (외부 폴더, 별도 venv)
 - Default endpoint: `http://127.0.0.1:9099/mcp`
 - Remote endpoint: `https://lexguard-mcp.onrender.com/mcp`
+- FabriX 통합 원칙 문서: `doc.md/LEXGUARD_MCP_WORKFLOW_INTEGRATION_GUIDE.md`
 - Typical start command (local):
 
 ```bash
