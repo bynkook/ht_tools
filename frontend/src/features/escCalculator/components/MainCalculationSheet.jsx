@@ -48,49 +48,30 @@ export function buildMainSheetData(result, inputs = {}) {
   const cellData = [];
   const adjIdx = months.indexOf(adjustmentMonth);
 
-  // ── A. 요약 블록 (rows 0~5) ──────────────────────────────────
-  // 금액값: C열(col2)→B열(col1), '원' D열(col3) 제거 후 A열 레이블에 (원) 부착
-  cellData.push(
-    cell(0, 0, '집행금액(원)', CELL_STYLE.label),
-    numCell(0, 1, executionAmount, CELL_STYLE.normal),
-    cell(0, 2, '( 산정금액 - 공제금액 )', CELL_STYLE.normal),
-    cell(0, 5, '기준시점', CELL_STYLE.label),
-    cell(0, 6, formatYM(baseMonth), CELL_STYLE.normal),
-
-    cell(1, 0, '  - 산정금액(원)', CELL_STYLE.label),
-    numCell(1, 1, calcAmount, CELL_STYLE.normal),
-    cell(1, 5, '조정시점', CELL_STYLE.label),
-    cell(1, 6, adjustmentMonth ? formatYM(adjustmentMonth) : '미달성', adjustmentMonth ? CELL_STYLE.blue : CELL_STYLE.normal),
-
-    cell(2, 0, '  - 공제금액(원)', CELL_STYLE.label),
-    numCell(2, 1, deductAmount, CELL_STYLE.normal),
-    cell(2, 2, calcAmount != null ? `( ${calcAmount.toLocaleString('ko-KR')} × 선금율 ${(advanceRate*100).toFixed(0)}% )` : '', CELL_STYLE.normal),
-  );
-
-  // 물가변동대상금액 테이블 헤더 (row 4)
-  // 8컬럼: 자재비[A1] | 노무비[A2] | 계(A1+A2) | 물가변동대상외금액 | 정산예상금액 | 잔여기성률[B] | 물가변동률[C] | 산정금액[D]
+  // ── A. 물가변동대상금액 테이블 헤더 (row 0) ──────────────────
+  // (집행금액/산정금액/공제금액 블록은 HTML 테이블로 분리)
   const summaryHeaders = [
     '자재비[A1]', '노무비[A2]', '계(A1+A2)',
     '물가변동대상외금액\n(경비, 간접비 등)',
     '정산예상금액',
     '잔여기성률[B]', '물가변동률[C]', '산정금액\n[D=A×B×C]',
   ];
-  summaryHeaders.forEach((h, i) => cellData.push(cell(4, i, h, CELL_STYLE.header)));
+  summaryHeaders.forEach((h, i) => cellData.push(cell(0, i, h, CELL_STYLE.header)));
 
-  // 요약 값 (row 5)
+  // 요약 값 (row 1)
   cellData.push(
-    numCell(5, 0, A1, CELL_STYLE.normal),
-    numCell(5, 1, A2, CELL_STYLE.normal),
-    numCell(5, 2, A, CELL_STYLE.normal),
-    numCell(5, 3, otherCost   || null, CELL_STYLE.normal),
-    numCell(5, 4, expectedAmt || null, CELL_STYLE.normal),
-    pctCell(5, 5, B, CELL_STYLE.normal),
-    pctCell(5, 6, adjustmentC, CELL_STYLE.normal),
-    numCell(5, 7, calcAmount, CELL_STYLE.normal),
+    numCell(1, 0, A1, CELL_STYLE.normal),
+    numCell(1, 1, A2, CELL_STYLE.normal),
+    numCell(1, 2, A, CELL_STYLE.normal),
+    numCell(1, 3, otherCost   || null, CELL_STYLE.normal),
+    numCell(1, 4, expectedAmt || null, CELL_STYLE.normal),
+    pctCell(1, 5, B, CELL_STYLE.normal),
+    pctCell(1, 6, adjustmentC, CELL_STYLE.normal),
+    numCell(1, 7, calcAmount, CELL_STYLE.normal),
   );
 
-  // ── B. 잔여기성률[B] 상세 (rows 7+) ─────────────────────────
-  const bStart = 7;
+  // ── B. 잔여기성률[B] 상세 (rows 3+) ─────────────────────────
+  const bStart = 3;
   cellData.push(cell(bStart, 0, '▶ 잔여기성률[B] 산출 상세', { ...CELL_STYLE.header, bold: true }));
 
   // 연도 그룹 헤더
@@ -171,6 +152,55 @@ export function buildMainSheetData(result, inputs = {}) {
   return cellData;
 }
 
+function ResultSummaryTable({ result, inputs = {} }) {
+  if (!result) return null;
+  const {
+    baseMonth, adjustmentMonth,
+    calcAmount, deductAmount, executionAmount,
+  } = result;
+  const advRate = result.advanceRate ?? Number(inputs.advanceRate) ?? 0;
+
+  return (
+    <div className="flex gap-3">
+      {/* 좌측: 금액 테이블 — 컨텐츠 너비에 맞게 */}
+      <table className="text-sm border-collapse shrink-0">
+        <tbody>
+          <tr>
+            <td className="border border-gray-300 bg-gray-100 px-3 py-1.5 font-bold text-gray-700 whitespace-nowrap">집행금액(원)</td>
+            <td className="border border-gray-300 px-3 py-1.5 text-right font-bold text-blue-800 whitespace-nowrap">{formatNumber(executionAmount)}</td>
+            <td className="border border-gray-300 px-3 py-1.5 text-gray-500 text-xs whitespace-nowrap">( 산정금액 - 공제금액 )</td>
+          </tr>
+          <tr>
+            <td className="border border-gray-300 bg-gray-100 px-3 py-1.5 text-gray-600 whitespace-nowrap pl-6">- 산정금액(원)</td>
+            <td className="border border-gray-300 px-3 py-1.5 text-right whitespace-nowrap">{formatNumber(calcAmount)}</td>
+            <td className="border border-gray-300 px-3 py-1.5"></td>
+          </tr>
+          <tr>
+            <td className="border border-gray-300 bg-gray-100 px-3 py-1.5 text-gray-600 whitespace-nowrap pl-6">- 공제금액(원)</td>
+            <td className="border border-gray-300 px-3 py-1.5 text-right whitespace-nowrap">{formatNumber(deductAmount)}</td>
+            <td className="border border-gray-300 px-3 py-1.5 text-gray-500 text-xs whitespace-nowrap">
+              {calcAmount != null ? `( ${calcAmount.toLocaleString('ko-KR')} × 선금율 ${(advRate * 100).toFixed(0)}% )` : ''}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* 우측: 단일 CSS Grid — 열 폭 자동 일치, 콘텐츠 크기에 유동적 */}
+      <div
+        className="shrink-0 text-sm border border-gray-300"
+        style={{ display: 'grid', gridTemplateColumns: 'auto auto', gridTemplateRows: 'auto 1fr' }}
+      >
+        <div className="bg-gray-100 py-1.5 px-4 font-semibold text-gray-700 text-center whitespace-nowrap border-r border-b border-gray-300">기준시점</div>
+        <div className="bg-gray-100 py-1.5 px-4 font-semibold text-gray-700 text-center whitespace-nowrap border-b border-gray-300">조정시점</div>
+        <div className="px-4 flex items-center justify-center whitespace-nowrap border-r border-gray-300">{formatYM(baseMonth)}</div>
+        <div className={`px-4 flex items-center justify-center whitespace-nowrap font-bold ${adjustmentMonth ? 'bg-blue-200 text-blue-900' : 'text-gray-400'}`}>
+          {adjustmentMonth ? formatYM(adjustmentMonth) : '미달성'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MainCalculationSheet({ result, inputs = {}, recalcKey = 0 }) {
   const colCount = result ? result.months.length + 2 : 12;
 
@@ -197,7 +227,12 @@ export default function MainCalculationSheet({ result, inputs = {}, recalcKey = 
         )}
         {!result && <span className="text-xs text-gray-400">계산 실행 후 결과가 표시됩니다</span>}
       </div>
-      <div style={{ height: 640 }}>
+      {result && (
+        <div className="px-2 pt-2 pb-3">
+          <ResultSummaryTable result={result} inputs={inputs} />
+        </div>
+      )}
+      <div style={{ height: 580 }}>
         <Workbook
           key={`main-${recalcKey}-${result?.adjustmentMonth}-${result?.months?.length}`}
           data={sheets}

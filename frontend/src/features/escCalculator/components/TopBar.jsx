@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { RefreshCw, Save, PlusCircle, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { RefreshCw, Save, PlusCircle, Trash2, Home } from 'lucide-react';
 
 export default function TopBar({
   projects, selectedId, onLoad, onSave, onDelete, onRecalc, onNew, onResetCache, loading,
 }) {
+  const navigate = useNavigate();
   const [saveName, setSaveName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
 
@@ -26,6 +28,15 @@ export default function TopBar({
 
   return (
     <div className="bg-white border-b border-gray-200 px-4 py-2 flex flex-wrap items-center gap-3 sticky top-0 z-10 shadow-sm">
+      {/* Home 버튼 */}
+      <button
+        onClick={() => navigate('/')}
+        className="flex items-center justify-center p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+        title="앱 선택 페이지로"
+      >
+        <Home size={18} />
+      </button>
+
       {/* 프로젝트 선택 */}
       <div className="flex items-center gap-2">
         <label className="text-sm text-gray-600 shrink-0">프로젝트</label>
