@@ -277,7 +277,7 @@ export function calculateEsc(inputs, ppiData, wageData) {
 export function monthToHalfKey(yyyymm) {
   const year = yyyymm.slice(0, 4);
   const month = parseInt(yyyymm.slice(4, 6));
-  const half = month <= 6 ? '01' : '02';
+  const half = month <= 7 ? '01' : '02';
   return `${year}${half}`;
 }
 

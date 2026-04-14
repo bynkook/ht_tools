@@ -11,9 +11,9 @@ KOSIS_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
 
 
 def month_to_half(yyyymm: str) -> str:
-    """YYYYMM -> YYYYHH (표준 반기: 1~6월=01, 7~12월=02)."""
+    """YYYYMM -> YYYYHH (반기: 1~7월=01, 8~12월=02)."""
     month = int(yyyymm[4:6])
-    return f"{yyyymm[:4]}{'01' if month <= 6 else '02'}"
+    return f"{yyyymm[:4]}{'01' if month <= 7 else '02'}"
 
 
 def iter_months(start: str, end: str) -> list[str]:
