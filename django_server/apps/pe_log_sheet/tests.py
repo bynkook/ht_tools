@@ -15,9 +15,11 @@ from rest_framework.test import APITestCase
 from .models import PeLogSheetState
 from .services.csv_loader import (
     DEFAULT_HEADERS,
+    _SHEET_PASSTHROUGH_FIELDS,
     get_cell_payload,
     normalize_workbook_data,
 )
+from .services.conflict_detector import merge_ops_into_workbook
 from .services.cell_lock import (
     CELL_LOCK_TTL_SECONDS,
     DEFAULT_DOCUMENT_ID as CELL_LOCK_DEFAULT_DOCUMENT_ID,
@@ -1464,4 +1466,123 @@ class PeLogSheetCellLockOpsTests(APITestCase):
         # Should be cell-edit conflict (revision gap), not cell-lock
         self.assertEqual(
             response_two.data["conflicts"][0]["conflict_type"], "cell-edit"
+        )
+
+
+class DataVerificationPreservationTests(APITestCase):
+    """Regression tests: normalize_workbook_data must not drop FortuneSheet passthrough fields."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="dv_tester", password="password123"
+        )
+        token, _ = Token.objects.get_or_create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def _minimal_sheet(self, **extra):
+        sheet = {
+            "id": "pe-log-main",
+            "name": "Sheet1",
+            "order": 0,
+            "status": 1,
+            "row": 5,
+            "column": 3,
+            "celldata": [],
+            "showGridLines": 1,
+            "defaultRowHeight": 22,
+            "defaultColWidth": 73,
+            "config": {},
+        }
+        sheet.update(extra)
+        return sheet
+
+    def test_normalize_preserves_dataVerification(self):
+        """normalize_workbook_data must keep dataVerification on the sheet."""
+        dv = {
+            "0": {
+                "type": "dropdown",
+                "value1": "A,B,C",
+                "prohibitInput": True,
+                "hintShow": False,
+                "hintText": "",
+                "remote": False,
+            }
+        }
+        workbook = [self._minimal_sheet(dataVerification=dv)]
+        result = normalize_workbook_data(workbook)
+        self.assertEqual(result[0].get("dataVerification"), dv)
+
+    def test_normalize_preserves_all_passthrough_fields(self):
+        """Every field in _SHEET_PASSTHROUGH_FIELDS must survive normalize round-trip."""
+        sample_values = {field: {"__test__": field} for field in _SHEET_PASSTHROUGH_FIELDS}
+        workbook = [self._minimal_sheet(**sample_values)]
+        result = normalize_workbook_data(workbook)
+        for field in _SHEET_PASSTHROUGH_FIELDS:
+            self.assertEqual(
+                result[0].get(field),
+                {"__test__": field},
+                msg=f"Field '{field}' was dropped by normalize_workbook_data",
+            )
+
+    def test_merge_ops_preserves_existing_dataVerification(self):
+        """merge_ops_into_workbook must not erase pre-existing dataVerification."""
+        dv = {"0": {"type": "dropdown", "value1": "X,Y,Z"}}
+        workbook = [self._minimal_sheet(dataVerification=dv)]
+        # A simple cell-value op — unrelated to dataVerification
+        ops = [
+            {
+                "op": "replace",
+                "path": ["0", "0", "v"],
+                "value": {"v": "hello", "m": "hello", "ct": {"fa": "General", "t": "g"}},
+                "id": "pe-log-main",
+            }
+        ]
+        result = merge_ops_into_workbook(workbook, ops)
+        self.assertEqual(
+            result[0].get("dataVerification"),
+            dv,
+            msg="merge_ops_into_workbook dropped dataVerification",
+        )
+
+    def test_snapshot_save_get_roundtrip_preserves_dataVerification(self):
+        """POST /ops/ with snapshot containing dataVerification → GET /state/ must return it."""
+        # Bootstrap state
+        PeLogSheetState.objects.all().delete()
+        with patch(
+            "apps.pe_log_sheet.views._load_seed_workbook",
+            return_value=[self._minimal_sheet()],
+        ), patch(
+            "apps.pe_log_sheet.views._seed_checksum",
+            return_value="test-checksum",
+        ):
+            init_resp = self.client.get("/api/pe-log-sheet/state/")
+        self.assertEqual(init_resp.status_code, 200)
+        revision = init_resp.data["revision"]
+
+        # Build snapshot with dataVerification
+        dv = {"1": {"type": "dropdown", "value1": "옵션1,옵션2"}}
+        snapshot = [self._minimal_sheet(dataVerification=dv)]
+
+        ops = [{"op": "replace", "path": ["dataVerification"], "value": dv, "id": "pe-log-main"}]
+        save_resp = self.client.post(
+            "/api/pe-log-sheet/ops/",
+            {
+                "base_revision": revision,
+                "ops": ops,
+                "snapshot": snapshot,
+                "client_id": "test-client",
+            },
+            format="json",
+        )
+        self.assertEqual(save_resp.status_code, 200)
+
+        # Reload and verify
+        get_resp = self.client.get("/api/pe-log-sheet/state/")
+        self.assertEqual(get_resp.status_code, 200)
+        sheets = get_resp.data["workbook_data"]
+        self.assertTrue(len(sheets) > 0, "workbook_data must not be empty")
+        self.assertEqual(
+            sheets[0].get("dataVerification"),
+            dv,
+            msg="GET /state/ returned workbook_data without dataVerification",
         )

@@ -15,6 +15,22 @@ DEFAULT_COLUMN_WIDTH = 73
 ROW_CONFIG_KEYS = {'rowlen', 'rowhidden', 'customHeight', 'rowReadOnly'}
 COLUMN_CONFIG_KEYS = {'columnlen', 'colhidden', 'customWidth', 'colReadOnly'}
 
+_SHEET_PASSTHROUGH_FIELDS = frozenset({
+    'dataVerification',
+    'luckysheet_conditionformat_save',
+    'luckysheet_alternateformat_save',
+    'filter',
+    'filter_select',
+    'images',
+    'calcChain',
+    'hyperlink',
+    'zoomRatio',
+    'dynamicArray',
+    'dynamicArray_compute',
+    'pivotTable',
+    'isPivotTable',
+})
+
 
 def has_structural_ops(ops: list[dict]) -> bool:
     return any(op.get('op') in {'insertRowCol', 'deleteRowCol', 'addSheet', 'deleteSheet'} for op in (ops or []))
@@ -333,6 +349,11 @@ def normalize_workbook_data(workbook_data: list) -> list:
             normalized_sheet['addRows'] = raw_sheet.get('addRows')
         if raw_sheet.get('frozen'):
             normalized_sheet['frozen'] = deepcopy(raw_sheet.get('frozen'))
+
+        for field in _SHEET_PASSTHROUGH_FIELDS:
+            value = raw_sheet.get(field)
+            if value is not None:
+                normalized_sheet[field] = deepcopy(value)
 
         normalized_sheets.append(normalized_sheet)
 
