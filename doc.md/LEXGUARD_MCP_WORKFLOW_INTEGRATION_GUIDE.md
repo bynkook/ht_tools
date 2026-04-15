@@ -336,6 +336,9 @@ FabriX가 설계·유지해야 하는 핵심 항목은 다음이다.
 - FabriX는 raw structured result를 LLM context로 넘기고,
   최종 답변은 LLM이 작성하게 한다.
 
+**직접 테스트로 확인된 pass 조건**
+- `success=True`, `success_search=True`, `results` 비어있지 않음.
+
 ### 8-2. `law_article_tool`
 
 **FabriX에서의 위치**
@@ -343,9 +346,34 @@ FabriX가 설계·유지해야 하는 핵심 항목은 다음이다.
 - 일반 QA보다는 조문 근거 조회 도구
 
 **통합 원칙**
-- specificity가 높은 질의에서만 발화한다.
+- specificity가 높은 질의에서만 발화한다. 법령명과 조문번호가 모두 명시된 경우에만 activation한다.
 - `legal_qa_tool` 후속 근거 보강 chain으로도 사용할 수 있다.
-- 현재 `건축법 제3조` 같은 observed failure는 **workflow 문제와 분리된 provider-level retrieval 문제**로 관리한다.
+- provider retrieval 실패는 host workflow 실패와 분리해 관리한다. 상세는 아래 참조.
+
+**직접 테스트로 확인된 pass 조건**
+- `content`가 존재하고 `"조문 내용을 찾을 수 없습니다."`를 포함하지 않음.
+- `raw_data`가 채워져 있어도 위 조건을 만족하지 않으면 FAIL이다.
+
+**직접 테스트 및 소스 조사로 확인된 provider 동작 사실**
+
+다음 사실은 직접 테스트와 소스 조사를 통해 확인된 것이다.
+
+1. **확인된 실패 패턴**: `건축법 제3조`, `건축법 제3조제1항제2호다목` 케이스에서
+   `content="조문 내용을 찾을 수 없습니다."` 와 함께 `raw_data`에 `법령 → 기본정보`(메타데이터)만
+   반환되는 실패가 직접 테스트에서 재현되었다 (초기 6/8 통과).
+
+2. **소스 확인된 원인**: provider `law_detail.py`가 `eflawjosub` 응답의 최상위 `법령` 컨테이너를
+   unwrap하지 않고, `법령 → 조문정보 → 조문단위` 경로로 내려가지 않았다.
+   조문 본문은 해당 경로에 존재할 수 있으며, `raw_data`가 메타데이터만 보여도 실제 조문 내용이
+   그 경로에 있을 수 있다.
+
+3. **로컬 수정 결과**: `law` target JSON fallback으로 `법령 → 조문정보 → 조문단위` 경로를
+   추가한 후 직접 테스트 **8/8 통과** 달성.
+
+4. **host 주의사항**: `raw_data` 존재 여부로 조문 조회 성공을 판단하면 안 된다.
+   반드시 `content` 필드로 실패 sentinel(`"조문 내용을 찾을 수 없습니다."`)을 확인해야 한다.
+   이 실패는 provider-level retrieval 문제이며 host orchestration 오류가 아니다.
+   host는 이 sentinel을 LLM context에 그대로 주입하지 않아야 한다.
 
 ### 8-3. `law_comparison_tool`
 
@@ -356,6 +384,9 @@ FabriX가 설계·유지해야 하는 핵심 항목은 다음이다.
 - 일반 법률 QA의 대체 도구로 사용하지 않는다.
 - 비교 intent가 명확할 때만 activation한다.
 - 결과는 비교 데이터 context로 LLM에 넘긴다.
+
+**직접 테스트로 확인된 pass 조건**
+- `error` 없음, `law_name` 존재, `comparison` 비어있지 않음. 비교 intent가 명확한 질의에서만 유효하다.
 
 ### 8-4. `document_issue_tool`
 
@@ -368,7 +399,11 @@ FabriX가 설계·유지해야 하는 핵심 항목은 다음이다.
 - tool 단독 응답을 곧바로 사용자 출력으로 쓰지 않는다.
 - `response_policy`, `instruction_text`, `document_analysis`, `citations`, `retry_plan`을 모두 고려해 LLM이 최종 답변을 작성하도록 한다.
 
-즉 FabriX는 `document_issue_tool`를 “완결 보고서 API”로 다루지 않고,
+**직접 테스트로 확인된 pass 조건**
+- `analysis_success=True`, `detected=True`. issues 목록만 있고 citations 없는 경우도 PASS다.
+  `missing_reason`이 `API_ERROR`로 시작하면 FAIL이다.
+
+즉 FabriX는 `document_issue_tool`를 "완결 보고서 API"로 다루지 않고,
 **문서 분석 + 근거 초안 + 작성 규칙 제공 도구**로 다루는 것이 맞다.
 
 ---
@@ -437,7 +472,7 @@ FabriX에서 권장되는 chain은 다음과 같다.
 
 1. upstream `tools/list.description` / `document_issue_prompts.py`와 FabriX rule 간 drift 감시 필요
 2. `document_issue_tool -> legal_qa_tool / law_article_tool` 후속 강화 chain 필요 여부를 제품 요구사항으로 분리 필요
-3. direct test contract와 chat orchestration workflow를 문서상 더 엄격히 분리할 필요가 있음
+3. direct test contract와 chat orchestration workflow 분리는 §8에 기술되어 있다. tool별 pass 조건과 host 주의사항은 §8 각 subsection을 기준으로 한다.
 4. upstream output schema와 실제 observed payload 차이는 host 설계 문제와 분리해 기록해야 함
 
 ---

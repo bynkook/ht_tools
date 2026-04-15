@@ -198,18 +198,6 @@ python -m src.main
 
 ## Code Style Guidelines
 
-### dos batch file(.bat)
-
-1. add 'chcp 65001 > nul' after '@echo off'
-2. file encoding is 'utf-8' without BOM.
-3. always use 'REM' to add non-code comments. never use '::'.
-4. line endings MUST be Windows CR+LF (`\r\n`). Never LF-only. Agents writing .bat files must ensure CRLF — most editors and the Write tool default to LF, which causes silent failures on Windows CMD.
-
-> **⚠️ Agent shell safety**: The `> nul` redirect is a Windows CMD construct.
-> **NEVER execute `.bat` file contents directly in bash/shell commands.**
-> Running `chcp 65001 > nul` in bash creates a literal file named `nul` in the working directory.
-> To read or verify a `.bat` file, use the Read tool only. To run it, use `cmd /c <file>.bat`.
-
 ### Python (Django/FastAPI)
 
 **Imports ordering:**
