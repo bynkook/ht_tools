@@ -1,0 +1,30 @@
+diff --git a/node_modules/@fortune-sheet/react/dist/index.esm.js b/node_modules/@fortune-sheet/react/dist/index.esm.js
+index c4486a2..cd8d847 100644
+--- a/node_modules/@fortune-sheet/react/dist/index.esm.js
++++ b/node_modules/@fortune-sheet/react/dist/index.esm.js
+@@ -7853,7 +7853,11 @@ var ContextMenu = function ContextMenu() {
+           return e.stopPropagation();
+         },
+         onKeyDown: function onKeyDown(e) {
+-          return e.stopPropagation();
++          e.stopPropagation();
++          if (e.key === "Enter") {
++            var menuItem = e.currentTarget.closest(".luckysheet-cols-menuitem");
++            if (menuItem) menuItem.click();
++          }
+         },
+         tabIndex: 0,
+         type: "number",
+@@ -7902,7 +7906,11 @@ var ContextMenu = function ContextMenu() {
+           return e.stopPropagation();
+         },
+         onKeyDown: function onKeyDown(e) {
+-          return e.stopPropagation();
++          e.stopPropagation();
++          if (e.key === "Enter") {
++            var menuItem = e.currentTarget.closest(".luckysheet-cols-menuitem");
++            if (menuItem) menuItem.click();
++          }
+         },
+         tabIndex: 0,
+         type: "number",
