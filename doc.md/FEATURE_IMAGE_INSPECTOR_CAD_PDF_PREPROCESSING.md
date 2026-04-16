@@ -40,7 +40,7 @@ CAD PDF 전처리 옵션은 프론트엔드에서 시작해 FastAPI와 PDF strea
 
 PDF는 다음 순서로 처리된다.
 
-1. PyPDF2 기반 단일 페이지 재기록
+1. pypdf 기반 단일 페이지 재기록
 2. pikepdf로 content stream 편집
 3. fitz로 최종 렌더링
 

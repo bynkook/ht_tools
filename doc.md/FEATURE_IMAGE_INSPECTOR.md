@@ -62,7 +62,7 @@ PDF 또는 다중 페이지 TIFF 파일 비교를 위한 네비게이션 시스�
 ### 백엔드 처리 (FastAPI)
 - **이미지 분리 반환**: 기존에는 합쳐진 결과 이미지 1장만 반환했으나, Split View 지원을 위해 3장(결과, 강조된 File1, 강조된 File2)을 반환하도록 로직 개선 (`generate_highlighted_images`)
 - **페이지 정보 처리**: 파일 로드 시 전체 페이지 수를 메타데이터로 추출하여 프론트엔드에 전달
-- **PDF 공통 파이프라인**: 일반 PDF와 암호화 PDF 모두 PyPDF2 기반 단일 페이지 재기록 후 fitz로 최종 렌더링하는 동일한 2-step 경로를 사용한다
+- **PDF 공통 파이프라인**: 일반 PDF와 암호화 PDF 모두 pypdf 기반 단일 페이지 재기록 후 fitz로 최종 렌더링하는 동일한 2-step 경로를 사용한다
 
 ### 프론트엔드 구조 (React)
 - **ResultViewer.jsx**: `mode` (difference/overlay)에 따라 레이아웃(Split/Single)을 동적으로 변경하는 조건부 렌더링 구현
