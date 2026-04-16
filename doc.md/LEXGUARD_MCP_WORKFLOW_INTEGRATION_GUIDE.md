@@ -337,7 +337,8 @@ FabriX가 설계·유지해야 하는 핵심 항목은 다음이다.
   최종 답변은 LLM이 작성하게 한다.
 
 **직접 테스트로 확인된 pass 조건**
-- `success=True`, `success_search=True`, `results` 비어있지 않음.
+- `success=True`, `results`가 dict 타입으로 존재함.
+- `has_legal_basis=False`, `missing_reason=NO_MATCH` 인 sparse/no-result 응답도 정상 contract 범주다.
 
 ### 8-2. `law_article_tool`
 
