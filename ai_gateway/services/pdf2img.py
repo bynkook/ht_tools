@@ -9,11 +9,11 @@ PDF 파일을 BGR numpy 배열로 변환하는 범용 모듈.
         메인 진입점. 모든 PDF를 공통 2-step 파이프라인으로 처리한다.
 
 변환 전략:
-    1차: PyPDF2 PdfWriter로 단일 페이지 재기록(메타데이터 정리)
+    1차: pypdf PdfWriter로 단일 페이지 재기록(메타데이터 정리)
     2차: fitz로 최종 래스터 렌더링
 
 PdfReader는 BytesIO 스트림 대신 임시 파일 경로로 초기화한다.
-PyPDF2 3.x에서 BytesIO 스트림으로 암호화 PDF를 읽으면
+pypdf에서 BytesIO 스트림으로 암호화 PDF를 읽으면
 EOF 탐색 실패가 발생하지만, 파일 경로 방식은 이 문제를 회피한다.
 """
 
@@ -28,7 +28,7 @@ import cv2
 import fitz
 import numpy as np
 import pikepdf
-from PyPDF2 import PdfReader, PdfWriter
+from pypdf import PdfReader, PdfWriter
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +39,13 @@ _DEFAULT_DPI = 200
 # C 레벨 OOM 및 프로세스 강제 종료를 방지한다.
 _MAX_PIXMAP_BYTES = 400 * 1024 * 1024  # 400 MB
 
-_PDF_OPERATOR_BOUNDARY = rb'[\x00\t\n\f\r ]'
-_BT_OPERATOR_PATTERN = re.compile(rb'(?:^|' + _PDF_OPERATOR_BOUNDARY + rb')BT(?=' + _PDF_OPERATOR_BOUNDARY + rb')')
-_ET_OPERATOR_PATTERN = re.compile(rb'(?:^|' + _PDF_OPERATOR_BOUNDARY + rb')ET(?=' + _PDF_OPERATOR_BOUNDARY + rb')')
+_PDF_OPERATOR_BOUNDARY = rb"[\x00\t\n\f\r ]"
+_BT_OPERATOR_PATTERN = re.compile(
+    rb"(?:^|" + _PDF_OPERATOR_BOUNDARY + rb")BT(?=" + _PDF_OPERATOR_BOUNDARY + rb")"
+)
+_ET_OPERATOR_PATTERN = re.compile(
+    rb"(?:^|" + _PDF_OPERATOR_BOUNDARY + rb")ET(?=" + _PDF_OPERATOR_BOUNDARY + rb")"
+)
 
 # small polygon hatch 전용 설정
 # 현재 기본값은 기존 동작과 동일하게 유지하되, blob 계열과 독립 튜닝할 수 있게 분리한다.
@@ -58,16 +62,36 @@ _HATCH_BLOB_MIN_DIM = 100.0
 _HATCH_BLOB_STATE_LOOKBACK_BYTES = 2048
 _HATCH_BLOB_RECENT_PATH_LOOKBACK_BYTES = 1024
 _HATCH_BLOB_PATH_LOOKBACK_BYTES = 16384
-_PDF_TOKEN_FOLLOW_BOUNDARY = rb'[\x00\t\n\f\r /]'
-_RE_OPERATOR_PATTERN = re.compile(rb'(?:^|' + _PDF_OPERATOR_BOUNDARY + rb')re(?=' + _PDF_TOKEN_FOLLOW_BOUNDARY + rb')')
-_M_OPERATOR_PATTERN = re.compile(rb'(?:^|' + _PDF_OPERATOR_BOUNDARY + rb')m(?=' + _PDF_TOKEN_FOLLOW_BOUNDARY + rb')')
-_L_OPERATOR_PATTERN = re.compile(rb'(?:^|' + _PDF_OPERATOR_BOUNDARY + rb')l(?=' + _PDF_TOKEN_FOLLOW_BOUNDARY + rb')')
-_GS_OPERATOR_PATTERN = re.compile(rb'(?:^|' + _PDF_OPERATOR_BOUNDARY + rb')gs(?=' + _PDF_TOKEN_FOLLOW_BOUNDARY + rb')')
-_CM_OPERATOR_PATTERN = re.compile(rb'(?:^|' + _PDF_OPERATOR_BOUNDARY + rb')cm(?=' + _PDF_TOKEN_FOLLOW_BOUNDARY + rb')')
-_Q_OPERATOR_PATTERN = re.compile(rb'(?:^|' + _PDF_OPERATOR_BOUNDARY + rb')q(?=' + _PDF_TOKEN_FOLLOW_BOUNDARY + rb')')
-_H_OPERATOR_PATTERN = re.compile(rb'(?:^|' + _PDF_OPERATOR_BOUNDARY + rb')h(?=' + _PDF_TOKEN_FOLLOW_BOUNDARY + rb')')
-_SCN_OPERATOR_PATTERN = re.compile(rb'(?:^|' + _PDF_OPERATOR_BOUNDARY + rb')(?:scn|sc)(?=' + _PDF_TOKEN_FOLLOW_BOUNDARY + rb')')
-_CLIP_RECT_SEQUENCE_PATTERN = re.compile(rb're\s+W\*?\s+n')
+_PDF_TOKEN_FOLLOW_BOUNDARY = rb"[\x00\t\n\f\r /]"
+_RE_OPERATOR_PATTERN = re.compile(
+    rb"(?:^|" + _PDF_OPERATOR_BOUNDARY + rb")re(?=" + _PDF_TOKEN_FOLLOW_BOUNDARY + rb")"
+)
+_M_OPERATOR_PATTERN = re.compile(
+    rb"(?:^|" + _PDF_OPERATOR_BOUNDARY + rb")m(?=" + _PDF_TOKEN_FOLLOW_BOUNDARY + rb")"
+)
+_L_OPERATOR_PATTERN = re.compile(
+    rb"(?:^|" + _PDF_OPERATOR_BOUNDARY + rb")l(?=" + _PDF_TOKEN_FOLLOW_BOUNDARY + rb")"
+)
+_GS_OPERATOR_PATTERN = re.compile(
+    rb"(?:^|" + _PDF_OPERATOR_BOUNDARY + rb")gs(?=" + _PDF_TOKEN_FOLLOW_BOUNDARY + rb")"
+)
+_CM_OPERATOR_PATTERN = re.compile(
+    rb"(?:^|" + _PDF_OPERATOR_BOUNDARY + rb")cm(?=" + _PDF_TOKEN_FOLLOW_BOUNDARY + rb")"
+)
+_Q_OPERATOR_PATTERN = re.compile(
+    rb"(?:^|" + _PDF_OPERATOR_BOUNDARY + rb")q(?=" + _PDF_TOKEN_FOLLOW_BOUNDARY + rb")"
+)
+_H_OPERATOR_PATTERN = re.compile(
+    rb"(?:^|" + _PDF_OPERATOR_BOUNDARY + rb")h(?=" + _PDF_TOKEN_FOLLOW_BOUNDARY + rb")"
+)
+_SCN_OPERATOR_PATTERN = re.compile(
+    rb"(?:^|"
+    + _PDF_OPERATOR_BOUNDARY
+    + rb")(?:scn|sc)(?="
+    + _PDF_TOKEN_FOLLOW_BOUNDARY
+    + rb")"
+)
+_CLIP_RECT_SEQUENCE_PATTERN = re.compile(rb"re\s+W\*?\s+n")
 
 
 # ----------------------------------------------------------------------
@@ -83,7 +107,9 @@ def _object_cache_key(pdf_obj) -> tuple:
     return (id(pdf_obj), 0)
 
 
-def _ensure_hatch_alpha_extgstate(pdf, resource_owner, alpha_value: float = 0.0, base_name: str = "FxHatchHide"):
+def _ensure_hatch_alpha_extgstate(
+    pdf, resource_owner, alpha_value: float = 0.0, base_name: str = "FxHatchHide"
+):
     resources = resource_owner.get("/Resources")
     if resources is None:
         resources = pikepdf.Dictionary()
@@ -126,17 +152,24 @@ def _read_resource_bytes(resource_owner) -> bytes:
     if "/Contents" in resource_owner:
         contents = resource_owner["/Contents"]
         if isinstance(contents, pikepdf.Array):
-            raise TypeError("페이지 /Contents 배열은 개별 스트림 단위로 처리해야 합니다")
+            raise TypeError(
+                "페이지 /Contents 배열은 개별 스트림 단위로 처리해야 합니다"
+            )
         return contents.read_bytes()
     return resource_owner.read_bytes()
 
 
 def _write_resource_bytes(pdf, resource_owner, raw_bytes: bytes) -> None:
-    is_page_like = resource_owner.get("/Type") == pikepdf.Name("/Page") or "/Contents" in resource_owner
+    is_page_like = (
+        resource_owner.get("/Type") == pikepdf.Name("/Page")
+        or "/Contents" in resource_owner
+    )
     if is_page_like:
         contents = resource_owner.get("/Contents")
         if isinstance(contents, pikepdf.Array):
-            raise TypeError("페이지 /Contents 배열은 단일 스트림으로 재조립할 수 없습니다")
+            raise TypeError(
+                "페이지 /Contents 배열은 단일 스트림으로 재조립할 수 없습니다"
+            )
         if contents is not None:
             contents.write(raw_bytes)
             return
@@ -194,7 +227,10 @@ def _may_contain_text_objects(raw_bytes: bytes) -> bool:
     """BT/ET 기반 text object가 없으면 content stream 파싱을 건너뛴다."""
     if b"BT" not in raw_bytes or b"ET" not in raw_bytes:
         return False
-    return bool(_BT_OPERATOR_PATTERN.search(raw_bytes) and _ET_OPERATOR_PATTERN.search(raw_bytes))
+    return bool(
+        _BT_OPERATOR_PATTERN.search(raw_bytes)
+        and _ET_OPERATOR_PATTERN.search(raw_bytes)
+    )
 
 
 def _find_text_object_ranges(raw_bytes: bytes) -> list[tuple[int, int]]:
@@ -238,7 +274,9 @@ def _mask_text_object_ranges(raw_bytes: bytes) -> bytes:
     return bytes(masked)
 
 
-def _find_hatch_fill_ranges(raw_bytes: bytes) -> tuple[list[tuple[int, int]], dict[str, int]]:
+def _find_hatch_fill_ranges(
+    raw_bytes: bytes,
+) -> tuple[list[tuple[int, int]], dict[str, int]]:
     """해치로 판단된 fill 연산자의 원본 바이트 범위와 진단 통계를 반환한다."""
     matches = list(_FILL_BYTE_PATTERN.finditer(raw_bytes))
     stats = {
@@ -276,23 +314,34 @@ def _find_hatch_fill_ranges(raw_bytes: bytes) -> tuple[list[tuple[int, int]], di
         fill_start = m.start() + 1
         fill_end = m.end()
 
-        shape_ctx_start = max(0, fill_start - max(_HATCH_RECT_LOOKBACK_BYTES, _HATCH_POLYGON_LOOKBACK_BYTES))
+        shape_ctx_start = max(
+            0,
+            fill_start - max(_HATCH_RECT_LOOKBACK_BYTES, _HATCH_POLYGON_LOOKBACK_BYTES),
+        )
         context = raw_bytes[shape_ctx_start:fill_start]
-        polygon_state_context = raw_bytes[max(0, fill_start - _HATCH_POLYGON_STATE_LOOKBACK_BYTES):fill_start]
-        blob_state_context = raw_bytes[max(0, fill_start - _HATCH_BLOB_STATE_LOOKBACK_BYTES):fill_start]
+        polygon_state_context = raw_bytes[
+            max(0, fill_start - _HATCH_POLYGON_STATE_LOOKBACK_BYTES) : fill_start
+        ]
+        blob_state_context = raw_bytes[
+            max(0, fill_start - _HATCH_BLOB_STATE_LOOKBACK_BYTES) : fill_start
+        ]
 
-        last_bt = context.rfind(b'\nBT\n')
+        last_bt = context.rfind(b"\nBT\n")
         if last_bt == -1:
-            last_bt = context.rfind(b' BT\n')
-        last_et = context.rfind(b'\nET\n')
+            last_bt = context.rfind(b" BT\n")
+        last_et = context.rfind(b"\nET\n")
         if last_et == -1:
-            last_et = context.rfind(b' ET\n')
+            last_et = context.rfind(b" ET\n")
         if last_bt > last_et:
             stats["skipped_text_context"] += 1
             continue
 
         near_context = context[-50:] if len(context) >= 50 else context
-        if b' Tj\n' in near_context or b' TJ\n' in near_context or b' Tf\n' in near_context:
+        if (
+            b" Tj\n" in near_context
+            or b" TJ\n" in near_context
+            or b" Tf\n" in near_context
+        ):
             stats["skipped_text_nearby"] += 1
             continue
 
@@ -300,27 +349,40 @@ def _find_hatch_fill_ranges(raw_bytes: bytes) -> tuple[list[tuple[int, int]], di
         polygon_has_q = bool(_Q_OPERATOR_PATTERN.search(polygon_state_context))
         polygon_has_cm = bool(_CM_OPERATOR_PATTERN.search(polygon_state_context))
         polygon_has_clip = (
-            b' W\n' in polygon_state_context
-            or b' W*\n' in polygon_state_context
-            or b' n\n' in polygon_state_context
+            b" W\n" in polygon_state_context
+            or b" W*\n" in polygon_state_context
+            or b" n\n" in polygon_state_context
         )
         polygon_has_nonstroke_color = (
             bool(_SCN_OPERATOR_PATTERN.search(polygon_state_context))
-            or b' g' in polygon_state_context
-            or b' rg' in polygon_state_context
+            or b" g" in polygon_state_context
+            or b" rg" in polygon_state_context
         )
-        polygon_has_state_hint = polygon_has_gs or polygon_has_q or polygon_has_cm or polygon_has_clip
+        polygon_has_state_hint = (
+            polygon_has_gs or polygon_has_q or polygon_has_cm or polygon_has_clip
+        )
 
         blob_has_clip = (
-            b' W\n' in blob_state_context
-            or b' W*\n' in blob_state_context
-            or b' n\n' in blob_state_context
+            b" W\n" in blob_state_context
+            or b" W*\n" in blob_state_context
+            or b" n\n" in blob_state_context
         )
 
-        rect_context = context[-_HATCH_RECT_LOOKBACK_BYTES:] if len(context) >= _HATCH_RECT_LOOKBACK_BYTES else context
-        polygon_context = context[-_HATCH_POLYGON_LOOKBACK_BYTES:] if len(context) >= _HATCH_POLYGON_LOOKBACK_BYTES else context
+        rect_context = (
+            context[-_HATCH_RECT_LOOKBACK_BYTES:]
+            if len(context) >= _HATCH_RECT_LOOKBACK_BYTES
+            else context
+        )
+        polygon_context = (
+            context[-_HATCH_POLYGON_LOOKBACK_BYTES:]
+            if len(context) >= _HATCH_POLYGON_LOOKBACK_BYTES
+            else context
+        )
         is_rect = bool(_RE_OPERATOR_PATTERN.search(rect_context))
-        is_polygon = bool(_L_OPERATOR_PATTERN.search(polygon_context) and _M_OPERATOR_PATTERN.search(polygon_context))
+        is_polygon = bool(
+            _L_OPERATOR_PATTERN.search(polygon_context)
+            and _M_OPERATOR_PATTERN.search(polygon_context)
+        )
 
         if is_rect:
             stats["rect_candidates"] += 1
@@ -346,12 +408,19 @@ def _find_hatch_fill_ranges(raw_bytes: bytes) -> tuple[list[tuple[int, int]], di
                     line_ops = len(_L_OPERATOR_PATTERN.findall(recent_path_context))
                     move_ops = len(_M_OPERATOR_PATTERN.findall(recent_path_context))
                     close_ops = len(_H_OPERATOR_PATTERN.findall(recent_path_context))
-                    has_clip_rect_sequence = bool(_CLIP_RECT_SEQUENCE_PATTERN.search(recent_path_context))
+                    has_clip_rect_sequence = bool(
+                        _CLIP_RECT_SEQUENCE_PATTERN.search(recent_path_context)
+                    )
 
                     if max(width, height) >= _HATCH_BLOB_MIN_DIM and (
-                        line_ops < 2 or move_ops < 1 or close_ops < 1 or not has_clip_rect_sequence
+                        line_ops < 2
+                        or move_ops < 1
+                        or close_ops < 1
+                        or not has_clip_rect_sequence
                     ):
-                        line_ops, move_ops, close_ops, has_clip_rect_sequence = _scan_large_blob_context(fill_start)
+                        line_ops, move_ops, close_ops, has_clip_rect_sequence = (
+                            _scan_large_blob_context(fill_start)
+                        )
 
                     has_large_blob_hatch = (
                         max(width, height) >= _HATCH_BLOB_MIN_DIM
@@ -390,13 +459,17 @@ def _find_hatch_fill_ranges(raw_bytes: bytes) -> tuple[list[tuple[int, int]], di
                 or polygon_has_q
                 or has_repeated_fill_chain
             )
-            if line_ops < _HATCH_POLYGON_MIN_LINE_OPS or move_ops < 1 or not has_polygon_hatch_context:
+            if (
+                line_ops < _HATCH_POLYGON_MIN_LINE_OPS
+                or move_ops < 1
+                or not has_polygon_hatch_context
+            ):
                 stats["skipped_polygon_shape"] += 1
                 continue
 
             cm_matches = list(_CM_OPERATOR_PATTERN.finditer(context))
             if cm_matches:
-                after_cm = context[cm_matches[-1].start():]
+                after_cm = context[cm_matches[-1].start() :]
                 nums = _NUM_BYTE_PATTERN.findall(after_cm)
                 if nums:
                     try:
@@ -420,12 +493,14 @@ def _find_hatch_fill_ranges(raw_bytes: bytes) -> tuple[list[tuple[int, int]], di
     return fill_ranges, stats
 
 
-def _inject_hatch_hide_ops(raw_bytes: bytes, fill_ranges: list[tuple[int, int]]) -> tuple[bytes, int]:
+def _inject_hatch_hide_ops(
+    raw_bytes: bytes, fill_ranges: list[tuple[int, int]]
+) -> tuple[bytes, int]:
     if not fill_ranges:
         return raw_bytes, 0
 
-    gs_prefix = b'q\n/FxHatchHide gs\n'
-    gs_suffix = b'Q\n'
+    gs_prefix = b"q\n/FxHatchHide gs\n"
+    gs_suffix = b"Q\n"
     parts = []
     prev_end = 0
 
@@ -437,10 +512,12 @@ def _inject_hatch_hide_ops(raw_bytes: bytes, fill_ranges: list[tuple[int, int]])
         prev_end = fill_end
 
     parts.append(raw_bytes[prev_end:])
-    return b''.join(parts), len(fill_ranges)
+    return b"".join(parts), len(fill_ranges)
 
 
-def _replace_line_width_outside_text_objects(raw_bytes: bytes, line_width: float) -> tuple[bytes, int]:
+def _replace_line_width_outside_text_objects(
+    raw_bytes: bytes, line_width: float
+) -> tuple[bytes, int]:
     text_ranges = _find_text_object_ranges(raw_bytes)
     if not text_ranges:
         return _byte_level_line_width_replace(raw_bytes, line_width)
@@ -452,13 +529,17 @@ def _replace_line_width_outside_text_objects(raw_bytes: bytes, line_width: float
 
     for start, end in text_ranges:
         non_text_chunk = raw_bytes[prev_end:start]
-        replaced_chunk, chunk_count = _LINE_WIDTH_BYTE_PATTERN.subn(replacement, non_text_chunk)
+        replaced_chunk, chunk_count = _LINE_WIDTH_BYTE_PATTERN.subn(
+            replacement, non_text_chunk
+        )
         parts.append(replaced_chunk)
         parts.append(raw_bytes[start:end])
         total_count += chunk_count
         prev_end = end
 
-    tail_chunk, tail_count = _LINE_WIDTH_BYTE_PATTERN.subn(replacement, raw_bytes[prev_end:])
+    tail_chunk, tail_count = _LINE_WIDTH_BYTE_PATTERN.subn(
+        replacement, raw_bytes[prev_end:]
+    )
     parts.append(tail_chunk)
     total_count += tail_count
     return b"".join(parts), total_count
@@ -510,7 +591,9 @@ def _edit_content_stream_preserving_text(
         )
 
     if apply_line_width:
-        new_bytes, line_count = _replace_line_width_outside_text_objects(new_bytes, line_width)
+        new_bytes, line_count = _replace_line_width_outside_text_objects(
+            new_bytes, line_width
+        )
 
     if has_text_objects and hatch_count > 0:
         logger.debug("[cad_mode] %s 텍스트 위치 보존 상태로 해치 편집 적용", location)
@@ -529,7 +612,9 @@ def _apply_cad_edits_to_resource(
 ) -> tuple[int, int]:
     if "/Contents" in resource_owner:
         contents = resource_owner["/Contents"]
-        stream_list = list(contents) if isinstance(contents, pikepdf.Array) else [contents]
+        stream_list = (
+            list(contents) if isinstance(contents, pikepdf.Array) else [contents]
+        )
 
         total_hatch = 0
         total_line = 0
@@ -599,7 +684,10 @@ def _apply_cad_edits_to_form_xobjects(
     line_width: float,
     visited: Set[tuple],
 ) -> tuple[int, int]:
-    if "/Resources" not in resource_owner or "/XObject" not in resource_owner["/Resources"]:
+    if (
+        "/Resources" not in resource_owner
+        or "/XObject" not in resource_owner["/Resources"]
+    ):
         return 0, 0
 
     total_hatch = 0
@@ -644,10 +732,10 @@ def _apply_cad_edits_to_form_xobjects(
 
 
 # ── 바이트 레벨 해치 검출용 패턴 (성능 최적화) ──
-_FILL_BYTE_PATTERN = re.compile(rb'[\n ](f|f\*|F)\n')
-_NUM_BYTE_PATTERN = re.compile(rb'[-]?(?:\d+\.?\d*|\.\d+)')
+_FILL_BYTE_PATTERN = re.compile(rb"[\n ](f|f\*|F)\n")
+_NUM_BYTE_PATTERN = re.compile(rb"[-]?(?:\d+\.?\d*|\.\d+)")
 # line width 패턴: 정수/소수 + w 연산자 (1.8x 최적화, 3.3s → 1.8s)
-_LINE_WIDTH_BYTE_PATTERN = re.compile(rb'[-+]?(?:\d+(?:\.\d*)?|\.\d+)\s+w\b')
+_LINE_WIDTH_BYTE_PATTERN = re.compile(rb"[-+]?(?:\d+(?:\.\d*)?|\.\d+)\s+w\b")
 
 
 def _byte_level_hatch_detection(raw_bytes: bytes) -> tuple[bytes, int]:
@@ -655,10 +743,10 @@ def _byte_level_hatch_detection(raw_bytes: bytes) -> tuple[bytes, int]:
     바이트 레벨에서 해치 fill을 검출하고 gs를 삽입한다.
     현재 주 경로는 텍스트 마스킹 기반 편집이며, 이 함수는 동일한 fill-range/
     주입 로직을 재사용하는 저수준 유틸리티다.
-    
+
     Args:
         raw_bytes: PDF content stream 바이트
-    
+
     Returns:
         (수정된 바이트, 삽입 횟수)
     """
@@ -666,14 +754,16 @@ def _byte_level_hatch_detection(raw_bytes: bytes) -> tuple[bytes, int]:
     return _inject_hatch_hide_ops(raw_bytes, fill_ranges)
 
 
-def _byte_level_line_width_replace(raw_bytes: bytes, line_width: float) -> tuple[bytes, int]:
+def _byte_level_line_width_replace(
+    raw_bytes: bytes, line_width: float
+) -> tuple[bytes, int]:
     """
     바이트 레벨에서 line-width 연산자를 치환한다.
-    
+
     Args:
         raw_bytes: PDF content stream 바이트
         line_width: 목표 선 굵기 (pt)
-    
+
     Returns:
         (수정된 바이트, 치환 횟수)
     """
@@ -693,7 +783,7 @@ def apply_cad_mode_to_pdf(
     CAD 모드 PDF 전처리.
     선두께 변경과 해치 투명화는 개별 옵션으로 독립 적용한다.
     해치 검출은 원본 스트림 위치를 유지한 상태에서 BT/ET 텍스트만 마스킹해 수행한다.
-    
+
     Args:
         pdf_bytes: 원본 PDF 바이트
         line_width: 목표 선 굵기 (pt)
@@ -702,7 +792,7 @@ def apply_cad_mode_to_pdf(
     """
     total_hatch = 0
     total_line_subs = 0
-    
+
     with pikepdf.open(io.BytesIO(pdf_bytes)) as pdf:
         for page_number, page in enumerate(pdf.pages, start=1):
             page_hatch, page_line = _apply_cad_edits_to_resource(
@@ -728,18 +818,20 @@ def apply_cad_mode_to_pdf(
             )
             total_hatch += form_hatch
             total_line_subs += form_line
-        
+
         out_io = io.BytesIO()
         pdf.save(out_io)
         result_bytes = out_io.getvalue()
-    
+
     logger.info(
         "[cad_mode] CAD 처리 완료 - hatch=%d, line_width=%d",
         total_hatch,
         total_line_subs,
     )
-    
+
     return result_bytes
+
+
 def _single_page_bytes(reader: PdfReader, page_index: int) -> bytes:
     """
     PdfReader의 특정 페이지만 포함하는 PDF bytes 반환.
@@ -757,15 +849,17 @@ def _estimate_pixmap_bytes(page, dpi: int, clip_rect: dict = None) -> int:
     zoom = dpi / 72
     if clip_rect is not None:
         pr = page.rect
-        w = int((clip_rect['width'] * pr.width) * zoom)
-        h = int((clip_rect['height'] * pr.height) * zoom)
+        w = int((clip_rect["width"] * pr.width) * zoom)
+        h = int((clip_rect["height"] * pr.height) * zoom)
     else:
         w = int(page.rect.width * zoom)
         h = int(page.rect.height * zoom)
     return w * h * 3
 
 
-def _fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None) -> np.ndarray:
+def _fitz_page_to_bgr(
+    page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None
+) -> np.ndarray:
     """공통 PDF 파이프라인 내부에서 fitz page 객체를 BGR numpy 배열로 렌더링한다."""
     zoom = dpi / 72
     logger.debug(
@@ -793,10 +887,10 @@ def _fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None) -> 
     if clip_rect is not None:
         pr = page.rect
         fitz_clip = fitz.Rect(
-            clip_rect['x'] * pr.width,
-            clip_rect['y'] * pr.height,
-            (clip_rect['x'] + clip_rect['width']) * pr.width,
-            (clip_rect['y'] + clip_rect['height']) * pr.height,
+            clip_rect["x"] * pr.width,
+            clip_rect["y"] * pr.height,
+            (clip_rect["x"] + clip_rect["width"]) * pr.width,
+            (clip_rect["y"] + clip_rect["height"]) * pr.height,
         )
         pix = page.get_pixmap(matrix=matrix, alpha=False, clip=fitz_clip)
         logger.debug(
@@ -809,7 +903,9 @@ def _fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None) -> 
     else:
         pix = page.get_pixmap(matrix=matrix, alpha=False)
 
-    img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
+    img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+        pix.height, pix.width, 3
+    )
     img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
     logger.debug(
         "[pdf2img] render done: size=%sx%s bytes=%.2fMB",
@@ -820,7 +916,7 @@ def _fitz_page_to_bgr(page, dpi: int = _DEFAULT_DPI, clip_rect: dict = None) -> 
     return img_bgr
 
 
-def _pypdf2_page_to_bgr(
+def _pypdf_page_to_bgr(
     file_bytes: bytes,
     page_num: int = 0,
     dpi: int = _DEFAULT_DPI,
@@ -865,10 +961,14 @@ def _pypdf2_page_to_bgr(
             logger.debug("[pdf2img] page_num out of range, reset to 0")
 
         page_pdf_bytes = _single_page_bytes(reader, page_num)
-        logger.debug("[pdf2img] single-page bytes extracted: page=%s size=%s", page_num, len(page_pdf_bytes))
+        logger.debug(
+            "[pdf2img] single-page bytes extracted: page=%s size=%s",
+            page_num,
+            len(page_pdf_bytes),
+        )
 
         # ────────────────────────────────────────────────────────────────
-        # CAD‑mode: PyPDF2로 단일 페이지를 추출한 뒤 line-width 스트림 편집을 적용한다.
+        # CAD‑mode: pypdf로 단일 페이지를 추출한 뒤 line-width 스트림 편집을 적용한다.
         #  - cad_pdf_bytes 를 먼저 page_pdf_bytes 로 초기화하여,
         #    CAD 변환 실패 시에도 원본 바이트로 안전하게 fallback 된다.
         # ────────────────────────────────────────────────────────────────
@@ -884,10 +984,15 @@ def _pypdf2_page_to_bgr(
                 )
                 logger.info("[pdf2img] CAD-mode 스트림 편집 성공")
             except Exception as e:
-                logger.warning("[pdf2img] CAD-mode 스트림 편집 실패 - 원본 바이트로 fallback (%s)", e)
+                logger.warning(
+                    "[pdf2img] CAD-mode 스트림 편집 실패 - 원본 바이트로 fallback (%s)",
+                    e,
+                )
 
         with fitz.open(stream=cad_pdf_bytes, filetype="pdf") as doc:
-            logger.debug("[pdf2img] render fitz open success: page_count=%s", doc.page_count)
+            logger.debug(
+                "[pdf2img] render fitz open success: page_count=%s", doc.page_count
+            )
             img_bgr = _fitz_page_to_bgr(doc.load_page(0), dpi=dpi, clip_rect=clip_rect)
 
         return img_bgr, total_pages
@@ -898,7 +1003,9 @@ def _pypdf2_page_to_bgr(
                 os.unlink(tmp_path)
                 logger.debug("[pdf2img] temp file removed: %s", tmp_path)
             except OSError as e:
-                logger.warning("[pdf2img] temp file cleanup failed: %s: %s", type(e).__name__, e)
+                logger.warning(
+                    "[pdf2img] temp file cleanup failed: %s: %s", type(e).__name__, e
+                )
 
 
 def pdf_to_bgr(
@@ -938,7 +1045,7 @@ def pdf_to_bgr(
     )
 
     try:
-        img_bgr, total_pages = _pypdf2_page_to_bgr(
+        img_bgr, total_pages = _pypdf_page_to_bgr(
             file_bytes,
             page_num=page_num,
             dpi=dpi,

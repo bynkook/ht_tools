@@ -15,12 +15,12 @@ httpx>=0.27.0
 toml>=0.10.2
 
 # Image Inspector Dependencies
+numpy
 opencv-python
 pymupdf
-Pillow
-numpy
-pypdf2
+pypdf
 pikepdf
+Pillow
 
 # Data Analysis & Visualization
 pandas
