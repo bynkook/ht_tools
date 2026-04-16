@@ -386,41 +386,25 @@ const finishReason = parsed.finish_reason ?? parsed.finishReason;
 - Sidebar header format: `[Icon][Title][Home][Shrink]`
 - Error display: top red banner with `AlertCircle`
 
-## Tool Usage Reliability Rules
+## Tool Usage Reliability Rules (Windows Environment)
 
-These rules are mandatory because repeated shell/filesystem mistakes slow down work and create false errors.
+These rules are mandatory to prevent execution errors, shell incompatibilities, and path conflicts in the Windows development environment.
 
-### General
+**WARNING: NEVER execute ad-hoc, complex, or destructive bash commands without first verifying the working tree, state, and permissions. ALWAYS prefer PowerShell commands over legacy CMD/Bash aliases. NEVER chain unverified commands with `&&` if they are not explicitly tested or independent.**
 
-- Prefer repo-native tools first: **`view` / `rg` / `glob` / `apply_patch`**
-- Use shell only when file tools cannot do the job or when execution is required
-- Prefer absolute **Windows-style** paths with backslashes for every external file/tool operation
-- Resolve ambiguous relative paths before reading or executing anything
+### 1. Safe Execution Protocol
+1. **Verification**: Always confirm the current directory (`pwd`) and git status before executing commands that modify the filesystem or git state.
+2. **Native Priority**: Use PowerShell-native syntax (e.g., `Get-ChildItem`, `Remove-Item`) instead of legacy `ls` or `rm` aliases. If using bash, be explicit about the binary path.
+3. **Atomic Commands**: Prefer running commands as single, explicit calls rather than complex chains (`&&`, `;`). If chaining is necessary, explicitly test each segment individually or use a multi-step PowerShell script block.
+4. **Path Normalization**: Windows bash requires standard Windows-style paths (e.g., `C:\Users\BgKing\...`). Normalize all paths to `C:\...` format when calling external Windows binaries.
+5. **Interactive Safety**: Always include non-interactive flags (e.g., `-y`, `--no-pager`, `--no-confirm`) to avoid hanging the agent session.
+6. **Destructive Command Ban**: Any potentially destructive command (e.g., `rm -rf`, `git reset --hard`) MUST be delegated to an agent with a "review-work" or "oracle" capability check, or performed as a multi-step sequence with explicit verification.
 
-### Shell / PowerShell
-
-- Always confirm the intended working tree and branch before destructive or branch-changing Git commands
-- Chain related commands in a single call when they share the same context
-- Always disable pagers for Git: use `git --no-pager`
-- Prefer PowerShell/native commands over CMD/DOS aliases
-- Reuse a named shell session for multi-step work instead of spawning ad hoc shells
-- For long-running commands, use a stable `shellId`, then continue with `read_powershell`
-- If a prior shell command was interrupted, inspect current state before retrying blindly
-- Avoid interactive prompts when a non-interactive flag exists
-- When a command depends on another repo/worktree, state or set the target path explicitly before execution
-
-### Filesystem / File Reading
-
-- For files inside this repository/worktree, prefer **`view`** over external filesystem tools
-- For multiple known files, batch reads instead of reading one-by-one
-- Before using filesystem tools on non-repo paths, verify the path is accessible and use the correct absolute path
-- Do not mix slash styles in paths; normalize to `C:\...`
-- If a file is tagged or already known, read that exact file directly rather than re-searching
-- If a read fails, verify:
-  1. the path is absolute
-  2. the path is inside an allowed directory
-  3. the file actually exists
-  4. the tool choice is appropriate (`view` vs filesystem tool vs shell)
+### 2. Operational & Environment Guidelines
+- **Tool Selection Priority**: 
+    1. Repo-native tools: **`view` / `rg` / `glob` / `apply_patch`**
+    2. PowerShell-native commands
+    3. Bash shell (use only when necessary)
 
 ### MCP/Provider Validation
 
